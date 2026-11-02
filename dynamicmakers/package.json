@@ -1,0 +1,16 @@
+{
+  "name": "dynamicmakers",
+  "version": "0.1.0",
+  "description": "Dynamic Makers (다이나믹 메이커스) — RoboMakers word-block editor for ROBOTIS CM-550 + DYNAMIXEL",
+  "scripts": {
+    "build": "bash build.sh",
+    "serve": "cd dist && python3 -m http.server 8700",
+    "test": "node test/e2e.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  },
+  "private": true
+}

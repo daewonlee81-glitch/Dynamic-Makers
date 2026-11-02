@@ -1,0 +1,5119 @@
+var __create = Object.create;
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getProtoOf = Object.getPrototypeOf;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __commonJS = (cb, mod) => function __require() {
+  try {
+    return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+  } catch (e) {
+    throw mod = 0, e;
+  }
+};
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
+  // If the importer is in node compatibility mode or this is not an ESM
+  // file that has been converted to a CommonJS file using a Babel-
+  // compatible transform (i.e. "__esModule" has not been set), then set
+  // "default" to the CommonJS "module.exports" for node compatibility.
+  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
+  mod
+));
+
+// ../scratch-cm550/src/models.js
+var require_models = __commonJS({
+  "../scratch-cm550/src/models.js"(exports, module) {
+    var MODELS = {
+      1060: { name: "XL430-W250", short: "XL430", family: "xl430", volts: [6.5, 12] },
+      1090: { name: "2XL430-W250", short: "2XL430", family: "xl430", dual: true, volts: [6.5, 12] },
+      1070: { name: "XC430-W150", short: "XC430", family: "xc430", volts: [6.5, 14.8] },
+      1080: { name: "XC430-W240", short: "XC430", family: "xc430", volts: [6.5, 14.8] },
+      1160: { name: "2XC430-W250", short: "2XC430", family: "xc430", dual: true, volts: [6.5, 12] },
+      1190: { name: "XL330-M077", short: "XL330-M077", family: "xl330", current: true, volts: [3.7, 6] },
+      1200: { name: "XL330-M288", short: "XL330-M288", family: "xl330", current: true, volts: [3.7, 6] },
+      1210: { name: "XC330-T181", short: "XC330", family: "xc330", current: true, volts: [10, 14.8] },
+      1220: { name: "XC330-T288", short: "XC330", family: "xc330", current: true, volts: [10, 14.8] },
+      1230: { name: "XC330-M181", short: "XC330", family: "xc330", current: true, volts: [3.7, 6] },
+      1240: { name: "XC330-M288", short: "XC330", family: "xc330", current: true, volts: [3.7, 6] },
+      1e3: { name: "XH430-W350", short: "XH430", family: "xh430", current: true, volts: [10, 14.8] },
+      1010: { name: "XH430-W210", short: "XH430", family: "xh430", current: true, volts: [10, 14.8] },
+      1040: { name: "XH430-V350", short: "XH430", family: "xh430", current: true, volts: [11.1, 24] },
+      1050: { name: "XH430-V210", short: "XH430", family: "xh430", current: true, volts: [11.1, 24] },
+      1020: { name: "XM430-W350", short: "XM430", family: "xm430", current: true, volts: [10, 14.8] },
+      1030: { name: "XM430-W210", short: "XM430", family: "xm430", current: true, volts: [10, 14.8] }
+    };
+    var INCOMPATIBLE = {
+      350: "XL-320 (CM-550과 호환되지 않음)"
+    };
+    var modelInfo2 = (model) => MODELS[model] || null;
+    var modelName3 = (model) => MODELS[model] ? MODELS[model].name : INCOMPATIBLE[model] || (model === 450 ? "CM-550" : `모델 ${model}`);
+    var pairDualAxes = (motors) => {
+      const dual = motors.filter((m) => MODELS[m.model] && MODELS[m.model].dual).sort((x, y) => x.id - y.id);
+      const pairs = [];
+      for (let i = 0; i + 1 < dual.length; i++) {
+        const a = dual[i];
+        const b = dual[i + 1];
+        if (b.id === a.id + 1 && b.model === a.model) {
+          pairs.push({ a: a.id, b: b.id, model: a.model });
+          i++;
+        }
+      }
+      return pairs;
+    };
+    var describeMotors = (motors, busVolts) => {
+      const pairs = pairDualAxes(motors);
+      const axis = {};
+      pairs.forEach((p, i) => {
+        axis[p.a] = { module: i + 1, axis: "A", sibling: p.b };
+        axis[p.b] = { module: i + 1, axis: "B", sibling: p.a };
+      });
+      const warnings = [];
+      const labels = {};
+      for (const m of motors) {
+        const info = MODELS[m.model];
+        const ax = axis[m.id];
+        labels[m.id] = info ? `${info.short}${ax ? ` ${ax.axis}축` : ""}` : modelName3(m.model);
+        if (!info) {
+          warnings.push(`ID ${m.id}: ${modelName3(m.model)} — 블록이 지원하지 않는 모델입니다.`);
+        } else if (busVolts && busVolts > info.volts[1] + 0.5) {
+          warnings.push(`ID ${m.id}: ${info.name}의 정격 전압은 ${info.volts[0]}~${info.volts[1]} V인데 CM-550이 ${busVolts.toFixed(1)} V를 공급하고 있습니다. 모터가 손상될 수 있으니 바로 분리하세요.`);
+        }
+      }
+      const ids = motors.map((m) => m.id);
+      const dupes = ids.filter((id, i) => ids.indexOf(id) !== i);
+      if (dupes.length) warnings.push(`같은 ID를 가진 모터가 있습니다: ${[...new Set(dupes)].join(", ")}`);
+      return { labels, pairs, axis, warnings };
+    };
+    module.exports = { MODELS, INCOMPATIBLE, modelInfo: modelInfo2, modelName: modelName3, pairDualAxes, describeMotors };
+  }
+});
+
+// ../scratch-cm550/src/python-generator.js
+var require_python_generator = __commonJS({
+  "../scratch-cm550/src/python-generator.js"(exports, module) {
+    var INDENT = "    ";
+    var PY_KEYWORDS = /* @__PURE__ */ new Set([
+      "False",
+      "None",
+      "True",
+      "and",
+      "as",
+      "assert",
+      "async",
+      "await",
+      "break",
+      "class",
+      "continue",
+      "def",
+      "del",
+      "elif",
+      "else",
+      "except",
+      "finally",
+      "for",
+      "from",
+      "global",
+      "if",
+      "import",
+      "in",
+      "is",
+      "lambda",
+      "nonlocal",
+      "not",
+      "or",
+      "pass",
+      "raise",
+      "return",
+      "try",
+      "while",
+      "with",
+      "yield",
+      // names provided by `from cm550 import *` or builtins we emit
+      "cm",
+      "dxl",
+      "port",
+      "motion",
+      "wait",
+      "timer",
+      "reset_timer",
+      "key_pressed",
+      "broadcast",
+      "stop_all",
+      "start",
+      "answer",
+      "print",
+      "input",
+      "len",
+      "str",
+      "int",
+      "round",
+      "abs",
+      "range",
+      "math",
+      "random",
+      "list",
+      "when_flag_clicked",
+      "when_key_pressed",
+      "when_broadcast",
+      "when_clicked"
+    ]);
+    var pyString = (s) => JSON.stringify(String(s));
+    var isNumeric = (s) => {
+      if (typeof s === "number") return Number.isFinite(s);
+      return /^-?(0|[1-9]\d*)(\.\d+)?$/.test(String(s)) || /^-?\.\d+$/.test(String(s));
+    };
+    var formatNumber = (v) => {
+      const n = Number(v);
+      if (!Number.isFinite(n)) return "0";
+      return String(n);
+    };
+    var stripOuter = (s) => {
+      if (!s.startsWith("(") || !s.endsWith(")")) return s;
+      let depth = 0;
+      let inStr = false;
+      for (let i = 0; i < s.length; i++) {
+        const c = s[i];
+        if (inStr) {
+          if (c === "\\") i++;
+          else if (c === '"') inStr = false;
+          continue;
+        }
+        if (c === '"') inStr = true;
+        else if (c === "(") depth++;
+        else if (c === ")") {
+          depth--;
+          if (depth === 0 && i !== s.length - 1) return s;
+        }
+      }
+      return s.slice(1, -1);
+    };
+    var sanitizeIdentifier = (name, fallback) => {
+      let id = String(name || "").trim().replace(/[^\p{L}\p{N}_]+/gu, "_").replace(/^_+|_+$/g, "");
+      if (!id) id = fallback;
+      if (/^\p{N}/u.test(id)) id = `_${id}`;
+      if (PY_KEYWORDS.has(id)) id = `${id}_`;
+      return id;
+    };
+    var parseJSON = (s, fallback) => {
+      if (Array.isArray(s)) return s;
+      try {
+        return JSON.parse(s);
+      } catch (e) {
+        return fallback;
+      }
+    };
+    var MATHOP = {
+      "abs": (x) => `abs(${x})`,
+      "floor": (x) => `math.floor(${x})`,
+      "ceiling": (x) => `math.ceil(${x})`,
+      "sqrt": (x) => `math.sqrt(${x})`,
+      "sin": (x) => `math.sin(math.radians(${x}))`,
+      "cos": (x) => `math.cos(math.radians(${x}))`,
+      "tan": (x) => `math.tan(math.radians(${x}))`,
+      "asin": (x) => `math.degrees(math.asin(${x}))`,
+      "acos": (x) => `math.degrees(math.acos(${x}))`,
+      "atan": (x) => `math.degrees(math.atan(${x}))`,
+      "ln": (x) => `math.log(${x})`,
+      "log": (x) => `math.log10(${x})`,
+      "e ^": (x) => `math.exp(${x})`,
+      "10 ^": (x) => `(10 ** ${x})`
+    };
+    var PythonGenerator = class {
+      constructor({ blocks, variables: variables2 = [], targetName = "" }) {
+        this.blocks = blocks || {};
+        this.targetName = targetName;
+        this.uses = /* @__PURE__ */ new Set();
+        this.warnings = [];
+        this.usedVarIds = /* @__PURE__ */ new Set();
+        this.varNames = /* @__PURE__ */ new Map();
+        this.varsById = /* @__PURE__ */ new Map();
+        this.procNames = /* @__PURE__ */ new Map();
+        this.takenNames = /* @__PURE__ */ new Set();
+        this.fn = null;
+        this.indent = 0;
+        this.lines = [];
+        for (const v of variables2) this.varsById.set(v.id, v);
+        for (const v of variables2) {
+          if (v.type === "broadcast_msg") continue;
+          const fallback = v.type === "list" ? "my_list" : "var";
+          this.varNames.set(v.id, this._uniqueName(sanitizeIdentifier(v.name, fallback)));
+        }
+      }
+      _uniqueName(base) {
+        let name = base;
+        let i = 2;
+        while (this.takenNames.has(name)) name = `${base}_${i++}`;
+        this.takenNames.add(name);
+        return name;
+      }
+      // ------------------------------------------------------------------
+      // emission helpers
+      // ------------------------------------------------------------------
+      line(text2) {
+        this.lines.push(INDENT.repeat(this.indent) + text2);
+      }
+      /**
+       * Emit a nested statement stack (SUBSTACK etc). Emits `pass` when empty.
+       * @param startId
+       */
+      body(startId) {
+        this.indent++;
+        const before = this.lines.length;
+        this.stack(startId);
+        if (this.lines.length === before) this.line("pass");
+        this.indent--;
+      }
+      stack(startId) {
+        let id = startId;
+        let guard = 0;
+        while (id && this.blocks[id] && guard++ < 1e4) {
+          const block = this.blocks[id];
+          this.statement(block);
+          id = block.next;
+        }
+      }
+      // ------------------------------------------------------------------
+      // argument access
+      // ------------------------------------------------------------------
+      /**
+       * Read an argument either from a field (dropdown without reporters)
+       * or from an input (shadow literal or reporter block).
+       * @param block
+       * @param name
+       * @returns {{literal: boolean, value?: string, code?: string}|null}
+       */
+      arg(block, name) {
+        if (block.fields && block.fields[name]) {
+          return { literal: true, value: block.fields[name].value };
+        }
+        const input = block.inputs && block.inputs[name];
+        if (!input || !input.block) return null;
+        const inner = this.blocks[input.block];
+        if (!inner) return null;
+        if (inner.shadow) {
+          const fields = inner.fields || {};
+          const keys = Object.keys(fields);
+          return { literal: true, value: keys.length ? fields[keys[0]].value : "" };
+        }
+        return { literal: false, code: this.expr(inner) };
+      }
+      /**
+       * Numeric argument.
+       * @param block
+       * @param name
+       */
+      num(block, name) {
+        const a = this.arg(block, name);
+        if (!a) return "0";
+        if (!a.literal) return a.code;
+        return isNumeric(a.value) ? formatNumber(a.value) : String(a.value).trim() === "" ? "0" : pyString(a.value);
+      }
+      /**
+       * Any value: numbers stay numbers, other literals become strings.
+       * @param block
+       * @param name
+       */
+      val(block, name) {
+        const a = this.arg(block, name);
+        if (!a) return '""';
+        if (!a.literal) return a.code;
+        return isNumeric(a.value) ? formatNumber(a.value) : pyString(a.value);
+      }
+      /**
+       * Text argument (always a string literal when literal).
+       * @param block
+       * @param name
+       */
+      text(block, name) {
+        const a = this.arg(block, name);
+        if (!a) return '""';
+        return a.literal ? pyString(a.value) : a.code;
+      }
+      /**
+       * Boolean input slot (hexagonal). Empty slot = False.
+       * @param block
+       * @param name
+       */
+      cond(block, name) {
+        const a = this.arg(block, name);
+        if (!a) return "False";
+        if (a.literal) return a.value ? "True" : "False";
+        return a.code;
+      }
+      /**
+       * on/off menu -> True/False
+       * @param block
+       * @param name
+       */
+      onOff(block, name) {
+        const a = this.arg(block, name);
+        if (!a) return "True";
+        if (!a.literal) return a.code;
+        const s = String(a.value).toLowerCase();
+        return s === "on" || s === "1" || s === "true" || s === "켜기" ? "True" : "False";
+      }
+      /**
+       * Raw menu choice as a string literal (or expression).
+       * @param block
+       * @param name
+       * @param map
+       */
+      choice(block, name, map) {
+        const a = this.arg(block, name);
+        if (!a) return '""';
+        if (!a.literal) return a.code;
+        const v = map && Object.prototype.hasOwnProperty.call(map, a.value) ? map[a.value] : a.value;
+        return pyString(v);
+      }
+      /**
+       * 1-based Scratch index -> 0-based Python index expression.
+       * @param block
+       * @param name
+       */
+      index(block, name) {
+        const a = this.arg(block, name);
+        if (!a) return "0";
+        if (a.literal && isNumeric(a.value)) return formatNumber(Number(a.value) - 1);
+        const code = a.literal ? pyString(a.value) : a.code;
+        return `${code} - 1`;
+      }
+      varName(field) {
+        if (!field) return "var";
+        const id = field.id;
+        if (id && this.varNames.has(id)) {
+          this.usedVarIds.add(id);
+          return this.varNames.get(id);
+        }
+        const name = sanitizeIdentifier(field.value, "var");
+        if (id) {
+          this.varNames.set(id, name);
+          this.usedVarIds.add(id);
+          if (!this.varsById.has(id)) this.varsById.set(id, { id, name: field.value, type: "", value: 0 });
+        }
+        return name;
+      }
+      assign(name) {
+        if (this.fn && this.fn.isFunction) this.fn.assigned.add(name);
+      }
+      unsupportedExpr(block) {
+        this.warnings.push(block.opcode);
+        return "None";
+      }
+      // ------------------------------------------------------------------
+      // expressions (reporters / booleans)
+      // ------------------------------------------------------------------
+      expr(block) {
+        const op = block.opcode;
+        if (op.startsWith("cm550_")) return this.cm550Expr(block, op.slice(6));
+        switch (op) {
+          // operators
+          case "operator_add":
+            return `(${this.num(block, "NUM1")} + ${this.num(block, "NUM2")})`;
+          case "operator_subtract":
+            return `(${this.num(block, "NUM1")} - ${this.num(block, "NUM2")})`;
+          case "operator_multiply":
+            return `(${this.num(block, "NUM1")} * ${this.num(block, "NUM2")})`;
+          case "operator_divide":
+            return `(${this.num(block, "NUM1")} / ${this.num(block, "NUM2")})`;
+          case "operator_mod":
+            return `(${this.num(block, "NUM1")} % ${this.num(block, "NUM2")})`;
+          case "operator_round":
+            return `round(${stripOuter(this.num(block, "NUM"))})`;
+          case "operator_random": {
+            this.uses.add("random");
+            const a = this.arg(block, "FROM");
+            const b = this.arg(block, "TO");
+            const decimal = [a, b].some((x) => x && x.literal && String(x.value).includes("."));
+            const fn = decimal ? "random.uniform" : "random.randint";
+            return `${fn}(${stripOuter(this.num(block, "FROM"))}, ${stripOuter(this.num(block, "TO"))})`;
+          }
+          case "operator_gt":
+            return `(${this.val(block, "OPERAND1")} > ${this.val(block, "OPERAND2")})`;
+          case "operator_lt":
+            return `(${this.val(block, "OPERAND1")} < ${this.val(block, "OPERAND2")})`;
+          case "operator_equals":
+            return `(${this.val(block, "OPERAND1")} == ${this.val(block, "OPERAND2")})`;
+          case "operator_and":
+            return `(${this.cond(block, "OPERAND1")} and ${this.cond(block, "OPERAND2")})`;
+          case "operator_or":
+            return `(${this.cond(block, "OPERAND1")} or ${this.cond(block, "OPERAND2")})`;
+          case "operator_not":
+            return `(not ${this.cond(block, "OPERAND")})`;
+          case "operator_join": {
+            const s = (x) => x.startsWith('"') ? x : `str(${stripOuter(x)})`;
+            return `(${s(this.text(block, "STRING1"))} + ${s(this.text(block, "STRING2"))})`;
+          }
+          case "operator_letter_of":
+            return `str(${stripOuter(this.text(block, "STRING"))})[${stripOuter(this.index(block, "LETTER"))}]`;
+          case "operator_length":
+            return `len(str(${stripOuter(this.text(block, "STRING"))}))`;
+          case "operator_contains":
+            return `(${this.text(block, "STRING2")} in str(${stripOuter(this.text(block, "STRING1"))}))`;
+          case "operator_mathop": {
+            const opName = block.fields && block.fields.OPERATOR ? block.fields.OPERATOR.value : "abs";
+            const f = MATHOP[opName] || MATHOP.abs;
+            if (opName !== "abs") this.uses.add("math");
+            return f(stripOuter(this.num(block, "NUM")));
+          }
+          // data
+          case "data_variable":
+            return this.varName(block.fields.VARIABLE);
+          case "data_listcontents":
+            return this.varName(block.fields.LIST);
+          case "data_itemoflist":
+            return `${this.varName(block.fields.LIST)}[${stripOuter(this.index(block, "INDEX"))}]`;
+          case "data_itemnumoflist":
+            return `(${this.varName(block.fields.LIST)}.index(${stripOuter(this.val(block, "ITEM"))}) + 1)`;
+          case "data_lengthoflist":
+            return `len(${this.varName(block.fields.LIST)})`;
+          case "data_listcontainsitem":
+            return `(${this.val(block, "ITEM")} in ${this.varName(block.fields.LIST)})`;
+          // sensing
+          case "sensing_timer":
+            return "timer()";
+          case "sensing_answer":
+            return "answer";
+          case "sensing_keypressed":
+            return `key_pressed(${this.text(block, "KEY_OPTION")})`;
+          // custom block parameters
+          case "argument_reporter_string_number":
+          case "argument_reporter_boolean": {
+            const label2 = block.fields && block.fields.VALUE ? block.fields.VALUE.value : "arg";
+            if (this.fn && this.fn.params && this.fn.params.has(label2)) return this.fn.params.get(label2);
+            return sanitizeIdentifier(label2, "arg");
+          }
+          default:
+            return this.unsupportedExpr(block);
+        }
+      }
+      cm550Expr(block, op) {
+        const id = () => stripOuter(this.num(block, "ID"));
+        const portOf = () => `port(${stripOuter(this.num(block, "PORT"))})`;
+        switch (op) {
+          case "isConnected":
+            return "cm.is_connected()";
+          case "lastError":
+            return "cm.last_error()";
+          case "dxlRead": {
+            const prop = block.fields && block.fields.PROP ? block.fields.PROP.value : "position";
+            const method = {
+              position: "position",
+              velocity: "velocity",
+              load: "load",
+              temperature: "temperature",
+              voltage: "voltage",
+              model: "model",
+              error: "hardware_error"
+            }[prop] || "position";
+            return `dxl.${method}(${id()})`;
+          }
+          case "dxlIsMoving":
+            return `dxl.is_moving(${id()})`;
+          case "dxlModelName":
+            return `dxl.model_name(${id()})`;
+          case "dxlScan":
+            return "dxl.scan()";
+          case "cmButton":
+            return `cm.button_pressed(${this.choice(block, "BUTTON")})`;
+          case "cmTilt": {
+            const axis = block.fields && block.fields.AXIS ? block.fields.AXIS.value : "roll";
+            return `cm.imu.${["roll", "pitch", "yaw"].includes(axis) ? axis : "roll"}()`;
+          }
+          case "cmGyro":
+            return `cm.imu.gyro(${this.choice(block, "AXIS")})`;
+          case "cmAccel":
+            return `cm.imu.accel(${this.choice(block, "AXIS")})`;
+          case "cmVoltage":
+            return "cm.voltage()";
+          case "cmTemperature":
+            return "cm.temperature()";
+          case "cmSoundCount":
+            return "cm.sound_count()";
+          case "portSensor": {
+            const sensor = block.fields && block.fields.SENSOR ? block.fields.SENSOR.value : "ir";
+            const method = {
+              ir: "ir",
+              dms: "dms",
+              touch: "touch",
+              brightness: "brightness",
+              color: "color_code",
+              temperature: "temperature",
+              magnet: "magnet",
+              motion: "motion",
+              moisture: "moisture",
+              user: "analog"
+            }[sensor] || "ir";
+            return `${portOf()}.${method}()`;
+          }
+          case "portTouch":
+            return `${portOf()}.touched()`;
+          case "portColor":
+            return `(${portOf()}.color() == ${this.choice(block, "COLOR")})`;
+          case "motionIsPlaying":
+            return "motion.is_playing()";
+          case "motionCount":
+            return "motion.count()";
+          case "rawRead":
+            return `cm.read(${stripOuter(this.num(block, "ID"))}, ${stripOuter(this.num(block, "ADDR"))}, size=${stripOuter(this.num(block, "SIZE"))})`;
+          default:
+            return this.unsupportedExpr(block);
+        }
+      }
+      // ------------------------------------------------------------------
+      // statements
+      // ------------------------------------------------------------------
+      statement(block) {
+        const op = block.opcode;
+        if (op.startsWith("cm550_")) {
+          this.cm550Statement(block, op.slice(6));
+          return;
+        }
+        const a = (n) => stripOuter(this.num(block, n));
+        switch (op) {
+          // control
+          case "control_wait":
+            this.line(`wait(${a("DURATION")})`);
+            break;
+          case "control_repeat": {
+            const t = this.arg(block, "TIMES");
+            const times = t && t.literal && isNumeric(t.value) ? String(Math.max(0, Math.round(Number(t.value)))) : `int(${stripOuter(this.num(block, "TIMES"))})`;
+            this.line(`for _ in range(${times}):`);
+            this.body(block.inputs.SUBSTACK && block.inputs.SUBSTACK.block);
+            break;
+          }
+          case "control_forever":
+            this.line("while True:");
+            this.body(block.inputs.SUBSTACK && block.inputs.SUBSTACK.block);
+            break;
+          case "control_if":
+            this.line(`if ${stripOuter(this.cond(block, "CONDITION"))}:`);
+            this.body(block.inputs.SUBSTACK && block.inputs.SUBSTACK.block);
+            break;
+          case "control_if_else":
+            this.line(`if ${stripOuter(this.cond(block, "CONDITION"))}:`);
+            this.body(block.inputs.SUBSTACK && block.inputs.SUBSTACK.block);
+            this.line("else:");
+            this.body(block.inputs.SUBSTACK2 && block.inputs.SUBSTACK2.block);
+            break;
+          case "control_wait_until":
+            this.line(`while not ${this.cond(block, "CONDITION")}:`);
+            this.indent++;
+            this.line("wait(0.01)");
+            this.indent--;
+            break;
+          case "control_repeat_until":
+            this.line(`while not ${this.cond(block, "CONDITION")}:`);
+            this.body(block.inputs.SUBSTACK && block.inputs.SUBSTACK.block);
+            break;
+          case "control_while":
+            this.line(`while ${stripOuter(this.cond(block, "CONDITION"))}:`);
+            this.body(block.inputs.SUBSTACK && block.inputs.SUBSTACK.block);
+            break;
+          case "control_stop": {
+            const opt = block.fields && block.fields.STOP_OPTION ? block.fields.STOP_OPTION.value : "all";
+            if (opt === "all") this.line("stop_all()");
+            else if (opt === "this script") this.line(this.fn && this.fn.isFunction ? "return" : "stop_all()");
+            else this.line("# 이 스프라이트의 다른 스크립트 멈추기 (Python에서는 지원하지 않음)");
+            break;
+          }
+          // events
+          case "event_broadcast":
+            this.line(`broadcast(${this.text(block, "BROADCAST_INPUT")})`);
+            break;
+          case "event_broadcastandwait":
+            this.line(`broadcast(${this.text(block, "BROADCAST_INPUT")}, wait=True)`);
+            break;
+          // data
+          case "data_setvariableto": {
+            const name = this.varName(block.fields.VARIABLE);
+            this.assign(name);
+            this.line(`${name} = ${stripOuter(this.val(block, "VALUE"))}`);
+            break;
+          }
+          case "data_changevariableby": {
+            const name = this.varName(block.fields.VARIABLE);
+            this.assign(name);
+            this.line(`${name} += ${stripOuter(this.num(block, "VALUE"))}`);
+            break;
+          }
+          case "data_showvariable":
+          case "data_hidevariable":
+          case "data_showlist":
+          case "data_hidelist":
+            break;
+          // stage-only display, nothing to do in Python
+          case "data_addtolist":
+            this.line(`${this.varName(block.fields.LIST)}.append(${stripOuter(this.val(block, "ITEM"))})`);
+            break;
+          case "data_deleteoflist": {
+            const lst = this.varName(block.fields.LIST);
+            const idx = this.arg(block, "INDEX");
+            if (idx && idx.literal && idx.value === "all") this.line(`${lst}.clear()`);
+            else if (idx && idx.literal && idx.value === "last") this.line(`${lst}.pop()`);
+            else this.line(`del ${lst}[${stripOuter(this.index(block, "INDEX"))}]`);
+            break;
+          }
+          case "data_deletealloflist":
+            this.line(`${this.varName(block.fields.LIST)}.clear()`);
+            break;
+          case "data_insertatlist":
+            this.line(`${this.varName(block.fields.LIST)}.insert(${stripOuter(this.index(block, "INDEX"))}, ${stripOuter(this.val(block, "ITEM"))})`);
+            break;
+          case "data_replaceitemoflist":
+            this.line(`${this.varName(block.fields.LIST)}[${stripOuter(this.index(block, "INDEX"))}] = ${stripOuter(this.val(block, "ITEM"))}`);
+            break;
+          // sensing
+          case "sensing_resettimer":
+            this.line("reset_timer()");
+            break;
+          case "sensing_askandwait":
+            this.assign("answer");
+            this.line(`answer = input(${stripOuter(this.text(block, "QUESTION"))})`);
+            break;
+          // looks: map speech to print so students see output
+          case "looks_say":
+          case "looks_think":
+            this.line(`print(${stripOuter(this.val(block, "MESSAGE"))})`);
+            break;
+          case "looks_sayforsecs":
+          case "looks_thinkforsecs":
+            this.line(`print(${stripOuter(this.val(block, "MESSAGE"))})`);
+            this.line(`wait(${a("SECS")})`);
+            break;
+          // custom blocks
+          case "procedures_call":
+            this.procedureCall(block);
+            break;
+          default:
+            this.warnings.push(op);
+            this.line(`# [변환 안 됨] ${op}`);
+        }
+      }
+      cm550Statement(block, op) {
+        const n = (name) => stripOuter(this.num(block, name));
+        const id = () => n("ID");
+        const portOf = () => `port(${n("PORT")})`;
+        switch (op) {
+          case "connect":
+            this.line(`cm.connect(${this.choice(block, "KIND")})`);
+            break;
+          case "disconnect":
+            this.line("cm.disconnect()");
+            break;
+          case "dxlTorque":
+            this.line(`dxl.torque(${id()}, ${this.onOff(block, "ONOFF")})`);
+            break;
+          case "dxlMoveTo":
+            this.line(`dxl.move_to(${id()}, ${n("DEG")}, speed=${n("SPEED")})`);
+            break;
+          case "dxlMoveToWait":
+            this.line(`dxl.move_to(${id()}, ${n("DEG")}, speed=${n("SPEED")}, wait=True)`);
+            break;
+          case "dxlMoveTwo":
+            this.line(`dxl.move_together({${n("ID1")}: ${n("DEG1")}, ${n("ID2")}: ${n("DEG2")}})`);
+            break;
+          case "dxlWheel":
+            this.line(`dxl.wheel(${id()}, ${n("SPEED")})`);
+            break;
+          case "dxlWheelTwo":
+            this.line(`dxl.wheels(${n("ID1")}, ${n("SPEED1")}, ${n("ID2")}, ${n("SPEED2")})`);
+            break;
+          case "dxlStop":
+            this.line(`dxl.stop(${id()})`);
+            break;
+          case "dxlModuleMove": {
+            const [a, b] = this.moduleIds(block);
+            this.line(`dxl.move_together({${a}: ${n("DEGA")}, ${b}: ${n("DEGB")}})`);
+            break;
+          }
+          case "dxlModuleWheels": {
+            const [a, b] = this.moduleIds(block);
+            this.line(`dxl.wheels(${a}, ${n("SPA")}, ${b}, ${n("SPB")})`);
+            break;
+          }
+          case "dxlGrip":
+            this.line(`dxl.grip(${id()}, ${n("DEG")}, force=${n("FORCE")})`);
+            break;
+          case "dxlSetMode":
+            this.line(`dxl.set_mode(${id()}, ${this.choice(block, "MODE", { velocity: "wheel" })})`);
+            break;
+          case "dxlLed":
+            this.line(`dxl.led(${id()}, ${this.onOff(block, "ONOFF")})`);
+            break;
+          case "dxlAllTorque":
+            this.line(`dxl.torque_all(${this.onOff(block, "ONOFF")})`);
+            break;
+          case "cmLedColor":
+            this.line(`cm.led_color(${this.choice(block, "COLOR")})`);
+            break;
+          case "cmLed":
+            this.line(`cm.led(${this.choice(block, "COLOR")}, ${this.onOff(block, "ONOFF")})`);
+            break;
+          case "cmBuzzerNote":
+            this.line(`cm.play_note(${n("NOTE")}, ${n("SECS")})`);
+            break;
+          case "cmBuzzerMelody":
+            this.line(`cm.play_melody(${n("INDEX")})`);
+            break;
+          case "cmSoundReset":
+            this.line("cm.reset_sound_count()");
+            break;
+          case "cmDxlPower":
+            this.line(`cm.dxl_power(${this.onOff(block, "ONOFF")})`);
+            break;
+          case "portLed":
+            this.line(`${portOf()}.led(${this.choice(block, "STATE")})`);
+            break;
+          case "portServo":
+            this.line(`${portOf()}.servo(${n("DEG")})`);
+            break;
+          case "portMotor":
+            this.line(`${portOf()}.motor(${n("SPEED")})`);
+            break;
+          case "motionPlay":
+            this.line(`motion.play(${n("PAGE")})`);
+            break;
+          case "motionPlayWait":
+            this.line(`motion.play(${n("PAGE")}, wait=True)`);
+            break;
+          case "motionStop":
+            this.line(`motion.stop(${this.choice(block, "HOW")})`);
+            break;
+          case "motionSpeed":
+            this.line(`motion.set_speed(${n("PERCENT")})`);
+            break;
+          case "motionNext":
+            this.line(`motion.set_next(${n("PAGE")})`);
+            break;
+          case "rawWrite":
+            this.line(`cm.write(${n("ID")}, ${n("ADDR")}, ${n("VALUE")}, size=${n("SIZE")})`);
+            break;
+          default:
+            this.warnings.push(`cm550_${op}`);
+            this.line(`# [변환 안 됨] cm550_${op}`);
+        }
+      }
+      /** "a,b" module menu value -> two id literals */
+      moduleIds(block) {
+        const a = this.arg(block, "MODULE");
+        const parts = a && a.literal ? String(a.value).split(",") : ["1", "2"];
+        return parts.slice(0, 2).map((x) => formatNumber(x));
+      }
+      // ------------------------------------------------------------------
+      // custom blocks ("내 블록")
+      // ------------------------------------------------------------------
+      procInfo(mutation) {
+        const proccode = mutation.proccode || "";
+        if (!this.procNames.has(proccode)) {
+          const words = proccode.split(/%[snb]/).map((s) => s.trim()).filter(Boolean).join("_");
+          this.procNames.set(proccode, this._uniqueName(sanitizeIdentifier(words, "my_block")));
+        }
+        return {
+          name: this.procNames.get(proccode),
+          argumentIds: parseJSON(mutation.argumentids, []),
+          argumentNames: parseJSON(mutation.argumentnames, [])
+        };
+      }
+      procedureCall(block) {
+        if (!block.mutation) {
+          this.line("# [변환 안 됨] procedures_call");
+          return;
+        }
+        const { name, argumentIds } = this.procInfo(block.mutation);
+        const args = argumentIds.map((argId) => {
+          const input = block.inputs && block.inputs[argId];
+          if (!input || !input.block) return "False";
+          return stripOuter(this.val(block, argId));
+        });
+        this.line(`${name}(${args.join(", ")})`);
+      }
+      procedureDefinition(hat) {
+        const protoInput = hat.inputs && hat.inputs.custom_block;
+        const proto = protoInput && this.blocks[protoInput.block];
+        if (!proto || !proto.mutation) return;
+        const { name, argumentNames } = this.procInfo(proto.mutation);
+        const params = /* @__PURE__ */ new Map();
+        const used = /* @__PURE__ */ new Set();
+        for (const label2 of argumentNames) {
+          let p = sanitizeIdentifier(label2, "arg");
+          while (used.has(p)) p = `${p}_`;
+          used.add(p);
+          params.set(label2, p);
+        }
+        this.emitFunction(`def ${name}(${Array.from(params.values()).join(", ")}):`, hat.next, params);
+      }
+      /**
+       * Emit `def ...:` + body, with `global` declarations for assigned variables.
+       * @param header
+       * @param bodyStartId
+       * @param params
+       * @param decorator
+       */
+      emitFunction(header, bodyStartId, params = /* @__PURE__ */ new Map(), decorator = null) {
+        const saved = { lines: this.lines, fn: this.fn, indent: this.indent };
+        this.lines = [];
+        this.fn = { assigned: /* @__PURE__ */ new Set(), params, isFunction: true };
+        this.indent = 1;
+        this.stack(bodyStartId);
+        const bodyLines = this.lines;
+        const assigned = Array.from(this.fn.assigned).filter((v) => !Array.from(params.values()).includes(v));
+        this.lines = saved.lines;
+        this.fn = saved.fn;
+        this.indent = saved.indent;
+        if (decorator) this.line(decorator);
+        this.line(header);
+        if (assigned.length) this.line(`${INDENT}global ${assigned.join(", ")}`);
+        if (bodyLines.length) this.lines.push(...bodyLines);
+        else if (!assigned.length) this.line(`${INDENT}pass`);
+        this.line("");
+      }
+      // ------------------------------------------------------------------
+      // whole program
+      // ------------------------------------------------------------------
+      hatDecorator(hat) {
+        switch (hat.opcode) {
+          case "event_whenflagclicked":
+            return "@when_flag_clicked";
+          case "event_whenkeypressed":
+            return `@when_key_pressed(${pyString(hat.fields.KEY_OPTION ? hat.fields.KEY_OPTION.value : "space")})`;
+          case "event_whenbroadcastreceived":
+            return `@when_broadcast(${pyString(hat.fields.BROADCAST_OPTION ? hat.fields.BROADCAST_OPTION.value : "")})`;
+          case "event_whenthisspriteclicked":
+          case "event_whenstageclicked":
+            return "@when_clicked";
+          default:
+            return null;
+        }
+      }
+      generate() {
+        const tops = Object.values(this.blocks).filter((b) => b.topLevel && !b.shadow).sort((a, b) => (a.y || 0) - (b.y || 0) || (a.x || 0) - (b.x || 0));
+        const procedures = tops.filter((b) => b.opcode === "procedures_definition");
+        const hats = tops.filter((b) => this.hatDecorator(b));
+        const unknownHats = tops.filter((b) => b.opcode !== "procedures_definition" && !this.hatDecorator(b) && /^(event_when|control_start_as_clone|cm550_when)/.test(b.opcode));
+        const loose = tops.length - procedures.length - hats.length - unknownHats.length;
+        const flagHats = hats.filter((h) => h.opcode === "event_whenflagclicked");
+        const simpleMain = flagHats.length === 1 && hats.length === 1;
+        for (const p of procedures) this.procedureDefinition(p);
+        if (simpleMain) {
+          this.line("# 초록 깃발을 클릭했을 때");
+          this.fn = { assigned: /* @__PURE__ */ new Set(), params: /* @__PURE__ */ new Map(), isFunction: false };
+          const before = this.lines.length;
+          this.stack(flagHats[0].next);
+          if (this.lines.length === before) this.line("pass");
+          this.fn = null;
+        } else if (hats.length) {
+          const counters = {};
+          for (const hat of hats) {
+            const base = {
+              event_whenflagclicked: "on_start",
+              event_whenkeypressed: "on_key",
+              event_whenbroadcastreceived: "on_message",
+              event_whenthisspriteclicked: "on_click",
+              event_whenstageclicked: "on_click"
+            }[hat.opcode];
+            counters[base] = (counters[base] || 0) + 1;
+            const fname = this._uniqueName(counters[base] === 1 ? base : `${base}_${counters[base]}`);
+            this.emitFunction(`def ${fname}():`, hat.next, /* @__PURE__ */ new Map(), this.hatDecorator(hat));
+          }
+          this.line("# 위의 스크립트들을 동시에 실행합니다");
+          this.line("start()");
+        }
+        for (const h of unknownHats) this.warnings.push(h.opcode);
+        const header = [];
+        header.push(`# 블록에서 자동으로 만들어진 Python 코드${this.targetName ? ` (${this.targetName})` : ""}`);
+        header.push("from cm550 import *");
+        if (this.uses.has("math")) header.push("import math");
+        if (this.uses.has("random")) header.push("import random");
+        header.push("");
+        const varLines = [];
+        for (const [id, name] of this.varNames) {
+          if (!this.usedVarIds.has(id)) continue;
+          const v = this.varsById.get(id) || {};
+          if (v.type === "list") {
+            const items = (Array.isArray(v.value) ? v.value : []).map((x) => isNumeric(x) ? formatNumber(x) : pyString(x));
+            varLines.push(`${name} = [${items.join(", ")}]`);
+          } else {
+            const value = typeof v.value === "undefined" ? 0 : v.value;
+            varLines.push(`${name} = ${isNumeric(value) ? formatNumber(value) : pyString(value)}`);
+          }
+        }
+        if (varLines.length) header.push(...varLines, "");
+        const notes = [];
+        const uniqueWarnings = Array.from(new Set(this.warnings));
+        if (uniqueWarnings.length) {
+          notes.push(`# 참고: Python으로 바꾸지 못한 블록이 있습니다 — ${uniqueWarnings.join(", ")}`);
+        }
+        if (loose > 0) notes.push(`# 참고: 시작 블록에 연결되지 않은 블록 묶음 ${loose}개는 제외했습니다`);
+        if (notes.length) header.push(...notes, "");
+        if (!tops.length || !procedures.length && !hats.length) {
+          header.push('# "초록 깃발을 클릭했을 때" 블록 아래에 블록을 연결하면 여기에 코드가 나타납니다');
+        }
+        const out = header.concat(this.lines);
+        while (out.length && out[out.length - 1].trim() === "") out.pop();
+        return `${out.join("\n")}
+`;
+      }
+    };
+    var generatePython = (opts) => new PythonGenerator(opts).generate();
+    var fromVM = (vm2) => {
+      const target = vm2 && vm2.editingTarget;
+      if (!target) return { blocks: {}, variables: [], targetName: "" };
+      const stage = vm2.runtime.getTargetForStage ? vm2.runtime.getTargetForStage() : null;
+      const variables2 = [];
+      const pushVars = (t) => {
+        if (!t || !t.variables) return;
+        for (const v of Object.values(t.variables)) {
+          variables2.push({ id: v.id, name: v.name, type: v.type, value: v.value });
+        }
+      };
+      if (stage && stage !== target) pushVars(stage);
+      pushVars(target);
+      return {
+        blocks: target.blocks._blocks,
+        variables: variables2,
+        targetName: target.isStage ? "무대" : target.getName()
+      };
+    };
+    module.exports = { generatePython, fromVM, sanitizeIdentifier, stripOuter };
+  }
+});
+
+// ../scratch-cm550/src/python-highlight.js
+var require_python_highlight = __commonJS({
+  "../scratch-cm550/src/python-highlight.js"(exports, module) {
+    var KEYWORDS = /* @__PURE__ */ new Set([
+      "def",
+      "if",
+      "else",
+      "elif",
+      "while",
+      "for",
+      "in",
+      "not",
+      "and",
+      "or",
+      "return",
+      "global",
+      "import",
+      "from",
+      "pass",
+      "del",
+      "True",
+      "False",
+      "None",
+      "break",
+      "continue"
+    ]);
+    var API = /* @__PURE__ */ new Set(["cm", "dxl", "port", "motion"]);
+    var BUILTINS = /* @__PURE__ */ new Set([
+      "print",
+      "input",
+      "range",
+      "len",
+      "str",
+      "int",
+      "round",
+      "abs",
+      "wait",
+      "timer",
+      "reset_timer",
+      "key_pressed",
+      "broadcast",
+      "stop_all",
+      "start",
+      "math",
+      "random"
+    ]);
+    var escapeHtml = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    var TOKEN = new RegExp([
+      "(#[^\\n]*)",
+      // comment
+      '("(?:[^"\\\\\\n]|\\\\.)*")',
+      // string
+      "(@[\\p{L}\\p{N}_]+)",
+      // decorator
+      "((?<![\\p{L}\\p{N}_])-?\\d+(?:\\.\\d+)?)",
+      // number
+      "([\\p{L}_][\\p{L}\\p{N}_]*)"
+      // identifier / keyword
+    ].join("|"), "gu");
+    var highlightPython = (src, cls = {}) => {
+      const c = Object.assign({
+        comment: "py-comment",
+        string: "py-string",
+        decorator: "py-decorator",
+        number: "py-number",
+        keyword: "py-keyword",
+        api: "py-api",
+        builtin: "py-builtin"
+      }, cls);
+      let out = "";
+      let last = 0;
+      const span = (kind, text2) => `<span class="${c[kind]}">${escapeHtml(text2)}</span>`;
+      src.replace(TOKEN, (m, comment, string, deco, number, word, offset) => {
+        out += escapeHtml(src.slice(last, offset));
+        last = offset + m.length;
+        if (comment) out += span("comment", m);
+        else if (string) out += span("string", m);
+        else if (deco) out += span("decorator", m);
+        else if (number) out += span("number", m);
+        else if (KEYWORDS.has(word)) out += span("keyword", m);
+        else if (API.has(word)) out += span("api", m);
+        else if (BUILTINS.has(word)) out += span("builtin", m);
+        else out += escapeHtml(m);
+        return m;
+      });
+      out += escapeHtml(src.slice(last));
+      return out;
+    };
+    module.exports = { highlightPython, escapeHtml };
+  }
+});
+
+// ../scratch-cm550/src/python-panel-dom.js
+var require_python_panel_dom = __commonJS({
+  "../scratch-cm550/src/python-panel-dom.js"(exports, module) {
+    var { generatePython, fromVM } = require_python_generator();
+    var { highlightPython } = require_python_highlight();
+    var P = "cm550py";
+    var CSS = `
+.${P}-panel{position:absolute;top:0;right:0;bottom:0;z-index:30;display:flex;flex-direction:column;
+  background:#fbfcfe;border-left:1px solid rgba(0,0,0,.15);box-shadow:-4px 0 12px rgba(0,0,0,.08);
+  font-family:"Helvetica Neue",Helvetica,Arial,sans-serif}
+.${P}-resizer{position:absolute;top:0;bottom:0;left:-3px;width:6px;cursor:col-resize}
+.${P}-resizer:hover{background:rgba(46,124,246,.35)}
+.${P}-header{display:flex;align-items:center;gap:.5rem;padding:.5rem .75rem;background:#2e7cf6;color:#fff}
+.${P}-title{font-weight:bold;font-size:.95rem;flex-shrink:0}
+.${P}-sub{flex:1;min-width:0;font-size:.7rem;opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.${P}-btn{flex-shrink:0;white-space:nowrap;padding:.2rem .6rem;border:1px solid rgba(255,255,255,.6);border-radius:.25rem;
+  background:transparent;color:#fff;font-size:.75rem;cursor:pointer}
+.${P}-btn:hover{background:rgba(255,255,255,.2)}
+.${P}-scroll{display:flex;flex:1;overflow:auto;font:.8rem/1.5 "SFMono-Regular",Consolas,"D2Coding",Menlo,monospace}
+.${P}-gutter,.${P}-code{margin:0;padding:.6rem 0;white-space:pre}
+.${P}-gutter{flex-shrink:0;padding:.6rem;text-align:right;color:#9aa5b8;background:#f1f4f9;border-right:1px solid #e3e8f0;user-select:none}
+.${P}-code{flex:1;padding:.6rem .75rem;color:#1f2a3c}
+.${P}-tab{position:absolute;top:.75rem;right:0;z-index:30;padding:.6rem .3rem;border:0;border-radius:.5rem 0 0 .5rem;
+  background:#2e7cf6;color:#fff;font-weight:bold;font-size:.8rem;writing-mode:vertical-rl;cursor:pointer}
+.${P}-tab:hover{background:#1f5fc4}
+.${P}-docked .${P}-panel{position:relative;top:auto;right:auto;bottom:auto;height:100%;box-shadow:none;border-left:1px solid #dde3ec}
+.${P}-docked .${P}-tab{position:relative;top:auto;height:100%;border-radius:0;padding:.75rem .35rem}
+.${P}-docked{display:flex;height:100%}
+.py-comment{color:#6a7a8f;font-style:italic}.py-string{color:#b3541e}.py-decorator{color:#8a3ffc}
+.py-number{color:#0f7b6c}.py-keyword{color:#c2185b;font-weight:bold}.py-api{color:#1f5fc4;font-weight:bold}
+.py-builtin{color:#5c6bc0}
+`;
+    var store = {
+      get(k, d) {
+        try {
+          const v = localStorage.getItem(k);
+          return v === null ? d : JSON.parse(v);
+        } catch (e) {
+          return d;
+        }
+      },
+      set(k, v) {
+        try {
+          localStorage.setItem(k, JSON.stringify(v));
+        } catch (e) {
+        }
+      }
+    };
+    var el3 = (tag, cls, text2) => {
+      const e = document.createElement(tag);
+      if (cls) e.className = cls;
+      if (text2) e.textContent = text2;
+      return e;
+    };
+    var mountPythonPanel2 = (vm2, options = {}) => {
+      if (typeof document === "undefined" || !vm2 || typeof vm2.on !== "function") return;
+      if (document.getElementById(`${P}-style`)) return;
+      const style2 = el3("style");
+      style2.id = `${P}-style`;
+      style2.textContent = CSS;
+      document.head.appendChild(style2);
+      let open = store.get(`${P}.open`, true);
+      let width = store.get(`${P}.width`, Math.round(Math.max(280, Math.min(380, window.innerWidth * 0.24))));
+      let code = "";
+      const panel = el3("section", `${P}-panel`);
+      panel.setAttribute("aria-label", "Python 코드");
+      const resizer = el3("div", `${P}-resizer`);
+      const header = el3("header", `${P}-header`);
+      const copyBtn = el3("button", `${P}-btn`, "복사");
+      const closeBtn = el3("button", `${P}-btn`, "닫기");
+      header.append(
+        el3("span", `${P}-title`, "Python"),
+        el3("span", `${P}-sub`, "블록에서 자동 생성 · 읽기 전용"),
+        copyBtn,
+        closeBtn
+      );
+      const scroll = el3("div", `${P}-scroll`);
+      const gutter = el3("pre", `${P}-gutter`);
+      const pre = el3("pre", `${P}-code`);
+      scroll.append(gutter, pre);
+      panel.append(resizer, header, scroll);
+      const tab = el3("button", `${P}-tab`, "Python");
+      tab.title = "Python 코드 보기";
+      if (options.accent) {
+        header.style.background = options.accent;
+        tab.style.background = options.accent;
+      }
+      const render = () => {
+        panel.style.width = `${width}px`;
+        panel.style.display = open ? "flex" : "none";
+        tab.style.display = open ? "none" : "block";
+        if (options.onToggle) options.onToggle(open);
+      };
+      const regenerate = () => {
+        let next;
+        try {
+          next = generatePython(fromVM(vm2));
+        } catch (e) {
+          next = `# Python 변환 중 오류가 발생했습니다
+# ${e && e.message}
+`;
+        }
+        if (next === code) return;
+        code = next;
+        const n = code.replace(/\n$/, "").split("\n").length;
+        gutter.textContent = Array.from({ length: n }, (_, i) => i + 1).join("\n");
+        pre.innerHTML = highlightPython(code);
+      };
+      let timer = null;
+      const schedule = () => {
+        clearTimeout(timer);
+        timer = setTimeout(regenerate, 150);
+      };
+      closeBtn.onclick = () => {
+        open = false;
+        store.set(`${P}.open`, open);
+        render();
+      };
+      tab.onclick = () => {
+        open = true;
+        store.set(`${P}.open`, open);
+        render();
+      };
+      copyBtn.onclick = () => {
+        if (!navigator.clipboard) return;
+        navigator.clipboard.writeText(code).then(() => {
+          copyBtn.textContent = "복사됨";
+          setTimeout(() => {
+            copyBtn.textContent = "복사";
+          }, 1500);
+        }, () => {
+        });
+      };
+      resizer.onmousedown = (e) => {
+        e.preventDefault();
+        const startX = e.clientX;
+        const startW = width;
+        const move = (ev) => {
+          width = Math.max(240, Math.min(900, startW + (startX - ev.clientX)));
+          render();
+        };
+        const up = () => {
+          window.removeEventListener("mousemove", move);
+          window.removeEventListener("mouseup", up);
+          store.set(`${P}.width`, width);
+        };
+        window.addEventListener("mousemove", move);
+        window.addEventListener("mouseup", up);
+      };
+      if (options.host) {
+        options.host.classList.add(`${P}-docked`);
+        options.host.append(tab, panel);
+      } else {
+        const attach = () => {
+          const bg = document.querySelector(".blocklyMainBackground");
+          const host = bg && bg.closest(".injectionDiv");
+          if (host && panel.parentElement !== host) {
+            host.append(panel, tab);
+            schedule();
+          }
+        };
+        setInterval(attach, 1e3);
+        attach();
+      }
+      vm2.on("PROJECT_CHANGED", schedule);
+      vm2.on("workspaceUpdate", schedule);
+      vm2.on("targetsUpdate", schedule);
+      render();
+      regenerate();
+      return { regenerate: schedule, getCode: () => code };
+    };
+    module.exports = { mountPythonPanel: mountPythonPanel2 };
+  }
+});
+
+// ../scratch-cm550/src/protocol2.js
+var require_protocol2 = __commonJS({
+  "../scratch-cm550/src/protocol2.js"(exports, module) {
+    var INST = {
+      PING: 1,
+      READ: 2,
+      WRITE: 3,
+      REG_WRITE: 4,
+      ACTION: 5,
+      FACTORY_RESET: 6,
+      REBOOT: 8,
+      CLEAR: 16,
+      STATUS: 85,
+      SYNC_READ: 130,
+      SYNC_WRITE: 131,
+      BULK_READ: 146,
+      BULK_WRITE: 147
+    };
+    var BROADCAST_ID = 254;
+    var CRC_TABLE = (() => {
+      const table = new Uint16Array(256);
+      for (let i = 0; i < 256; i++) {
+        let c = i << 8;
+        for (let j = 0; j < 8; j++) {
+          c = c & 32768 ? c << 1 ^ 32773 : c << 1;
+          c &= 65535;
+        }
+        table[i] = c;
+      }
+      return table;
+    })();
+    var crc16 = (bytes, length = bytes.length) => {
+      let crc = 0;
+      for (let i = 0; i < length; i++) {
+        const idx = (crc >> 8 ^ bytes[i]) & 255;
+        crc = (crc << 8 ^ CRC_TABLE[idx]) & 65535;
+      }
+      return crc;
+    };
+    var stuff = (bytes) => {
+      const out = [];
+      let ff = 0;
+      for (const b of bytes) {
+        out.push(b);
+        if (ff >= 2 && b === 253) {
+          out.push(253);
+          ff = 0;
+        } else if (b === 255) {
+          ff++;
+        } else {
+          ff = 0;
+        }
+      }
+      return out;
+    };
+    var unstuff = (bytes) => {
+      const out = [];
+      let ff = 0;
+      for (let i = 0; i < bytes.length; i++) {
+        const b = bytes[i];
+        if (ff >= 2 && b === 253 && bytes[i + 1] === 253) {
+          out.push(253);
+          i++;
+          ff = 0;
+          continue;
+        }
+        out.push(b);
+        ff = b === 255 ? ff + 1 : 0;
+      }
+      return out;
+    };
+    var buildPacket = (id, instruction, params = []) => {
+      const body = stuff([instruction, ...params]);
+      const length = body.length + 2;
+      const pkt = [255, 255, 253, 0, id & 255, length & 255, length >> 8 & 255, ...body];
+      const crc = crc16(pkt);
+      pkt.push(crc & 255, crc >> 8 & 255);
+      return Uint8Array.from(pkt);
+    };
+    var le2 = (value, size) => {
+      const v = value < 0 ? value + 2 ** (size * 8) : value;
+      const out = [];
+      for (let i = 0; i < size; i++) out.push(v >>> 8 * i & 255);
+      return out;
+    };
+    var fromLE = (bytes, offset, size, signed2 = false) => {
+      let v = 0;
+      for (let i = 0; i < size; i++) v += bytes[offset + i] * 2 ** (8 * i);
+      if (signed2 && v >= 2 ** (size * 8 - 1)) v -= 2 ** (size * 8);
+      return v;
+    };
+    var ping = (id) => buildPacket(id, INST.PING);
+    var read = (id, address, size) => buildPacket(id, INST.READ, [...le2(address, 2), ...le2(size, 2)]);
+    var write = (id, address, value, size) => buildPacket(id, INST.WRITE, [...le2(address, 2), ...le2(value, size)]);
+    var writeBytes = (id, address, bytes) => buildPacket(id, INST.WRITE, [...le2(address, 2), ...bytes]);
+    var reboot = (id) => buildPacket(id, INST.REBOOT);
+    var syncWrite = (address, size, items) => {
+      const params = [...le2(address, 2), ...le2(size, 2)];
+      for (const it of items) params.push(it.id & 255, ...le2(it.value, size));
+      return buildPacket(BROADCAST_ID, INST.SYNC_WRITE, params);
+    };
+    var syncRead = (address, size, ids) => buildPacket(BROADCAST_ID, INST.SYNC_READ, [...le2(address, 2), ...le2(size, 2), ...ids.map((i) => i & 255)]);
+    var ERROR_NAMES = {
+      1: "처리 실패 (Result Fail)",
+      2: "알 수 없는 명령 (Instruction Error)",
+      3: "통신 오류 (CRC Error)",
+      4: "값이 범위를 벗어남 (Data Range Error)",
+      5: "데이터 길이 오류 (Data Length Error)",
+      6: "값이 제한을 넘음 (Data Limit Error)",
+      7: "접근 오류 — 토크가 켜져 있어 설정을 바꿀 수 없거나 읽기 전용 (Access Error)"
+    };
+    var PacketParser = class {
+      constructor(onPacket) {
+        this.onPacket = onPacket;
+        this.buf = [];
+      }
+      reset() {
+        this.buf = [];
+      }
+      push(chunk) {
+        for (const b of chunk) this.buf.push(b);
+        this._drain();
+      }
+      _drain() {
+        for (; ; ) {
+          let start = -1;
+          for (let i = 0; i + 3 < this.buf.length; i++) {
+            if (this.buf[i] === 255 && this.buf[i + 1] === 255 && this.buf[i + 2] === 253 && this.buf[i + 3] === 0) {
+              start = i;
+              break;
+            }
+          }
+          if (start < 0) {
+            if (this.buf.length > 3) this.buf = this.buf.slice(-3);
+            return;
+          }
+          if (start > 0) this.buf = this.buf.slice(start);
+          if (this.buf.length < 7) return;
+          const length = this.buf[5] | this.buf[6] << 8;
+          const total = 7 + length;
+          if (this.buf.length < total) return;
+          const raw = this.buf.slice(0, total);
+          this.buf = this.buf.slice(total);
+          const crc = raw[total - 2] | raw[total - 1] << 8;
+          if (crc16(raw, total - 2) !== crc) {
+            continue;
+          }
+          const body = unstuff(raw.slice(7, total - 2));
+          const packet = {
+            id: raw[4],
+            instruction: body[0],
+            error: body.length > 1 ? body[1] & 127 : 0,
+            alert: body.length > 1 ? Boolean(body[1] & 128) : false,
+            params: body.slice(2)
+          };
+          this.onPacket(packet);
+        }
+      }
+    };
+    module.exports = {
+      INST,
+      BROADCAST_ID,
+      ERROR_NAMES,
+      crc16,
+      buildPacket,
+      le: le2,
+      fromLE,
+      ping,
+      read,
+      write,
+      writeBytes,
+      reboot,
+      syncWrite,
+      syncRead,
+      PacketParser
+    };
+  }
+});
+
+// ../scratch-cm550/src/transport.js
+var require_transport = __commonJS({
+  "../scratch-cm550/src/transport.js"(exports, module) {
+    var CM550_USB_FILTERS = [
+      { usbVendorId: 1155 },
+      // STMicroelectronics (CM-550 MCU: STM32F4 CDC)
+      { usbVendorId: 5840 }
+      // ROBOTIS (OpenCM / LN-101 family)
+    ];
+    var WebSerialTransport = class _WebSerialTransport {
+      constructor(options = {}) {
+        this.baudRate = options.baudRate || 1e6;
+        this.port = null;
+        this.reader = null;
+        this.writer = null;
+        this._dataCb = null;
+        this._closeCb = null;
+        this._readLoop = null;
+      }
+      static get available() {
+        return typeof navigator !== "undefined" && Boolean(navigator.serial);
+      }
+      get isOpen() {
+        return Boolean(this.port && this.writer);
+      }
+      get name() {
+        return "USB";
+      }
+      onData(cb) {
+        this._dataCb = cb;
+      }
+      onClose(cb) {
+        this._closeCb = cb;
+      }
+      async open() {
+        if (!_WebSerialTransport.available) {
+          throw new Error("이 브라우저는 Web Serial을 지원하지 않습니다. Chrome 또는 Edge를 사용하세요.");
+        }
+        let port;
+        try {
+          port = await navigator.serial.requestPort({ filters: CM550_USB_FILTERS });
+        } catch (e) {
+          if (e && e.name === "NotFoundError") {
+            port = await navigator.serial.requestPort();
+          } else {
+            throw e;
+          }
+        }
+        await port.open({ baudRate: this.baudRate, bufferSize: 4096 });
+        this.port = port;
+        this.writer = port.writable.getWriter();
+        this._readLoop = this._startReadLoop();
+      }
+      async _startReadLoop() {
+        while (this.port && this.port.readable) {
+          this.reader = this.port.readable.getReader();
+          try {
+            for (; ; ) {
+              const { value, done } = await this.reader.read();
+              if (done) break;
+              if (value && this._dataCb) this._dataCb(value);
+            }
+          } catch (e) {
+            break;
+          } finally {
+            try {
+              this.reader.releaseLock();
+            } catch (e) {
+            }
+            this.reader = null;
+          }
+        }
+        await this._teardown();
+      }
+      async write(bytes) {
+        if (!this.writer) throw new Error("USB가 연결되어 있지 않습니다.");
+        await this.writer.write(bytes);
+      }
+      async close() {
+        if (this.reader) {
+          try {
+            await this.reader.cancel();
+          } catch (e) {
+          }
+        }
+        await this._teardown();
+      }
+      async _teardown() {
+        const wasOpen = this.isOpen;
+        if (this.writer) {
+          try {
+            this.writer.releaseLock();
+          } catch (e) {
+          }
+          this.writer = null;
+        }
+        if (this.port) {
+          try {
+            await this.port.close();
+          } catch (e) {
+          }
+          this.port = null;
+        }
+        if (wasOpen && this._closeCb) this._closeCb();
+      }
+    };
+    var BLE_PROFILES = [
+      { service: "0000fff0-0000-1000-8000-00805f9b34fb" },
+      // BT-410 / common BLE-UART modules
+      { service: "0000ffe0-0000-1000-8000-00805f9b34fb" },
+      // HM-10 style
+      { service: "6e400001-b5a3-f393-e0a9-e50e24dcca9e" }
+      // Nordic UART Service
+    ];
+    var BLE_CHUNK = 20;
+    var WebBluetoothTransport = class _WebBluetoothTransport {
+      constructor(options = {}) {
+        this.namePrefix = options.namePrefix;
+        this.device = null;
+        this.server = null;
+        this.txChar = null;
+        this.rxChar = null;
+        this._dataCb = null;
+        this._closeCb = null;
+        this._onDisconnected = this._onDisconnected.bind(this);
+        this._onNotify = this._onNotify.bind(this);
+        this._writeQueue = Promise.resolve();
+      }
+      static get available() {
+        return typeof navigator !== "undefined" && Boolean(navigator.bluetooth);
+      }
+      get isOpen() {
+        return Boolean(this.server && this.server.connected && this.txChar);
+      }
+      get name() {
+        return "BLE";
+      }
+      onData(cb) {
+        this._dataCb = cb;
+      }
+      onClose(cb) {
+        this._closeCb = cb;
+      }
+      async open() {
+        if (!_WebBluetoothTransport.available) {
+          throw new Error("이 브라우저는 Web Bluetooth를 지원하지 않습니다. Chrome 또는 Edge를 사용하세요.");
+        }
+        const optionalServices = BLE_PROFILES.map((p) => p.service);
+        const request = this.namePrefix ? { filters: [{ namePrefix: this.namePrefix }], optionalServices } : { acceptAllDevices: true, optionalServices };
+        const device = await navigator.bluetooth.requestDevice(request);
+        device.addEventListener("gattserverdisconnected", this._onDisconnected);
+        const server = await device.gatt.connect();
+        let found = null;
+        for (const profile of BLE_PROFILES) {
+          try {
+            const service = await server.getPrimaryService(profile.service);
+            const chars = await service.getCharacteristics();
+            const tx = chars.find((c) => c.properties.writeWithoutResponse || c.properties.write);
+            const rx = chars.find((c) => c.properties.notify || c.properties.indicate);
+            if (tx && rx) {
+              found = { tx, rx };
+              break;
+            }
+          } catch (e) {
+          }
+        }
+        if (!found) {
+          try {
+            server.disconnect();
+          } catch (e) {
+          }
+          throw new Error("BLE 시리얼 서비스를 찾을 수 없습니다. CM-550의 MODE 버튼으로 블루투스 모드(초록 LED 점멸)를 켜 주세요.");
+        }
+        this.device = device;
+        this.server = server;
+        this.txChar = found.tx;
+        this.rxChar = found.rx;
+        await this.rxChar.startNotifications();
+        this.rxChar.addEventListener("characteristicvaluechanged", this._onNotify);
+      }
+      _onNotify(event) {
+        const dv = event.target.value;
+        if (dv && this._dataCb) {
+          this._dataCb(new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength));
+        }
+      }
+      _onDisconnected() {
+        const wasOpen = Boolean(this.txChar);
+        this.txChar = null;
+        this.rxChar = null;
+        this.server = null;
+        if (wasOpen && this._closeCb) this._closeCb();
+      }
+      write(bytes) {
+        if (!this.isOpen) return Promise.reject(new Error("블루투스가 연결되어 있지 않습니다."));
+        this._writeQueue = this._writeQueue.then(async () => {
+          for (let i = 0; i < bytes.length; i += BLE_CHUNK) {
+            const chunk = bytes.subarray(i, Math.min(i + BLE_CHUNK, bytes.length));
+            if (this.txChar.properties.writeWithoutResponse) {
+              await this.txChar.writeValueWithoutResponse(chunk);
+            } else {
+              await this.txChar.writeValueWithResponse(chunk);
+            }
+          }
+        }).catch(() => {
+        });
+        return this._writeQueue;
+      }
+      async close() {
+        if (this.rxChar) {
+          try {
+            this.rxChar.removeEventListener("characteristicvaluechanged", this._onNotify);
+          } catch (e) {
+          }
+          try {
+            await this.rxChar.stopNotifications();
+          } catch (e) {
+          }
+        }
+        if (this.device) {
+          this.device.removeEventListener("gattserverdisconnected", this._onDisconnected);
+          if (this.device.gatt.connected) this.device.gatt.disconnect();
+        }
+        this._onDisconnected();
+        this.device = null;
+      }
+    };
+    module.exports = { WebSerialTransport, WebBluetoothTransport, BLE_PROFILES, CM550_USB_FILTERS };
+  }
+});
+
+// ../scratch-cm550/src/cm550.js
+var require_cm550 = __commonJS({
+  "../scratch-cm550/src/cm550.js"(exports, module) {
+    var P22 = require_protocol2();
+    var { WebSerialTransport, WebBluetoothTransport } = require_transport();
+    var { modelInfo: modelInfo2, modelName: modelName3, describeMotors } = require_models();
+    var CM550_ID = 200;
+    var CM = {
+      MODEL_NUMBER: { addr: 0, size: 2 },
+      FIRMWARE_VERSION: { addr: 6, size: 1 },
+      MODE_NUMBER: { addr: 21, size: 1 },
+      // 0 IDLE, 1 Task Play, 2 Manage, 3 Bootloader, 4 Reboot
+      DXL_POWER: { addr: 22, size: 1 },
+      ERROR_CODE: { addr: 23, size: 2 },
+      BUTTON_STATUS: { addr: 26, size: 1 },
+      // 0 none, 1 START, 2 MODE, 3 both
+      BUTTON_RELEASED: { addr: 28, size: 1 },
+      BUTTON_PRESSED_MS: { addr: 29, size: 2 },
+      NUM_DXL: { addr: 39, size: 1 },
+      SCAN_DXL: { addr: 40, size: 1 },
+      DXL_TORQUE: { addr: 41, size: 1 },
+      // 1 all off, 2 all on, 3 reboot
+      REMOCON_TX: { addr: 59, size: 2 },
+      REMOCON_RX: { addr: 61, size: 2 },
+      REMOCON_ARRIVED: { addr: 63, size: 1 },
+      MOTION_SPEED: { addr: 64, size: 1 },
+      // 20..200 (%)
+      MOTION_INDEX: { addr: 66, size: 2 },
+      // page; 65533 stop now, 65534 stop at key frame, 65535 stop at unit end
+      MOTION_STATUS: { addr: 68, size: 1 },
+      MOTION_NEXT_PAGE: { addr: 69, size: 2 },
+      MOTION_COUNT: { addr: 71, size: 2 },
+      TIMER_128MS: { addr: 73, size: 1 },
+      TIMER_1MS: { addr: 74, size: 2 },
+      RANDOM: { addr: 77, size: 1 },
+      BUZZER_INDEX: { addr: 84, size: 1 },
+      BUZZER_TIME: { addr: 85, size: 1 },
+      // 0.1 s units; 255 = melody mode
+      SOUND_COUNT: { addr: 86, size: 1 },
+      SOUND_DETECTING: { addr: 87, size: 1 },
+      LOW_BATTERY_SOUND: { addr: 88, size: 1 },
+      VOLTAGE: { addr: 89, size: 1 },
+      // 0.1 V
+      TEMPERATURE: { addr: 90, size: 1 },
+      LED_RED: { addr: 91, size: 1 },
+      LED_GREEN: { addr: 92, size: 1 },
+      LED_BLUE: { addr: 93, size: 1 },
+      ROLL: { addr: 102, size: 2, signed: true },
+      // 0.01 deg
+      PITCH: { addr: 104, size: 2, signed: true },
+      YAW: { addr: 106, size: 2, signed: true },
+      GYRO_X: { addr: 108, size: 2, signed: true },
+      // 0.01 deg/s
+      GYRO_Y: { addr: 110, size: 2, signed: true },
+      GYRO_Z: { addr: 112, size: 2, signed: true },
+      ACC_X: { addr: 114, size: 2, signed: true },
+      // 0.01 G
+      ACC_Y: { addr: 116, size: 2, signed: true },
+      ACC_Z: { addr: 118, size: 2, signed: true },
+      MILLIS: { addr: 124, size: 4, signed: true },
+      // ports 1..5 -> 390,392,394,396,398
+      MODULE_CATEGORY: { addr: 390, size: 1, stride: 2 }
+    };
+    var MODULE = {
+      NONE: 0,
+      WHEEL: 1,
+      SERVO_POSITION: 2,
+      SERVO_SPEED: 3,
+      IR: 4,
+      DMS: 5,
+      TOUCH: 6,
+      LED: 7,
+      USER: 8,
+      TEMPERATURE: 9,
+      MAGNET: 11,
+      MOTION: 12,
+      COLOR: 13,
+      MOISTURE: 14,
+      MOISTURE_TEMP: 15,
+      BRIGHTNESS: 16,
+      LED_RED_BRIGHT: 17,
+      LED_BLUE_BRIGHT: 18
+    };
+    var PORT2 = {
+      WHEEL: { base: 400, stride: 2, size: 2, ports: 2, category: MODULE.WHEEL },
+      SERVO_POSITION: { base: 404, stride: 2, size: 2, ports: 2, category: MODULE.SERVO_POSITION },
+      SERVO_SPEED: { base: 408, stride: 2, size: 2, ports: 2, category: MODULE.SERVO_SPEED },
+      IR: { base: 415, stride: 2, size: 2, ports: 2, category: MODULE.IR },
+      DMS: { base: 419, stride: 2, size: 2, ports: 5, category: MODULE.DMS },
+      TOUCH: { base: 429, stride: 1, size: 1, ports: 5, category: MODULE.TOUCH },
+      LED: { base: 434, stride: 1, size: 1, ports: 5, category: MODULE.LED },
+      USER: { base: 439, stride: 2, size: 2, ports: 5, category: MODULE.USER },
+      TEMPERATURE: { base: 449, stride: 1, size: 1, ports: 5, category: MODULE.TEMPERATURE, signed: true },
+      MAGNET: { base: 459, stride: 1, size: 1, ports: 5, category: MODULE.MAGNET },
+      MOTION: { base: 464, stride: 1, size: 1, ports: 5, category: MODULE.MOTION },
+      COLOR: { base: 469, stride: 1, size: 1, ports: 5, category: MODULE.COLOR },
+      MOISTURE: { base: 474, stride: 1, size: 1, ports: 2, category: MODULE.MOISTURE },
+      MOISTURE_TEMP: { base: 479, stride: 1, size: 1, ports: 2, category: MODULE.MOISTURE_TEMP, signed: true },
+      BRIGHTNESS: { base: 484, stride: 2, size: 2, ports: 5, category: MODULE.BRIGHTNESS },
+      LED_RED_BRIGHT: { base: 494, stride: 1, size: 1, ports: 2, category: MODULE.LED_RED_BRIGHT },
+      LED_BLUE_BRIGHT: { base: 499, stride: 1, size: 1, ports: 2, category: MODULE.LED_BLUE_BRIGHT }
+    };
+    var DXL = {
+      MODEL_NUMBER: { addr: 0, size: 2 },
+      ID: { addr: 7, size: 1 },
+      // 1 velocity, 3 position, 4 extended position, 16 PWM (XL-330: 0 current, 5 current-based position)
+      OPERATING_MODE: { addr: 11, size: 1 },
+      MAX_POSITION_LIMIT: { addr: 48, size: 4 },
+      MIN_POSITION_LIMIT: { addr: 52, size: 4 },
+      VELOCITY_LIMIT: { addr: 44, size: 4 },
+      CURRENT_LIMIT: { addr: 38, size: 2 },
+      // current-capable models only
+      GOAL_CURRENT: { addr: 102, size: 2, signed: true },
+      TORQUE_ENABLE: { addr: 64, size: 1 },
+      LED: { addr: 65, size: 1 },
+      HARDWARE_ERROR: { addr: 70, size: 1 },
+      GOAL_PWM: { addr: 100, size: 2, signed: true },
+      GOAL_VELOCITY: { addr: 104, size: 4, signed: true },
+      // unit 0.229 rpm
+      PROFILE_ACCELERATION: { addr: 108, size: 4 },
+      PROFILE_VELOCITY: { addr: 112, size: 4 },
+      GOAL_POSITION: { addr: 116, size: 4, signed: true },
+      // 0..4095 = 360 deg
+      MOVING: { addr: 122, size: 1 },
+      PRESENT_PWM: { addr: 124, size: 2, signed: true },
+      PRESENT_LOAD: { addr: 126, size: 2, signed: true },
+      // 0.1 %
+      PRESENT_VELOCITY: { addr: 128, size: 4, signed: true },
+      PRESENT_POSITION: { addr: 132, size: 4, signed: true },
+      PRESENT_INPUT_VOLTAGE: { addr: 144, size: 2 },
+      // 0.1 V
+      PRESENT_TEMPERATURE: { addr: 146, size: 1 }
+    };
+    var OP_MODE = { CURRENT: 0, VELOCITY: 1, POSITION: 3, EXTENDED_POSITION: 4, CURRENT_POSITION: 5, PWM: 16 };
+    var DUAL_AXIS_MODELS = /* @__PURE__ */ new Set([1090, 1160]);
+    var MOTION_STOP = { NOW: 65533, KEYFRAME: 65534, UNIT: 65535 };
+    var clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+    var degToTick = (deg) => Math.round(deg / 360 * 4096);
+    var tickToDeg = (tick) => tick / 4096 * 360;
+    var delay2 = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    var CM550Device = class {
+      constructor() {
+        this.transport = null;
+        this.parser = new P22.PacketParser((pkt) => this._onPacket(pkt));
+        this._queue = Promise.resolve();
+        this._pending = null;
+        this._collector = null;
+        this._rawTap = null;
+        this.motors = [];
+        this.motorDesc = describeMotors([]);
+        this.onMotorsChange = null;
+        this._modelCache = {};
+        this._scanPromise = null;
+        this.lastError = "";
+        this.timeoutMs = 200;
+        this._categoryCache = {};
+        this._velocityLimitCache = {};
+        this._modeCache = {};
+        this.onStateChange = null;
+      }
+      get connected() {
+        return Boolean(this.transport && this.transport.isOpen);
+      }
+      get transportName() {
+        return this.transport ? this.transport.name : "";
+      }
+      /**
+       * @param {'usb'|'ble'|object} kind - 'usb', 'ble', or a ready-made transport
+       *   object (open/close/write/onData/onClose/isOpen/name), e.g. a simulator
+       */
+      async connect(kind) {
+        if (this.connected) await this.disconnect();
+        let transport;
+        if (kind && typeof kind === "object") {
+          transport = kind;
+          this.timeoutMs = 200;
+        } else {
+          transport = kind === "ble" ? new WebBluetoothTransport() : new WebSerialTransport();
+          this.timeoutMs = kind === "ble" ? 600 : 200;
+        }
+        transport.onData((chunk) => {
+          if (this._rawTap) for (const b of chunk) this._rawTap.push(b);
+          this.parser.push(chunk);
+        });
+        transport.onClose(() => {
+          this.transport = null;
+          this._failPending(new Error("연결이 끊어졌습니다."));
+          this._notify();
+        });
+        await transport.open();
+        this.transport = transport;
+        this.parser.reset();
+        this._categoryCache = {};
+        this._velocityLimitCache = {};
+        this._modeCache = {};
+        this._modelCache = {};
+        this.setMotors([]);
+        try {
+          const model = await this.readCM(CM.MODEL_NUMBER);
+          if (model !== 450) {
+            this.lastError = `알 수 없는 컨트롤러 (모델 번호 ${model})`;
+          }
+          await this.writeCM(CM.MODE_NUMBER, 2);
+        } catch (e) {
+          this.lastError = `CM-550 응답 없음: ${e.message}`;
+        }
+        this._notify();
+      }
+      async disconnect() {
+        const t = this.transport;
+        this.transport = null;
+        if (t) await t.close();
+        this._failPending(new Error("연결 종료"));
+        this._notify();
+      }
+      _notify() {
+        if (this.onStateChange) this.onStateChange(this.connected);
+      }
+      _failPending(err) {
+        if (this._pending) {
+          clearTimeout(this._pending.timer);
+          this._pending.reject(err);
+          this._pending = null;
+        }
+      }
+      _onPacket(pkt) {
+        if (this._collector) {
+          if (!pkt.error) this._collector.push(pkt);
+          return;
+        }
+        const p = this._pending;
+        if (!p) return;
+        if (pkt.id !== p.id && p.id !== P22.BROADCAST_ID) return;
+        clearTimeout(p.timer);
+        this._pending = null;
+        if (pkt.error) {
+          const name = P22.ERROR_NAMES[pkt.error] || `error ${pkt.error}`;
+          this.lastError = `ID ${pkt.id}: ${name}`;
+          p.reject(new Error(this.lastError));
+        } else {
+          p.resolve(pkt);
+        }
+      }
+      /**
+       * Send one instruction packet and wait for the status packet. Requests
+       * are serialized because the bus is half-duplex.
+       * @param {number} id destination id
+       * @param {Uint8Array} packet
+       * @param {boolean} expectReply
+       */
+      request(id, packet, expectReply = true) {
+        const run = async () => {
+          if (!this.connected) throw new Error("CM-550이 연결되어 있지 않습니다.");
+          if (!expectReply) {
+            await this.transport.write(packet);
+            return null;
+          }
+          return new Promise((resolve, reject) => {
+            const timer = setTimeout(() => {
+              if (this._pending && this._pending.timer === timer) {
+                this._pending = null;
+                this.lastError = `ID ${id}: 응답 시간 초과`;
+                reject(new Error(this.lastError));
+              }
+            }, this.timeoutMs);
+            this._pending = { id, resolve, reject, timer };
+            this.transport.write(packet).catch((err) => {
+              clearTimeout(timer);
+              this._pending = null;
+              reject(err);
+            });
+          });
+        };
+        const result = this._queue.then(run, run);
+        this._queue = result.catch(() => {
+        });
+        return result;
+      }
+      async read(id, address, size, signed2 = false) {
+        const pkt = await this.request(id, P22.read(id, address, size));
+        if (pkt.params.length < size) throw new Error(`ID ${id}: 응답 길이 오류`);
+        return P22.fromLE(pkt.params, 0, size, signed2);
+      }
+      write(id, address, value, size) {
+        return this.request(id, P22.write(id, address, Math.round(value), size));
+      }
+      /** Read `length` raw bytes starting at `address` (one packet). */
+      async readBytes(id, address, length) {
+        const pkt = await this.request(id, P22.read(id, address, length));
+        if (pkt.params.length < length) throw new Error(`ID ${id}: 응답 길이 오류`);
+        return pkt.params.slice(0, length);
+      }
+      /**
+       * Protocol 2.0 broadcast ping: every device on the bus answers.
+       * @param {number} [waitMs] how long to collect replies
+       * @returns {Promise<Array<{id:number, model:number, firmware:number}>>}
+       */
+      broadcastPing(waitMs) {
+        const wait = waitMs || this.timeoutMs * 2;
+        const run = async () => {
+          if (!this.connected) throw new Error("CM-550이 연결되어 있지 않습니다.");
+          this._collector = [];
+          try {
+            await this.transport.write(P22.ping(P22.BROADCAST_ID));
+            await delay2(wait);
+            return this._collector;
+          } finally {
+            this._collector = null;
+          }
+        };
+        const result = this._queue.then(run, run).then((pkts) => {
+          const seen = /* @__PURE__ */ new Map();
+          for (const p of pkts) {
+            if (!seen.has(p.id)) {
+              seen.set(p.id, {
+                id: p.id,
+                model: p.params.length >= 2 ? P22.fromLE(p.params, 0, 2) : 0,
+                firmware: p.params.length >= 3 ? p.params[2] : 0
+              });
+            }
+          }
+          return Array.from(seen.values()).sort((a, b) => a.id - b.id);
+        });
+        this._queue = result.catch(() => {
+        });
+        return result;
+      }
+      /**
+       * Find every DYNAMIXEL on the bus (broadcast ping, then IDs 1..fallbackMax
+       * one by one if nothing answered) and remember their models.
+       * Concurrent callers share one scan.
+       */
+      scanMotors(fallbackMax = 30, onProgress) {
+        if (this._scanPromise) return this._scanPromise;
+        this._scanPromise = (async () => {
+          let found = (await this.broadcastPing()).filter((d) => d.id !== CM550_ID);
+          if (!found.length) {
+            for (let id = 1; id <= fallbackMax; id++) {
+              if (onProgress) onProgress(id, fallbackMax);
+              const info = await this.pingInfo(id);
+              if (info) found.push(info);
+            }
+          }
+          let volts = 0;
+          try {
+            volts = await this.readCM(CM.VOLTAGE) / 10;
+          } catch (e) {
+          }
+          this.setMotors(found, volts);
+          return this.motors;
+        })();
+        const done = () => {
+          this._scanPromise = null;
+        };
+        this._scanPromise.then(done, done);
+        return this._scanPromise;
+      }
+      /** Replace the known motor list (scan, diagnosis) and notify listeners. */
+      setMotors(motors, busVolts) {
+        this.motors = motors.slice().sort((a, b) => a.id - b.id);
+        for (const m of this.motors) this._modelCache[m.id] = m.model;
+        this.motorDesc = describeMotors(this.motors, busVolts);
+        if (this.onMotorsChange) this.onMotorsChange(this.motors, this.motorDesc);
+      }
+      /** Model number of `id` (cached; read from the motor once). Rejects unsupported models. */
+      async requireModel(id) {
+        if (typeof this._modelCache[id] === "undefined") {
+          this._modelCache[id] = await this.readDXL(id, DXL.MODEL_NUMBER);
+        }
+        const model = this._modelCache[id];
+        if (!modelInfo2(model)) {
+          throw new Error(`다이나믹셀 ${id}: ${modelName3(model)} — 이 블록으로 제어할 수 없는 모델입니다.`);
+        }
+        return model;
+      }
+      /** Ping one id; resolves {id, model, firmware} or null. */
+      async pingInfo(id) {
+        try {
+          const pkt = await this.ping(id);
+          return {
+            id,
+            model: pkt.params.length >= 2 ? P22.fromLE(pkt.params, 0, 2) : 0,
+            firmware: pkt.params.length >= 3 ? pkt.params[2] : 0
+          };
+        } catch (e) {
+          return null;
+        }
+      }
+      readCM(reg, port = 1) {
+        const addr = reg.addr + (port - 1) * (reg.stride || 0);
+        return this.read(CM550_ID, addr, reg.size, Boolean(reg.signed));
+      }
+      writeCM(reg, value, port = 1) {
+        const addr = reg.addr + (port - 1) * (reg.stride || 0);
+        return this.write(CM550_ID, addr, value, reg.size);
+      }
+      readDXL(id, reg) {
+        return this.read(id, reg.addr, reg.size, Boolean(reg.signed));
+      }
+      writeDXL(id, reg, value) {
+        return this.write(id, reg.addr, value, reg.size);
+      }
+      ping(id) {
+        return this.request(id, P22.ping(id));
+      }
+      /**
+       * Sync-write the same register on several DYNAMIXELs (no status packet).
+       * @param reg
+       * @param items
+       */
+      syncWriteDXL(reg, items) {
+        return this.request(P22.BROADCAST_ID, P22.syncWrite(reg.addr, reg.size, items.map((it) => ({
+          id: it.id,
+          value: Math.round(it.value)
+        }))), false);
+      }
+      // ---- peripheral ports ----------------------------------------------
+      async ensurePortCategory(port, category2) {
+        if (this._categoryCache[port] === category2) return;
+        await this.writeCM(CM.MODULE_CATEGORY, category2, port);
+        this._categoryCache[port] = category2;
+        await delay2(50);
+      }
+      async readPort(spec, port) {
+        port = clamp(Math.round(port), 1, spec.ports);
+        await this.ensurePortCategory(port, spec.category);
+        const addr = spec.base + (port - 1) * spec.stride;
+        return this.read(CM550_ID, addr, spec.size, Boolean(spec.signed));
+      }
+      async writePort(spec, port, value) {
+        port = clamp(Math.round(port), 1, spec.ports);
+        await this.ensurePortCategory(port, spec.category);
+        const addr = spec.base + (port - 1) * spec.stride;
+        return this.write(CM550_ID, addr, value, spec.size);
+      }
+      // ---- DYNAMIXEL helpers ----------------------------------------------
+      /**
+       * Make sure `id` runs in one of `accepted` operating modes (switching to the
+       * first one only when needed) and that its torque is on.
+       *
+       * Operating Mode lives in EEPROM: it can only be written with torque off,
+       * and on dual-axis modules (2XL430 / 2XC430) only when BOTH axes have
+       * torque off. The current mode is read first so the common case (already
+       * in position mode) never touches EEPROM.
+       */
+      async ensureMode(id, accepted) {
+        const target = accepted[0];
+        const info = modelInfo2(await this.requireModel(id));
+        if ((target === OP_MODE.CURRENT_POSITION || target === OP_MODE.CURRENT) && !info.current) {
+          throw new Error(`다이나믹셀 ${id}: ${info.name}은(는) 전류(힘) 제어를 지원하지 않습니다. XL330·XC330·XM430·XH430에서 사용할 수 있습니다.`);
+        }
+        let current = this._modeCache[id];
+        if (typeof current === "undefined") {
+          current = await this.readDXL(id, DXL.OPERATING_MODE);
+          this._modeCache[id] = current;
+        }
+        if (accepted.includes(current)) {
+          await this.writeDXL(id, DXL.TORQUE_ENABLE, 1);
+          return;
+        }
+        const torque = await this.readDXL(id, DXL.TORQUE_ENABLE);
+        if (torque) await this.writeDXL(id, DXL.TORQUE_ENABLE, 0);
+        try {
+          await this.writeDXL(id, DXL.OPERATING_MODE, target);
+        } catch (e) {
+          if (!/접근 오류|Access/.test(e.message)) throw e;
+          const ok = await this._withSiblingTorqueOff(
+            id,
+            () => this.writeDXL(id, DXL.OPERATING_MODE, target)
+          );
+          if (!ok) {
+            throw new Error(`다이나믹셀 ${id}: 모드를 바꿀 수 없습니다. 같은 모듈(2XL430 등)의 다른 축이나 이 모터의 토크를 끈 뒤 다시 시도하세요.`);
+          }
+        }
+        this._modeCache[id] = target;
+        await this.writeDXL(id, DXL.TORQUE_ENABLE, 1);
+      }
+      /** Back-compat name used by blocks: switch to exactly `mode`. */
+      setOperatingMode(id, mode) {
+        return this.ensureMode(id, [mode]);
+      }
+      /**
+       * Dual-axis modules share one EEPROM lock: temporarily turn off the other
+       * axis (ID ± 1 with a dual-axis model number), run fn, restore its torque.
+       * @returns {Promise<boolean>} true if fn succeeded
+       */
+      async _withSiblingTorqueOff(id, fn) {
+        const known = this.motorDesc.axis[id];
+        const candidates = known ? [known.sibling] : [id + 1, id - 1];
+        for (const n of candidates) {
+          if (n < 0 || n > 252) continue;
+          let model;
+          try {
+            model = await this.readDXL(n, DXL.MODEL_NUMBER);
+          } catch (e) {
+            continue;
+          }
+          if (!DUAL_AXIS_MODELS.has(model)) continue;
+          const t = await this.readDXL(n, DXL.TORQUE_ENABLE);
+          if (t) await this.writeDXL(n, DXL.TORQUE_ENABLE, 0);
+          try {
+            await fn();
+            return true;
+          } catch (e) {
+          } finally {
+            if (t) await this.writeDXL(n, DXL.TORQUE_ENABLE, 1);
+          }
+        }
+        return false;
+      }
+      async getVelocityLimit(id) {
+        if (!this._velocityLimitCache[id]) {
+          this._velocityLimitCache[id] = await this.readDXL(id, DXL.VELOCITY_LIMIT);
+        }
+        return this._velocityLimitCache[id];
+      }
+      /**
+       * Move to an absolute angle (0..360 in position mode, any value in
+       * extended position mode) with a speed percentage of the velocity limit.
+       * @param id
+       * @param degrees
+       * @param speedPercent
+       */
+      async moveTo(id, degrees, speedPercent) {
+        await this.ensureMode(id, [OP_MODE.POSITION, OP_MODE.EXTENDED_POSITION]);
+        if (typeof speedPercent === "number" && !Number.isNaN(speedPercent)) {
+          const limit = await this.getVelocityLimit(id);
+          const pv = Math.round(limit * clamp(speedPercent, 0, 100) / 100);
+          await this.writeDXL(id, DXL.PROFILE_VELOCITY, pv);
+        }
+        await this.writeDXL(id, DXL.GOAL_POSITION, degToTick(degrees));
+      }
+      /**
+       * Current-based position (grippers): move toward `degrees` but push with at
+       * most `forcePercent` of the motor's Current Limit. XL330/XC330/XM/XH only.
+       */
+      async grip(id, degrees, forcePercent) {
+        await this.ensureMode(id, [OP_MODE.CURRENT_POSITION]);
+        const limit = await this.readDXL(id, DXL.CURRENT_LIMIT);
+        await this.writeDXL(id, DXL.GOAL_CURRENT, Math.round(limit * clamp(forcePercent, 0, 100) / 100));
+        await this.writeDXL(id, DXL.GOAL_POSITION, degToTick(degrees));
+      }
+      async setWheelSpeed(id, percent) {
+        await this.setOperatingMode(id, OP_MODE.VELOCITY);
+        const limit = await this.getVelocityLimit(id);
+        const v = Math.round(limit * clamp(percent, -100, 100) / 100);
+        await this.writeDXL(id, DXL.GOAL_VELOCITY, v);
+      }
+      async waitUntilStopped(id, timeoutMs = 1e4) {
+        const start = Date.now();
+        await delay2(30);
+        while (Date.now() - start < timeoutMs) {
+          const moving = await this.readDXL(id, DXL.MOVING);
+          if (!moving) return;
+          await delay2(30);
+        }
+      }
+      // ---- motion ----------------------------------------------------------
+      playMotion(page) {
+        return this.writeCM(CM.MOTION_INDEX, clamp(Math.round(page), 1, 65532));
+      }
+      stopMotion(how = MOTION_STOP.UNIT) {
+        return this.writeCM(CM.MOTION_INDEX, how);
+      }
+      async waitMotionDone(timeoutMs = 6e4) {
+        const start = Date.now();
+        await delay2(100);
+        while (Date.now() - start < timeoutMs) {
+          const playing = await this.readCM(CM.MOTION_STATUS);
+          if (!playing) return;
+          await delay2(50);
+        }
+      }
+      // ---- buzzer ----------------------------------------------------------
+      async playNote(index, seconds) {
+        await this.writeCM(CM.BUZZER_INDEX, clamp(Math.round(index), 0, 51));
+        await this.writeCM(CM.BUZZER_TIME, clamp(Math.round(seconds * 10), 1, 50));
+      }
+      async playMelody(index) {
+        await this.writeCM(CM.BUZZER_INDEX, clamp(Math.round(index), 0, 25));
+        await this.writeCM(CM.BUZZER_TIME, 255);
+      }
+    };
+    module.exports = {
+      CM550Device,
+      CM550_ID,
+      CM,
+      MODULE,
+      PORT: PORT2,
+      DXL,
+      OP_MODE,
+      MOTION_STOP,
+      degToTick,
+      tickToDeg,
+      clamp,
+      delay: delay2
+    };
+  }
+});
+
+// ../scratch-cm550/src/icons.js
+var require_icons = __commonJS({
+  "../scratch-cm550/src/icons.js"(exports, module) {
+    var svgToUri = (svg) => `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+    var controllerSvg = (bg, fg) => `
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">
+  <rect x="4" y="6" width="32" height="28" rx="5" fill="${bg}" stroke="${fg}" stroke-width="2"/>
+  <circle cx="14" cy="16" r="3" fill="${fg}"/>
+  <circle cx="26" cy="16" r="3" fill="${fg}"/>
+  <rect x="11" y="23" width="18" height="4" rx="2" fill="${fg}"/>
+  <rect x="17" y="2" width="6" height="4" rx="1" fill="${fg}"/>
+</svg>`;
+    module.exports = {
+      blockIconURI: svgToUri(controllerSvg("#2E7CF6", "#ffffff")),
+      menuIconURI: svgToUri(controllerSvg("#ffffff", "#2E7CF6"))
+    };
+  }
+});
+
+// ../scratch-cm550/src/extension.js
+var require_extension = __commonJS({
+  "../scratch-cm550/src/extension.js"(exports, module) {
+    var {
+      CM550Device,
+      CM,
+      PORT: PORT2,
+      DXL,
+      OP_MODE,
+      MOTION_STOP,
+      tickToDeg,
+      clamp,
+      delay: delay2
+    } = require_cm550();
+    var icons = require_icons();
+    var { modelName: modelName3 } = require_models();
+    var EXTENSION_ID = "cm550";
+    var LED_MIX = {
+      red: { name: "빨강", rgb: [1, 0, 0] },
+      green: { name: "초록", rgb: [0, 1, 0] },
+      blue: { name: "파랑", rgb: [0, 0, 1] },
+      yellow: { name: "노랑", rgb: [1, 1, 0] },
+      cyan: { name: "하늘", rgb: [0, 1, 1] },
+      magenta: { name: "보라", rgb: [1, 0, 1] },
+      white: { name: "흰색", rgb: [1, 1, 1] },
+      off: { name: "끄기", rgb: [0, 0, 0] }
+    };
+    var createExtension2 = ({ ArgumentType, BlockType, formatMessage, cast }) => {
+      const t = (id, def, values) => formatMessage({ id: `cm550.${id}`, default: def, description: id }, values);
+      const num2 = (v) => {
+        const n = cast ? cast.toNumber(v) : Number(v);
+        return Number.isNaN(n) ? 0 : n;
+      };
+      const ARG_NUM = (def, menu) => Object.assign({ type: ArgumentType.NUMBER, defaultValue: def }, menu ? { menu } : {});
+      const ARG_STR = (def, menu) => ({ type: ArgumentType.STRING, defaultValue: def, menu });
+      class Scratch3CM550Blocks {
+        constructor(runtime) {
+          this.runtime = runtime;
+          this.device = new CM550Device();
+          this.device.onStateChange = (connected) => {
+            if (runtime && runtime.emit) {
+              runtime.emit(connected ? "PERIPHERAL_CONNECTED" : "PERIPHERAL_DISCONNECTED");
+            }
+          };
+          this._dxlIds = [];
+          if (runtime) runtime.ext_cm550 = this;
+          if (runtime && runtime.on) {
+            runtime.on("CM550_CONNECT", (kind) => this._connect(kind));
+            runtime.on("PROJECT_STOP_ALL", () => this._stopAll());
+          }
+        }
+        static get EXTENSION_ID() {
+          return EXTENSION_ID;
+        }
+        getInfo() {
+          return {
+            id: EXTENSION_ID,
+            name: t("name", "CM-550"),
+            color1: "#2E7CF6",
+            color2: "#1F5FC4",
+            color3: "#174A99",
+            blockIconURI: icons.blockIconURI,
+            menuIconURI: icons.menuIconURI,
+            docsURI: "https://emanual.robotis.com/docs/en/parts/controller/cm-550/",
+            blocks: [
+              // ---------------- connection ----------------
+              { func: "connectUsbButton", blockType: BlockType.BUTTON, text: t("btnUsb", "USB로 연결하기") },
+              { func: "connectBleButton", blockType: BlockType.BUTTON, text: t("btnBle", "블루투스로 연결하기") },
+              {
+                opcode: "connect",
+                blockType: BlockType.COMMAND,
+                text: t("connect", "CM-550 [KIND] 연결하기"),
+                arguments: { KIND: ARG_STR("usb", "connKind") }
+              },
+              { opcode: "disconnect", blockType: BlockType.COMMAND, text: t("disconnect", "CM-550 연결 끊기") },
+              { opcode: "isConnected", blockType: BlockType.BOOLEAN, text: t("isConnected", "CM-550이 연결되었는가?") },
+              {
+                opcode: "lastError",
+                blockType: BlockType.REPORTER,
+                text: t("lastError", "마지막 오류"),
+                disableMonitor: true
+              },
+              "---",
+              // ---------------- DYNAMIXEL ----------------
+              {
+                opcode: "dxlTorque",
+                blockType: BlockType.COMMAND,
+                text: t("dxlTorque", "다이나믹셀 [ID] 토크 [ONOFF]"),
+                arguments: { ID: ARG_NUM(1, "dxlId"), ONOFF: ARG_STR("on", "onOff") }
+              },
+              {
+                opcode: "dxlMoveTo",
+                blockType: BlockType.COMMAND,
+                text: t("dxlMoveTo", "다이나믹셀 [ID] 을(를) [DEG]° 로 이동 (속도 [SPEED] %)"),
+                arguments: { ID: ARG_NUM(1, "dxlId"), DEG: ARG_NUM(180), SPEED: ARG_NUM(50) }
+              },
+              {
+                opcode: "dxlMoveToWait",
+                blockType: BlockType.COMMAND,
+                text: t(
+                  "dxlMoveToWait",
+                  "다이나믹셀 [ID] 을(를) [DEG]° 로 이동하고 기다리기 (속도 [SPEED] %)"
+                ),
+                arguments: { ID: ARG_NUM(1, "dxlId"), DEG: ARG_NUM(180), SPEED: ARG_NUM(50) }
+              },
+              {
+                opcode: "dxlMoveTwo",
+                blockType: BlockType.COMMAND,
+                text: t(
+                  "dxlMoveTwo",
+                  "다이나믹셀 [ID1] 을(를) [DEG1]° , [ID2] 을(를) [DEG2]° 로 동시에 이동"
+                ),
+                arguments: {
+                  ID1: ARG_NUM(1, "dxlId"),
+                  DEG1: ARG_NUM(180),
+                  ID2: ARG_NUM(2, "dxlId"),
+                  DEG2: ARG_NUM(180)
+                }
+              },
+              {
+                opcode: "dxlWheel",
+                blockType: BlockType.COMMAND,
+                text: t("dxlWheel", "다이나믹셀 [ID] 바퀴 회전 속도 [SPEED] %"),
+                arguments: { ID: ARG_NUM(1, "dxlId"), SPEED: ARG_NUM(50) }
+              },
+              {
+                opcode: "dxlWheelTwo",
+                blockType: BlockType.COMMAND,
+                text: t("dxlWheelTwo", "왼쪽 바퀴 [ID1] 속도 [SPEED1] % , 오른쪽 바퀴 [ID2] 속도 [SPEED2] %"),
+                arguments: {
+                  ID1: ARG_NUM(1, "dxlId"),
+                  SPEED1: ARG_NUM(50),
+                  ID2: ARG_NUM(2, "dxlId"),
+                  SPEED2: ARG_NUM(-50)
+                }
+              },
+              {
+                opcode: "dxlStop",
+                blockType: BlockType.COMMAND,
+                text: t("dxlStop", "다이나믹셀 [ID] 정지"),
+                arguments: { ID: ARG_NUM(1, "dxlId") }
+              },
+              {
+                opcode: "dxlSetMode",
+                blockType: BlockType.COMMAND,
+                text: t("dxlSetMode", "다이나믹셀 [ID] 모드를 [MODE] 로 설정"),
+                arguments: { ID: ARG_NUM(1, "dxlId"), MODE: ARG_STR("position", "dxlMode") }
+              },
+              {
+                opcode: "dxlLed",
+                blockType: BlockType.COMMAND,
+                text: t("dxlLed", "다이나믹셀 [ID] LED [ONOFF]"),
+                arguments: { ID: ARG_NUM(1, "dxlId"), ONOFF: ARG_STR("on", "onOff") }
+              },
+              {
+                opcode: "dxlAllTorque",
+                blockType: BlockType.COMMAND,
+                text: t("dxlAllTorque", "모든 다이나믹셀 토크 [ONOFF]"),
+                arguments: { ONOFF: ARG_STR("on", "onOff") }
+              },
+              {
+                opcode: "dxlRead",
+                blockType: BlockType.REPORTER,
+                text: t("dxlRead", "다이나믹셀 [ID] 의 [PROP]"),
+                arguments: { ID: ARG_NUM(1, "dxlId"), PROP: ARG_STR("position", "dxlProp") }
+              },
+              {
+                opcode: "dxlIsMoving",
+                blockType: BlockType.BOOLEAN,
+                text: t("dxlIsMoving", "다이나믹셀 [ID] 이(가) 움직이는 중인가?"),
+                arguments: { ID: ARG_NUM(1, "dxlId") }
+              },
+              {
+                opcode: "dxlScan",
+                blockType: BlockType.REPORTER,
+                text: t("dxlScan", "연결된 다이나믹셀 ID 목록"),
+                disableMonitor: true
+              },
+              // ---- model-specific (shown by the host only when such motors are connected)
+              {
+                opcode: "dxlModuleMove",
+                blockType: BlockType.COMMAND,
+                text: t("dxlModuleMove", "다이나믹셀 2축 모듈 [MODULE] A축 [DEGA]° , B축 [DEGB]° 로 이동"),
+                arguments: { MODULE: ARG_STR("1,2", "dxlModule"), DEGA: ARG_NUM(180), DEGB: ARG_NUM(180) }
+              },
+              {
+                opcode: "dxlModuleWheels",
+                blockType: BlockType.COMMAND,
+                text: t("dxlModuleWheels", "다이나믹셀 2축 모듈 [MODULE] 바퀴 A축 [SPA] % , B축 [SPB] %"),
+                arguments: { MODULE: ARG_STR("1,2", "dxlModule"), SPA: ARG_NUM(50), SPB: ARG_NUM(-50) }
+              },
+              {
+                opcode: "dxlGrip",
+                blockType: BlockType.COMMAND,
+                text: t("dxlGrip", "다이나믹셀 [ID] 을(를) 힘 [FORCE] % 로 [DEG]° 까지 잡기"),
+                arguments: { ID: ARG_NUM(1, "dxlId"), FORCE: ARG_NUM(30), DEG: ARG_NUM(180) }
+              },
+              {
+                opcode: "dxlModelName",
+                blockType: BlockType.REPORTER,
+                text: t("dxlModelName", "다이나믹셀 [ID] 의 모델 이름"),
+                arguments: { ID: ARG_NUM(1, "dxlId") }
+              },
+              "---",
+              // ---------------- CM-550 built-ins ----------------
+              {
+                // the auxiliary LED has red/green/blue elements (addr 91-93);
+                // mixing them gives 7 colours
+                opcode: "cmLedColor",
+                blockType: BlockType.COMMAND,
+                text: t("cmLedColor", "CM-550 LED 색 [COLOR] (으)로 바꾸기"),
+                arguments: { COLOR: ARG_STR("red", "ledMix") }
+              },
+              {
+                opcode: "cmLed",
+                blockType: BlockType.COMMAND,
+                text: t("cmLed", "CM-550 LED [COLOR] [ONOFF]"),
+                arguments: { COLOR: ARG_STR("red", "ledColor"), ONOFF: ARG_STR("on", "onOff") }
+              },
+              {
+                opcode: "cmBuzzerNote",
+                blockType: BlockType.COMMAND,
+                text: t("cmBuzzerNote", "부저로 [NOTE] 음을 [SECS] 초 동안 연주"),
+                arguments: { NOTE: ARG_NUM(24, "note"), SECS: ARG_NUM(0.5) }
+              },
+              {
+                opcode: "cmBuzzerMelody",
+                blockType: BlockType.COMMAND,
+                text: t("cmBuzzerMelody", "부저로 멜로디 [INDEX] 번 연주"),
+                arguments: { INDEX: ARG_NUM(0) }
+              },
+              {
+                opcode: "cmButton",
+                blockType: BlockType.BOOLEAN,
+                text: t("cmButton", "[BUTTON] 버튼이 눌렸는가?"),
+                arguments: { BUTTON: ARG_STR("start", "button") }
+              },
+              {
+                opcode: "cmTilt",
+                blockType: BlockType.REPORTER,
+                text: t("cmTilt", "기울기 [AXIS] (°)"),
+                arguments: { AXIS: ARG_STR("roll", "tiltAxis") }
+              },
+              {
+                opcode: "cmGyro",
+                blockType: BlockType.REPORTER,
+                text: t("cmGyro", "자이로 [AXIS] (°/s)"),
+                arguments: { AXIS: ARG_STR("x", "xyz") }
+              },
+              {
+                opcode: "cmAccel",
+                blockType: BlockType.REPORTER,
+                text: t("cmAccel", "가속도 [AXIS] (G)"),
+                arguments: { AXIS: ARG_STR("x", "xyz") }
+              },
+              { opcode: "cmVoltage", blockType: BlockType.REPORTER, text: t("cmVoltage", "배터리 전압 (V)") },
+              { opcode: "cmTemperature", blockType: BlockType.REPORTER, text: t("cmTemperature", "컨트롤러 온도 (°C)") },
+              { opcode: "cmSoundCount", blockType: BlockType.REPORTER, text: t("cmSoundCount", "소리 감지 횟수") },
+              { opcode: "cmSoundReset", blockType: BlockType.COMMAND, text: t("cmSoundReset", "소리 감지 횟수 초기화") },
+              {
+                opcode: "cmDxlPower",
+                blockType: BlockType.COMMAND,
+                text: t("cmDxlPower", "다이나믹셀 전원 [ONOFF]"),
+                arguments: { ONOFF: ARG_STR("on", "onOff") }
+              },
+              "---",
+              // ---------------- 5-pin ports ----------------
+              {
+                opcode: "portSensor",
+                blockType: BlockType.REPORTER,
+                text: t("portSensor", "포트 [PORT] 의 [SENSOR] 값"),
+                arguments: { PORT: ARG_NUM(1, "port5"), SENSOR: ARG_STR("ir", "sensor") }
+              },
+              {
+                opcode: "portTouch",
+                blockType: BlockType.BOOLEAN,
+                text: t("portTouch", "포트 [PORT] 의 터치 센서가 눌렸는가?"),
+                arguments: { PORT: ARG_NUM(1, "port5") }
+              },
+              {
+                opcode: "portColor",
+                blockType: BlockType.BOOLEAN,
+                text: t("portColor", "포트 [PORT] 의 컬러 센서가 [COLOR] 인가?"),
+                arguments: { PORT: ARG_NUM(1, "port5"), COLOR: ARG_STR("red", "colorName") }
+              },
+              {
+                opcode: "portLed",
+                blockType: BlockType.COMMAND,
+                text: t("portLed", "포트 [PORT] LED 모듈 [STATE]"),
+                arguments: { PORT: ARG_NUM(1, "port5"), STATE: ARG_STR("both", "ledModule") }
+              },
+              {
+                opcode: "portServo",
+                blockType: BlockType.COMMAND,
+                text: t("portServo", "포트 [PORT] 서보모터를 [DEG]° 로 이동"),
+                arguments: { PORT: ARG_NUM(1, "port2"), DEG: ARG_NUM(150) }
+              },
+              {
+                opcode: "portMotor",
+                blockType: BlockType.COMMAND,
+                text: t("portMotor", "포트 [PORT] 기어모터 속도 [SPEED] %"),
+                arguments: { PORT: ARG_NUM(1, "port2"), SPEED: ARG_NUM(50) }
+              },
+              "---",
+              // ---------------- motion ----------------
+              {
+                opcode: "motionPlay",
+                blockType: BlockType.COMMAND,
+                text: t("motionPlay", "모션 [PAGE] 번 재생"),
+                arguments: { PAGE: ARG_NUM(1) }
+              },
+              {
+                opcode: "motionPlayWait",
+                blockType: BlockType.COMMAND,
+                text: t("motionPlayWait", "모션 [PAGE] 번 재생하고 끝날 때까지 기다리기"),
+                arguments: { PAGE: ARG_NUM(1) }
+              },
+              {
+                opcode: "motionStop",
+                blockType: BlockType.COMMAND,
+                text: t("motionStop", "모션 정지 [HOW]"),
+                arguments: { HOW: ARG_STR("unit", "motionStop") }
+              },
+              {
+                opcode: "motionSpeed",
+                blockType: BlockType.COMMAND,
+                text: t("motionSpeed", "모션 속도를 [PERCENT] % 로 설정"),
+                arguments: { PERCENT: ARG_NUM(100) }
+              },
+              {
+                opcode: "motionNext",
+                blockType: BlockType.COMMAND,
+                text: t("motionNext", "다음 모션 페이지를 [PAGE] 번으로 설정"),
+                arguments: { PAGE: ARG_NUM(1) }
+              },
+              {
+                opcode: "motionIsPlaying",
+                blockType: BlockType.BOOLEAN,
+                text: t("motionIsPlaying", "모션이 재생 중인가?")
+              },
+              { opcode: "motionCount", blockType: BlockType.REPORTER, text: t("motionCount", "저장된 모션 개수") },
+              "---",
+              // ---------------- advanced ----------------
+              {
+                opcode: "rawWrite",
+                blockType: BlockType.COMMAND,
+                text: t("rawWrite", "장치 [ID] 주소 [ADDR] 에 [SIZE] 바이트 값 [VALUE] 쓰기"),
+                arguments: {
+                  ID: ARG_NUM(200),
+                  ADDR: ARG_NUM(91),
+                  SIZE: ARG_NUM(1, "byteSize"),
+                  VALUE: ARG_NUM(1)
+                }
+              },
+              {
+                opcode: "rawRead",
+                blockType: BlockType.REPORTER,
+                text: t("rawRead", "장치 [ID] 주소 [ADDR] 의 [SIZE] 바이트 값"),
+                arguments: { ID: ARG_NUM(200), ADDR: ARG_NUM(89), SIZE: ARG_NUM(1, "byteSize") }
+              }
+            ],
+            menus: {
+              connKind: {
+                acceptReporters: false,
+                items: [
+                  { text: t("menu.usb", "USB"), value: "usb" },
+                  { text: t("menu.ble", "블루투스"), value: "ble" }
+                ]
+              },
+              onOff: {
+                acceptReporters: true,
+                items: [
+                  { text: t("menu.on", "켜기"), value: "on" },
+                  { text: t("menu.off", "끄기"), value: "off" }
+                ]
+              },
+              // dynamic: detected motors first, labelled with their model ("3 · 2XL430 A축")
+              dxlId: { acceptReporters: true, items: "_dxlIdMenu" },
+              dxlModule: { acceptReporters: false, items: "_dxlModuleMenu" },
+              dxlMode: {
+                acceptReporters: false,
+                items: [
+                  { text: t("menu.modePosition", "위치(관절)"), value: "position" },
+                  { text: t("menu.modeVelocity", "바퀴(연속 회전)"), value: "velocity" },
+                  { text: t("menu.modeExtended", "확장 위치(다회전)"), value: "extended" }
+                ]
+              },
+              dxlProp: {
+                acceptReporters: false,
+                items: [
+                  { text: t("menu.propPosition", "현재 각도 (°)"), value: "position" },
+                  { text: t("menu.propVelocity", "현재 속도 (rpm)"), value: "velocity" },
+                  { text: t("menu.propLoad", "부하 (%)"), value: "load" },
+                  { text: t("menu.propTemperature", "온도 (°C)"), value: "temperature" },
+                  { text: t("menu.propVoltage", "전압 (V)"), value: "voltage" },
+                  { text: t("menu.propModel", "모델 번호"), value: "model" },
+                  { text: t("menu.propError", "하드웨어 오류"), value: "error" }
+                ]
+              },
+              ledColor: {
+                acceptReporters: false,
+                items: [
+                  { text: t("menu.red", "빨강"), value: "red" },
+                  { text: t("menu.green", "초록"), value: "green" },
+                  { text: t("menu.blue", "파랑"), value: "blue" }
+                ]
+              },
+              ledMix: {
+                acceptReporters: false,
+                items: Object.keys(LED_MIX).map((value) => ({ text: t(`menu.mix.${value}`, LED_MIX[value].name), value }))
+              },
+              note: { acceptReporters: true, items: this._noteMenu() },
+              button: {
+                acceptReporters: false,
+                items: [
+                  { text: "START", value: "start" },
+                  { text: "MODE", value: "mode" }
+                ]
+              },
+              tiltAxis: {
+                acceptReporters: false,
+                items: [
+                  { text: t("menu.roll", "롤 (좌우)"), value: "roll" },
+                  { text: t("menu.pitch", "피치 (앞뒤)"), value: "pitch" },
+                  { text: t("menu.yaw", "요 (회전)"), value: "yaw" }
+                ]
+              },
+              xyz: { acceptReporters: false, items: ["x", "y", "z"] },
+              port5: { acceptReporters: true, items: ["1", "2", "3", "4", "5"] },
+              port2: { acceptReporters: true, items: ["1", "2"] },
+              sensor: {
+                acceptReporters: false,
+                items: [
+                  { text: t("menu.ir", "적외선 (IR)"), value: "ir" },
+                  { text: t("menu.dms", "거리 (DMS)"), value: "dms" },
+                  { text: t("menu.touch", "터치"), value: "touch" },
+                  { text: t("menu.brightness", "밝기"), value: "brightness" },
+                  { text: t("menu.color", "컬러 (0~6)"), value: "color" },
+                  { text: t("menu.temperature", "온도"), value: "temperature" },
+                  { text: t("menu.magnet", "자석"), value: "magnet" },
+                  { text: t("menu.motion", "인체 감지"), value: "motion" },
+                  { text: t("menu.moisture", "습도"), value: "moisture" },
+                  { text: t("menu.user", "사용자 장치 (아날로그)"), value: "user" }
+                ]
+              },
+              colorName: {
+                acceptReporters: false,
+                items: [
+                  { text: t("menu.white", "흰색"), value: "white" },
+                  { text: t("menu.black", "검정"), value: "black" },
+                  { text: t("menu.red", "빨강"), value: "red" },
+                  { text: t("menu.green", "초록"), value: "green" },
+                  { text: t("menu.blue", "파랑"), value: "blue" },
+                  { text: t("menu.yellow", "노랑"), value: "yellow" }
+                ]
+              },
+              ledModule: {
+                acceptReporters: false,
+                items: [
+                  { text: t("menu.ledBoth", "모두 켜기"), value: "both" },
+                  { text: t("menu.ledLeft", "왼쪽만"), value: "left" },
+                  { text: t("menu.ledRight", "오른쪽만"), value: "right" },
+                  { text: t("menu.ledOff", "모두 끄기"), value: "off" }
+                ]
+              },
+              motionStop: {
+                acceptReporters: false,
+                items: [
+                  { text: t("menu.stopUnit", "현재 동작이 끝나면"), value: "unit" },
+                  { text: t("menu.stopKeyframe", "현재 키프레임에서"), value: "keyframe" },
+                  { text: t("menu.stopNow", "즉시"), value: "now" }
+                ]
+              },
+              byteSize: { acceptReporters: false, items: ["1", "2", "4"] }
+            }
+          };
+        }
+        _noteMenu() {
+          const names = ["도", "도#", "레", "레#", "미", "파", "파#", "솔", "솔#", "라", "라#", "시"];
+          const items = [];
+          for (let i = 0; i <= 51; i++) {
+            const octave = Math.floor(i / 12) + 1;
+            items.push({ text: `${i} (${names[i % 12]}${octave})`, value: String(i) });
+          }
+          return items;
+        }
+        // ------------------------------------------------------------------
+        // connection
+        // ------------------------------------------------------------------
+        // Button callbacks (TurboWarp calls these directly; scratch-gui routes
+        // the toolbox button through runtime.emit('CM550_CONNECT', kind)).
+        connectUsbButton() {
+          return this._connect("usb");
+        }
+        connectBleButton() {
+          return this._connect("ble");
+        }
+        /** @param {'usb'|'ble'|object} kind - see CM550Device.connect */
+        async _connect(kind) {
+          try {
+            await this.device.connect(kind);
+            this.device.lastError = "";
+          } catch (e) {
+            this.device.lastError = e.message || String(e);
+          }
+          if (this.device.connected) this.device.scanMotors().catch(() => {
+          });
+        }
+        _dxlIdMenu() {
+          const desc = this.device.motorDesc;
+          const found = this.device.motors.map((m) => ({
+            text: `${m.id} · ${desc.labels[m.id] || modelName3(m.model)}`,
+            value: String(m.id)
+          }));
+          const used = new Set(this.device.motors.map((m) => m.id));
+          const rest = [];
+          for (let id = 1; id <= 30; id++) if (!used.has(id)) rest.push(String(id));
+          return found.concat(rest);
+        }
+        _dxlModuleMenu() {
+          const pairs = this.device.motorDesc.pairs;
+          const items = pairs.map((p, i) => ({
+            text: `모듈 ${i + 1} (ID ${p.a}·${p.b})`,
+            value: `${p.a},${p.b}`
+          }));
+          const used = new Set(items.map((x) => x.value));
+          for (let a = 1; a <= 15; a += 2) {
+            const value = `${a},${a + 1}`;
+            if (!used.has(value)) items.push({ text: `ID ${a}·${a + 1}`, value });
+          }
+          return items;
+        }
+        _moduleIds(value) {
+          const [a, b] = String(value).split(",").map((x) => num2(x));
+          return [a || 1, b || (a || 1) + 1];
+        }
+        connect(args) {
+          return this._connect(args.KIND === "ble" ? "ble" : "usb");
+        }
+        disconnect() {
+          return this.device.disconnect();
+        }
+        isConnected() {
+          return this.device.connected;
+        }
+        lastError() {
+          return this.device.lastError || "";
+        }
+        async _stopAll() {
+          if (!this.device.connected) return;
+          try {
+            await this.device.stopMotion(MOTION_STOP.NOW);
+            for (const id of Object.keys(this.device._modeCache)) {
+              if (this.device._modeCache[id] === OP_MODE.VELOCITY) {
+                await this.device.writeDXL(Number(id), DXL.GOAL_VELOCITY, 0);
+              }
+            }
+          } catch (e) {
+          }
+        }
+        /**
+         * Run a device action; on failure store the message and resolve quietly.
+         * @param fn
+         * @param fallback
+         */
+        async _guard(fn, fallback) {
+          if (!this.device.connected) {
+            this.device.lastError = t("errNotConnected", "CM-550이 연결되어 있지 않습니다.");
+            this._reportError(this.device.lastError);
+            return fallback;
+          }
+          try {
+            return await fn();
+          } catch (e) {
+            this.device.lastError = e.message || String(e);
+            this._reportError(this.device.lastError);
+            return fallback;
+          }
+        }
+        /** Let the host show block errors (set `onError` to a callback). */
+        _reportError(message) {
+          if (typeof this.onError === "function") {
+            try {
+              this.onError(message);
+            } catch (e) {
+            }
+          }
+        }
+        _onOff(v) {
+          if (typeof v === "boolean") return v ? 1 : 0;
+          const s = String(v).toLowerCase();
+          return s === "on" || s === "1" || s === "true" || s === "켜기" ? 1 : 0;
+        }
+        // ------------------------------------------------------------------
+        // DYNAMIXEL
+        // ------------------------------------------------------------------
+        dxlTorque(args) {
+          const id = num2(args.ID);
+          return this._guard(async () => {
+            await this.device.writeDXL(id, DXL.TORQUE_ENABLE, this._onOff(args.ONOFF));
+          });
+        }
+        dxlMoveTo(args) {
+          return this._guard(() => this.device.moveTo(num2(args.ID), num2(args.DEG), num2(args.SPEED)));
+        }
+        dxlMoveToWait(args) {
+          const id = num2(args.ID);
+          return this._guard(async () => {
+            await this.device.moveTo(id, num2(args.DEG), num2(args.SPEED));
+            await this.device.waitUntilStopped(id);
+          });
+        }
+        dxlMoveTwo(args) {
+          const ids = [num2(args.ID1), num2(args.ID2)];
+          const degs = [num2(args.DEG1), num2(args.DEG2)];
+          return this._guard(async () => {
+            for (const id of ids) {
+              await this.device.ensureMode(id, [OP_MODE.POSITION, OP_MODE.EXTENDED_POSITION]);
+            }
+            await this.device.syncWriteDXL(DXL.GOAL_POSITION, ids.map((id, i) => ({
+              id,
+              value: Math.round(degs[i] / 360 * 4096)
+            })));
+          });
+        }
+        dxlWheel(args) {
+          return this._guard(() => this.device.setWheelSpeed(num2(args.ID), num2(args.SPEED)));
+        }
+        dxlWheelTwo(args) {
+          const ids = [num2(args.ID1), num2(args.ID2)];
+          const speeds = [num2(args.SPEED1), num2(args.SPEED2)];
+          return this._guard(async () => {
+            const items = [];
+            for (let i = 0; i < 2; i++) {
+              await this.device.setOperatingMode(ids[i], OP_MODE.VELOCITY);
+              const limit = await this.device.getVelocityLimit(ids[i]);
+              items.push({ id: ids[i], value: limit * clamp(speeds[i], -100, 100) / 100 });
+            }
+            await this.device.syncWriteDXL(DXL.GOAL_VELOCITY, items);
+          });
+        }
+        dxlStop(args) {
+          const id = num2(args.ID);
+          return this._guard(async () => {
+            const mode = this.device._modeCache[id];
+            if (mode === OP_MODE.VELOCITY) {
+              await this.device.writeDXL(id, DXL.GOAL_VELOCITY, 0);
+            } else {
+              const pos = await this.device.readDXL(id, DXL.PRESENT_POSITION);
+              await this.device.writeDXL(id, DXL.GOAL_POSITION, pos);
+            }
+          });
+        }
+        dxlSetMode(args) {
+          const map = { position: OP_MODE.POSITION, velocity: OP_MODE.VELOCITY, extended: OP_MODE.EXTENDED_POSITION };
+          const mode = map[args.MODE] || OP_MODE.POSITION;
+          return this._guard(() => this.device.setOperatingMode(num2(args.ID), mode));
+        }
+        dxlLed(args) {
+          return this._guard(() => this.device.writeDXL(num2(args.ID), DXL.LED, this._onOff(args.ONOFF)));
+        }
+        dxlAllTorque(args) {
+          return this._guard(async () => {
+            await this.device.writeCM(CM.DXL_TORQUE, this._onOff(args.ONOFF) ? 2 : 1);
+            await delay2(100);
+          });
+        }
+        dxlRead(args) {
+          const id = num2(args.ID);
+          return this._guard(async () => {
+            switch (args.PROP) {
+              case "velocity": {
+                const v = await this.device.readDXL(id, DXL.PRESENT_VELOCITY);
+                return Math.round(v * 0.229 * 100) / 100;
+              }
+              case "load": {
+                const v = await this.device.readDXL(id, DXL.PRESENT_LOAD);
+                return v / 10;
+              }
+              case "temperature":
+                return this.device.readDXL(id, DXL.PRESENT_TEMPERATURE);
+              case "voltage": {
+                const v = await this.device.readDXL(id, DXL.PRESENT_INPUT_VOLTAGE);
+                return v / 10;
+              }
+              case "model":
+                return this.device.readDXL(id, DXL.MODEL_NUMBER);
+              case "error":
+                return this.device.readDXL(id, DXL.HARDWARE_ERROR);
+              case "position":
+              default: {
+                const v = await this.device.readDXL(id, DXL.PRESENT_POSITION);
+                return Math.round(tickToDeg(v) * 10) / 10;
+              }
+            }
+          }, 0);
+        }
+        dxlIsMoving(args) {
+          return this._guard(async () => Boolean(await this.device.readDXL(num2(args.ID), DXL.MOVING)), false);
+        }
+        dxlScan() {
+          return this._guard(async () => {
+            const motors = await this.device.scanMotors();
+            this._dxlIds = motors.map((m) => m.id);
+            return this._dxlIds.join(",");
+          }, "");
+        }
+        dxlModuleMove(args) {
+          const [a, b] = this._moduleIds(args.MODULE);
+          return this.dxlMoveTwo({ ID1: a, DEG1: args.DEGA, ID2: b, DEG2: args.DEGB });
+        }
+        dxlModuleWheels(args) {
+          const [a, b] = this._moduleIds(args.MODULE);
+          return this.dxlWheelTwo({ ID1: a, SPEED1: args.SPA, ID2: b, SPEED2: args.SPB });
+        }
+        dxlGrip(args) {
+          return this._guard(() => this.device.grip(num2(args.ID), num2(args.DEG), num2(args.FORCE)));
+        }
+        dxlModelName(args) {
+          return this._guard(async () => modelName3(await this.device.requireModel(num2(args.ID)).catch(() => this.device._modelCache[num2(args.ID)])), "");
+        }
+        // ------------------------------------------------------------------
+        // CM-550 built-ins
+        // ------------------------------------------------------------------
+        cmLedColor(args) {
+          const mix = LED_MIX[args.COLOR] || LED_MIX.off;
+          return this._guard(async () => {
+            await this.device.writeCM(CM.LED_RED, mix.rgb[0]);
+            await this.device.writeCM(CM.LED_GREEN, mix.rgb[1]);
+            await this.device.writeCM(CM.LED_BLUE, mix.rgb[2]);
+          });
+        }
+        cmLed(args) {
+          const reg = { red: CM.LED_RED, green: CM.LED_GREEN, blue: CM.LED_BLUE }[args.COLOR] || CM.LED_RED;
+          return this._guard(() => this.device.writeCM(reg, this._onOff(args.ONOFF)));
+        }
+        cmBuzzerNote(args) {
+          const secs = clamp(num2(args.SECS), 0.1, 5);
+          return this._guard(async () => {
+            await this.device.playNote(num2(args.NOTE), secs);
+            await delay2(secs * 1e3);
+          });
+        }
+        cmBuzzerMelody(args) {
+          return this._guard(() => this.device.playMelody(num2(args.INDEX)));
+        }
+        cmButton(args) {
+          return this._guard(async () => {
+            const s = await this.device.readCM(CM.BUTTON_STATUS);
+            return args.BUTTON === "mode" ? s === 2 || s === 3 : s === 1 || s === 3;
+          }, false);
+        }
+        cmTilt(args) {
+          const reg = { roll: CM.ROLL, pitch: CM.PITCH, yaw: CM.YAW }[args.AXIS] || CM.ROLL;
+          return this._guard(async () => await this.device.readCM(reg) / 100, 0);
+        }
+        cmGyro(args) {
+          const reg = { x: CM.GYRO_X, y: CM.GYRO_Y, z: CM.GYRO_Z }[String(args.AXIS).toLowerCase()] || CM.GYRO_X;
+          return this._guard(async () => await this.device.readCM(reg) / 100, 0);
+        }
+        cmAccel(args) {
+          const reg = { x: CM.ACC_X, y: CM.ACC_Y, z: CM.ACC_Z }[String(args.AXIS).toLowerCase()] || CM.ACC_X;
+          return this._guard(async () => await this.device.readCM(reg) / 100, 0);
+        }
+        cmVoltage() {
+          return this._guard(async () => await this.device.readCM(CM.VOLTAGE) / 10, 0);
+        }
+        cmTemperature() {
+          return this._guard(() => this.device.readCM(CM.TEMPERATURE), 0);
+        }
+        cmSoundCount() {
+          return this._guard(() => this.device.readCM(CM.SOUND_COUNT), 0);
+        }
+        cmSoundReset() {
+          return this._guard(() => this.device.writeCM(CM.SOUND_COUNT, 0));
+        }
+        cmDxlPower(args) {
+          return this._guard(() => this.device.writeCM(CM.DXL_POWER, this._onOff(args.ONOFF)));
+        }
+        // ------------------------------------------------------------------
+        // 5-pin ports
+        // ------------------------------------------------------------------
+        portSensor(args) {
+          const spec = {
+            ir: PORT2.IR,
+            dms: PORT2.DMS,
+            touch: PORT2.TOUCH,
+            brightness: PORT2.BRIGHTNESS,
+            color: PORT2.COLOR,
+            temperature: PORT2.TEMPERATURE,
+            magnet: PORT2.MAGNET,
+            motion: PORT2.MOTION,
+            moisture: PORT2.MOISTURE,
+            user: PORT2.USER
+          }[args.SENSOR] || PORT2.IR;
+          return this._guard(() => this.device.readPort(spec, num2(args.PORT)), 0);
+        }
+        portTouch(args) {
+          return this._guard(async () => Boolean(await this.device.readPort(PORT2.TOUCH, num2(args.PORT))), false);
+        }
+        portColor(args) {
+          const idx = { white: 1, black: 2, red: 3, green: 4, blue: 5, yellow: 6 }[args.COLOR] || 0;
+          return this._guard(async () => await this.device.readPort(PORT2.COLOR, num2(args.PORT)) === idx, false);
+        }
+        portLed(args) {
+          const v = { off: 0, right: 1, left: 2, both: 3 }[args.STATE];
+          return this._guard(() => this.device.writePort(PORT2.LED, num2(args.PORT), typeof v === "number" ? v : 3));
+        }
+        portServo(args) {
+          const deg = clamp(num2(args.DEG), 0, 300);
+          const value = Math.round(deg / 300 * 1023);
+          return this._guard(() => this.device.writePort(PORT2.SERVO_POSITION, num2(args.PORT), value));
+        }
+        portMotor(args) {
+          const pct = clamp(num2(args.SPEED), -100, 100);
+          const mag = Math.round(Math.abs(pct) / 100 * 1023);
+          const value = pct >= 0 ? 1024 + mag : mag;
+          return this._guard(() => this.device.writePort(PORT2.WHEEL, num2(args.PORT), value));
+        }
+        // ------------------------------------------------------------------
+        // motion
+        // ------------------------------------------------------------------
+        motionPlay(args) {
+          return this._guard(() => this.device.playMotion(num2(args.PAGE)));
+        }
+        motionPlayWait(args) {
+          return this._guard(async () => {
+            await this.device.playMotion(num2(args.PAGE));
+            await this.device.waitMotionDone();
+          });
+        }
+        motionStop(args) {
+          const how = { now: MOTION_STOP.NOW, keyframe: MOTION_STOP.KEYFRAME, unit: MOTION_STOP.UNIT }[args.HOW] || MOTION_STOP.UNIT;
+          return this._guard(() => this.device.stopMotion(how));
+        }
+        motionSpeed(args) {
+          return this._guard(() => this.device.writeCM(CM.MOTION_SPEED, clamp(num2(args.PERCENT), 20, 200)));
+        }
+        motionNext(args) {
+          return this._guard(() => this.device.writeCM(CM.MOTION_NEXT_PAGE, clamp(num2(args.PAGE), 0, 65535)));
+        }
+        motionIsPlaying() {
+          return this._guard(async () => Boolean(await this.device.readCM(CM.MOTION_STATUS)), false);
+        }
+        motionCount() {
+          return this._guard(() => this.device.readCM(CM.MOTION_COUNT), 0);
+        }
+        // ------------------------------------------------------------------
+        // advanced
+        // ------------------------------------------------------------------
+        rawWrite(args) {
+          const size = [1, 2, 4].includes(num2(args.SIZE)) ? num2(args.SIZE) : 1;
+          return this._guard(() => this.device.write(num2(args.ID), num2(args.ADDR), num2(args.VALUE), size));
+        }
+        rawRead(args) {
+          const size = [1, 2, 4].includes(num2(args.SIZE)) ? num2(args.SIZE) : 1;
+          return this._guard(() => this.device.read(num2(args.ID), num2(args.ADDR), size, true), 0);
+        }
+      }
+      return Scratch3CM550Blocks;
+    };
+    module.exports = { createExtension: createExtension2, EXTENSION_ID };
+  }
+});
+
+// src/sim-robot.js
+var require_sim_robot = __commonJS({
+  "src/sim-robot.js"(exports, module) {
+    var P22 = require_protocol2();
+    var CM_ID2 = 200;
+    var DEFAULT_MODELS = { 1: 1060, 2: 1060, 3: 1090, 4: 1090 };
+    var CURRENT_MODELS = /* @__PURE__ */ new Set([1190, 1200, 1210, 1220, 1230, 1240, 1e3, 1010, 1040, 1050, 1020, 1030]);
+    var VELOCITY_LIMIT = 265;
+    var CM_SIZES = {
+      0: 2,
+      6: 1,
+      12: 1,
+      20: 1,
+      21: 1,
+      22: 1,
+      23: 2,
+      26: 1,
+      39: 1,
+      40: 1,
+      64: 1,
+      66: 2,
+      68: 1,
+      69: 2,
+      71: 2,
+      84: 1,
+      85: 1,
+      86: 1,
+      87: 1,
+      89: 1,
+      90: 1,
+      91: 1,
+      92: 1,
+      93: 1,
+      102: 2,
+      104: 2,
+      106: 2,
+      108: 2,
+      110: 2,
+      112: 2,
+      114: 2,
+      116: 2,
+      118: 2,
+      124: 4
+    };
+    var DXL_SIZES = {
+      0: 2,
+      6: 1,
+      7: 1,
+      11: 1,
+      38: 2,
+      44: 4,
+      64: 1,
+      65: 1,
+      70: 1,
+      100: 2,
+      104: 4,
+      108: 4,
+      112: 4,
+      116: 4,
+      102: 2,
+      122: 1,
+      124: 2,
+      126: 2,
+      128: 4,
+      132: 4,
+      144: 2,
+      146: 1
+    };
+    var fault = () => typeof window !== "undefined" && window.__dmSimFault || "";
+    var tickToDeg = (t) => Math.round(t / 4096 * 3600) / 10;
+    var onOff = (v) => v ? "켜기" : "끄기";
+    var signed2 = (v, size) => v >= 2 ** (size * 8 - 1) ? v - 2 ** (size * 8) : v;
+    var SimTransport2 = class {
+      constructor(onAction) {
+        this.onAction = onAction || (() => {
+        });
+        this._data = null;
+        this._close = null;
+        this.isOpen = false;
+        this.name = "가상 로봇";
+        this.regs = /* @__PURE__ */ new Map();
+        this.last = /* @__PURE__ */ new Map();
+        this.moves = /* @__PURE__ */ new Map();
+        this.motionUntil = 0;
+        this.t0 = Date.now();
+        this.models = typeof window !== "undefined" && window.__dmSimModels || DEFAULT_MODELS;
+        this.ids = Object.keys(this.models).map(Number);
+        const set = (id, addr, v) => this.regs.set(`${id}:${addr}`, v);
+        set(CM_ID2, 0, 450);
+        set(CM_ID2, 6, 47);
+        set(CM_ID2, 12, 3);
+        set(CM_ID2, 20, 2);
+        set(CM_ID2, 21, 2);
+        set(CM_ID2, 22, fault() === "nopower" ? 0 : 1);
+        set(CM_ID2, 71, 12);
+        set(CM_ID2, 89, fault() === "lowvolt" ? 50 : 120);
+        set(CM_ID2, 90, 28);
+        for (const id of this.ids) {
+          set(id, 0, this.models[id]);
+          if (CURRENT_MODELS.has(this.models[id])) set(id, 38, 1750);
+          set(id, 11, 3);
+          set(id, 44, VELOCITY_LIMIT);
+          set(id, 132, 2048);
+          set(id, 116, 2048);
+          set(id, 144, 120);
+          set(id, 146, 30 + id);
+        }
+      }
+      onData(cb) {
+        this._data = cb;
+      }
+      onClose(cb) {
+        this._close = cb;
+      }
+      open() {
+        this.isOpen = true;
+        return Promise.resolve();
+      }
+      close() {
+        const was = this.isOpen;
+        this.isOpen = false;
+        if (was && this._close) this._close();
+        return Promise.resolve();
+      }
+      _reply(id, params = [], error = 0) {
+        const pkt = P22.buildPacket(id, P22.INST.STATUS, [error, ...params]);
+        setTimeout(() => {
+          if (this.isOpen && this._data) this._data(pkt);
+        }, 2);
+      }
+      /** Whether DYNAMIXEL packets get through to the motors and back. */
+      _busAlive() {
+        return this.regs.get(`${CM_ID2}:22`) === 1 && fault() !== "lowvolt";
+      }
+      _report(key, value, text2) {
+        if (this.last.get(key) === value) return;
+        this.last.set(key, value);
+        this.onAction(text2);
+      }
+      /** Live values for sensors and moving joints. */
+      _read(id, addr, size) {
+        const now = Date.now();
+        const t = (now - this.t0) / 1e3;
+        if (this.ids.includes(id)) {
+          const mv = this.moves.get(id);
+          if (addr === 122) return mv && now < mv.end ? 1 : 0;
+          if (addr === 132 && mv) {
+            const k = Math.min(1, (now - mv.start) / Math.max(1, mv.end - mv.start));
+            return Math.round(mv.from + (mv.to - mv.from) * k);
+          }
+          if (addr === 128) {
+            return this.regs.get(`${id}:104`) || 0;
+          }
+        }
+        if (id === CM_ID2) {
+          if (addr === 68) return now < this.motionUntil ? 1 : 0;
+          if (addr === 102) return Math.round(Math.sin(t / 3) * 300);
+          if (addr === 104) return Math.round(Math.cos(t / 4) * 200);
+          if (addr === 124) return now - this.t0;
+          if (addr >= 415 && addr <= 427) return 300 + Math.round(200 * (1 + Math.sin(t)) / 2);
+          if (addr >= 484 && addr <= 492) return 600 + Math.round(100 * Math.sin(t / 2));
+          if (addr >= 469 && addr <= 473) return 1 + Math.floor(t / 2) % 6;
+          if (addr >= 449 && addr <= 453) return 24;
+        }
+        const v = this.regs.get(`${id}:${addr}`) || 0;
+        return size ? v : v;
+      }
+      /**
+       * EEPROM is writable only with torque off; dual-axis modules (2XL430)
+       * additionally need the other axis' torque off.
+       */
+      _eepromLocked(id) {
+        if (this.regs.get(`${id}:64`)) return true;
+        if (this.models[id] === 1090 || this.models[id] === 1160) {
+          const sib = id % 2 ? id + 1 : id - 1;
+          if (this.models[sib] === this.models[id] && this.regs.get(`${sib}:64`)) return true;
+        }
+        return false;
+      }
+      /** Assemble `len` bytes starting at addr from the register map. */
+      _readBlock(id, addr, len) {
+        const sizes = id === CM_ID2 ? CM_SIZES : DXL_SIZES;
+        if (!sizes[addr] && len <= 4) return P22.le(this._read(id, addr, len), len);
+        const out = new Array(len).fill(0);
+        for (let a = addr; a < addr + len; a++) {
+          const size = sizes[a];
+          if (!size) continue;
+          const bytes = P22.le(this._read(id, a, size), size);
+          for (let i = 0; i < size && a - addr + i < len; i++) out[a - addr + i] = bytes[i];
+        }
+        return out;
+      }
+      _write(id, addr, value, size) {
+        const prev = this.regs.get(`${id}:${addr}`);
+        this.regs.set(`${id}:${addr}`, value);
+        if (id === CM_ID2) this._describeController(addr, value);
+        else this._describeDxl(id, addr, value, size, prev);
+      }
+      _describeController(addr, v) {
+        const leds = { 91: "빨강", 92: "초록", 93: "파랑" };
+        if (leds[addr]) {
+          const rgbNow = () => [91, 92, 93].map((a) => this.regs.get(`${CM_ID2}:${a}`) ? 1 : 0).join("");
+          const names = {
+            100: "빨강",
+            "010": "초록",
+            "001": "파랑",
+            110: "노랑",
+            "011": "하늘",
+            101: "보라",
+            111: "흰색",
+            "000": "꺼짐"
+          };
+          clearTimeout(this._ledTimer);
+          this._ledTimer = setTimeout(() => {
+            const rgb = rgbNow();
+            this._report("cmled", rgb, `CM-550 LED: ${names[rgb] || rgb}`);
+          }, 40);
+          return;
+        }
+        if (addr === 85) {
+          const idx = this.regs.get(`${CM_ID2}:84`) || 0;
+          this.last.delete("buzzer");
+          if (v === 255) return this._report("buzzer", `m${idx}`, `부저: 멜로디 ${idx}번`);
+          return this._report("buzzer", `n${idx}`, `부저: ${idx}번 음 ${(v / 10).toFixed(1)}초`);
+        }
+        if (addr === 66) {
+          if (v >= 65533) {
+            const wasPlaying = Date.now() < this.motionUntil;
+            this.motionUntil = 0;
+            this.last.delete("motion");
+            return wasPlaying ? this.onAction("모션 정지") : void 0;
+          }
+          if (v === 0) return void 0;
+          this.motionUntil = Date.now() + 1500;
+          this.last.delete("motion");
+          return this._report("motion", v, `모션 ${v}번 재생 (1.5초)`);
+        }
+        if (addr === 64) return this._report("mspeed", v, `모션 속도 ${v}%`);
+        if (addr === 22) return this._report("dxlpower", v, `다이나믹셀 전원 ${onOff(v)}`);
+        if (addr === 41) {
+          if (v === 1 || v === 2) {
+            for (const id of this.ids) this.regs.set(`${id}:64`, v === 2 ? 1 : 0);
+            this.onAction(`모든 다이나믹셀 토크 ${v === 2 ? "켜기" : "끄기"}`);
+          }
+          return void 0;
+        }
+        if (addr >= 400 && addr <= 402) {
+          const port = (addr - 400) / 2 + 1;
+          const pct = v >= 1024 ? Math.round((v - 1024) / 1023 * 100) : -Math.round(v / 1023 * 100);
+          return this._report(`wheel${port}`, v, `포트 ${port} 기어모터 ${pct}%`);
+        }
+        if (addr >= 404 && addr <= 406) {
+          const port = (addr - 404) / 2 + 1;
+          return this._report(`servo${port}`, v, `포트 ${port} 서보 → ${Math.round(v / 1023 * 300)}°`);
+        }
+        if (addr >= 434 && addr <= 438) {
+          const states = ["모두 끄기", "오른쪽만", "왼쪽만", "모두 켜기"];
+          return this._report(`ledmod${addr}`, v, `포트 ${addr - 433} LED 모듈 ${states[v] || v}`);
+        }
+        if (addr === 86 && v === 0) return this.onAction("소리 감지 횟수 초기화");
+        if (addr === 40 && v === 1) {
+          setTimeout(() => {
+            this.regs.set(`${CM_ID2}:39`, this._busAlive() ? this.ids.length : 0);
+            this.regs.set(`${CM_ID2}:40`, 0);
+          }, 300);
+        }
+        return void 0;
+      }
+      _describeDxl(id, addr, v, size, prev) {
+        if (addr === 64) return this._report(`t${id}`, v, `다이나믹셀 ${id} 토크 ${onOff(v)}`);
+        if (addr === 65) return this._report(`l${id}`, v, `다이나믹셀 ${id} LED ${onOff(v)}`);
+        if (addr === 11) {
+          const names = { 0: "전류", 1: "바퀴(속도)", 3: "위치(관절)", 4: "확장 위치", 5: "전류 기반 위치(잡기)", 16: "PWM" };
+          if ((v === 0 || v === 5) && !CURRENT_MODELS.has(this.models[id])) return void 0;
+          return this._report(`m${id}`, v, `다이나믹셀 ${id} 모드 → ${names[v] || v}`);
+        }
+        if (addr === 116) {
+          const to = signed2(v, 4);
+          const from = this._read(id, 132);
+          const pv = this.regs.get(`${id}:112`) || 0;
+          const rpm = (pv || VELOCITY_LIMIT) * 0.229;
+          const ms = Math.min(4e3, Math.max(150, Math.abs(to - from) / 4096 * (6e4 / rpm)));
+          this.moves.set(id, { from, to, start: Date.now(), end: Date.now() + ms });
+          this.regs.set(`${id}:132`, to);
+          this.last.delete(`p${id}`);
+          return this._report(`p${id}`, to, `다이나믹셀 ${id} → ${tickToDeg(to)}°`);
+        }
+        if (addr === 102) {
+          const limit = this.regs.get(`${id}:38`) || 1;
+          return this._report(`c${id}`, v, `다이나믹셀 ${id} 잡는 힘 ${Math.round(signed2(v, 2) / limit * 100)}%`);
+        }
+        if (addr === 104) {
+          const vel = signed2(v, 4);
+          const pct = Math.round(vel / VELOCITY_LIMIT * 100);
+          return this._report(`v${id}`, vel, vel === 0 ? `다이나믹셀 ${id} 바퀴 정지` : `다이나믹셀 ${id} 바퀴 ${pct}%`);
+        }
+        return prev;
+      }
+      write(bytes) {
+        if (!this.isOpen) return Promise.reject(new Error("가상 로봇이 연결되어 있지 않습니다."));
+        const b = Array.from(bytes);
+        if (b[0] !== 255 || b[1] !== 255 || b[2] !== 253) return Promise.resolve();
+        const id = b[4];
+        const len = b[5] | b[6] << 8;
+        const inst = b[7];
+        const params = b.slice(8, 8 + len - 3);
+        const relays = this._busAlive() && fault() !== "relay";
+        const exists = (i) => i === CM_ID2 || this.ids.includes(i) && relays;
+        if (inst === P22.INST.PING) {
+          const pong = (i) => this._reply(i, P22.le(this.regs.get(`${i}:0`) || 0, 2).concat([i === CM_ID2 ? 47 : 46]));
+          if (id === P22.BROADCAST_ID) [CM_ID2, ...this.ids].filter(exists).forEach(pong);
+          else if (exists(id)) pong(id);
+        } else if (inst === P22.INST.READ) {
+          if (!exists(id)) return Promise.resolve();
+          const addr = P22.fromLE(params, 0, 2);
+          const size = P22.fromLE(params, 2, 2);
+          this._reply(id, this._readBlock(id, addr, size));
+        } else if (inst === P22.INST.WRITE) {
+          if (!exists(id)) return Promise.resolve();
+          const addr = P22.fromLE(params, 0, 2);
+          const size = params.length - 2;
+          if (id !== CM_ID2 && addr < 64 && this._eepromLocked(id)) {
+            this._reply(id, [], 7);
+            return Promise.resolve();
+          }
+          this._write(id, addr, P22.fromLE(params, 2, size), size);
+          this._reply(id);
+        } else if (inst === P22.INST.SYNC_WRITE) {
+          const addr = P22.fromLE(params, 0, 2);
+          const size = P22.fromLE(params, 2, 2);
+          for (let i = 4; i + size < params.length + 1; i += 1 + size) {
+            const did = params[i];
+            if (this.ids.includes(did)) this._write(did, addr, P22.fromLE(params, i + 1, size), size);
+          }
+        }
+        return Promise.resolve();
+      }
+    };
+    module.exports = { SimTransport: SimTransport2 };
+  }
+});
+
+// src/main.js
+import * as ScratchBlocks2 from "https://cdn.jsdelivr.net/npm/scratch-blocks@2.2.1/dist/main.mjs";
+
+// src/theme.js
+var BRAND = "#2E6ABF";
+var style = (primary, secondary, tertiary) => ({
+  colourPrimary: primary,
+  colourSecondary: secondary,
+  colourTertiary: tertiary,
+  colourQuaternary: tertiary
+});
+var ROBOT_STYLES = {
+  db_dxl: style("#2E6ABF", "#2759A3", "#1F4A8A"),
+  // 다이나믹셀 — brand blue
+  db_controller: style("#0FA3A3", "#0D8F8F", "#0A7A7A"),
+  // 컨트롤러
+  db_port: style("#E5739B", "#DB5C88", "#C94A76"),
+  // 센서·포트
+  db_motion: style("#7E57D9", "#6E48C7", "#5E3BB0"),
+  // 모션
+  db_advanced: style("#5E6E87", "#516078", "#435168"),
+  // 고급
+  db_mymotors: style("#1C8FB8", "#187CA0", "#136786")
+  // 연결된 모터 (model-specific)
+};
+var blockColors = {
+  motion: style("#4C97FF", "#4280D7", "#3373CC"),
+  looks: style("#8A94A8", "#7B8599", "#6B7589"),
+  // used for 출력(말하기) blocks
+  sounds: style("#CF63CF", "#C94FC9", "#BD42BD"),
+  control: style("#FFAB19", "#EC9C13", "#CF8B17"),
+  event: style("#FFBF00", "#E6AC00", "#CC9900"),
+  sensing: style("#5CB1D6", "#47A8D1", "#2E8EB8"),
+  pen: style("#0FBD8C", "#0DA57A", "#0B8E69"),
+  operators: style("#59C059", "#46B946", "#389438"),
+  data: style("#FF8C1A", "#FF8000", "#DB6E00"),
+  data_lists: style("#FF661A", "#FF5500", "#E64D00"),
+  more: style("#FF6680", "#FF4D6A", "#FF3355"),
+  ...ROBOT_STYLES,
+  text: "#FFFFFF",
+  workspace: "#F7F9FC",
+  toolboxHover: BRAND,
+  toolboxSelected: "#E8EEF8",
+  toolboxText: "#4A5468",
+  toolbox: "#FFFFFF",
+  flyout: "#F1F4F9",
+  scrollbar: "#CED6E2",
+  scrollbarHover: "#B8C2D2",
+  textField: "#FFFFFF",
+  textFieldText: "#4A5468",
+  insertionMarker: "#000000",
+  insertionMarkerOpacity: 0.2,
+  dragShadowOpacity: 0.6,
+  stackGlow: "#FFF200",
+  stackGlowSize: 4,
+  stackGlowOpacity: 1,
+  replacementGlow: "#FFFFFF",
+  replacementGlowSize: 2,
+  replacementGlowOpacity: 1,
+  colourPickerStroke: "#FFFFFF",
+  fieldShadow: "rgba(255, 255, 255, 0.3)",
+  dropDownShadow: "rgba(0, 0, 0, .3)",
+  numPadBackground: "#547AB2",
+  numPadBorder: "#435F91",
+  numPadActiveBackground: "#435F91",
+  numPadText: "white",
+  valueReportBackground: "#FFFFFF",
+  valueReportBorder: "#AAAAAA",
+  menuHover: "rgba(0, 0, 0, 0.2)"
+};
+
+// src/toolbox.js
+var { modelInfo, modelName } = require_models();
+var sep = '<sep gap="36"/>';
+var num = (name, value, type = "math_number") => `<value name="${name}"><shadow type="${type}"><field name="NUM">${value}</field></shadow></value>`;
+var text = (name, value) => `<value name="${name}"><shadow type="text"><field name="TEXT">${value}</field></shadow></value>`;
+var category = (name, id, colors, body, extra = "") => `<category name="${name}" toolboxitemid="${id}" colour="${colors.colourPrimary}" secondaryColour="${colors.colourTertiary}" ${extra}>${body}</category>`;
+var ROBOT_GROUPS = [
+  {
+    id: "db_dxl",
+    name: "다이나믹셀",
+    opcodes: [
+      "dxlMoveTo",
+      "dxlMoveToWait",
+      "dxlMoveTwo",
+      "---",
+      "dxlWheel",
+      "dxlWheelTwo",
+      "dxlStop",
+      "---",
+      "dxlTorque",
+      "dxlAllTorque",
+      "dxlSetMode",
+      "dxlLed",
+      "---",
+      "dxlRead",
+      "dxlIsMoving",
+      "dxlScan"
+    ]
+  },
+  {
+    id: "db_controller",
+    name: "컨트롤러",
+    opcodes: [
+      "cmLedColor",
+      "cmBuzzerNote",
+      "cmBuzzerMelody",
+      "---",
+      "cmButton",
+      "cmTilt",
+      "cmGyro",
+      "cmAccel",
+      "---",
+      "cmSoundCount",
+      "cmSoundReset",
+      "cmVoltage",
+      "cmTemperature",
+      "cmDxlPower",
+      "---",
+      "isConnected",
+      "lastError"
+    ]
+  },
+  {
+    id: "db_port",
+    name: "센서·포트",
+    opcodes: ["portSensor", "portTouch", "portColor", "---", "portLed", "portServo", "portMotor"]
+  },
+  {
+    id: "db_motion",
+    name: "모션",
+    opcodes: [
+      "motionPlay",
+      "motionPlayWait",
+      "motionStop",
+      "---",
+      "motionSpeed",
+      "motionNext",
+      "---",
+      "motionIsPlaying",
+      "motionCount"
+    ]
+  },
+  {
+    id: "db_mymotors",
+    name: "연결된 모터",
+    dynamic: true,
+    opcodes: ["dxlModuleMove", "dxlModuleWheels", "dxlGrip", "dxlModelName"]
+  },
+  {
+    id: "db_advanced",
+    name: "고급",
+    opcodes: ["rawWrite", "rawRead", "---", "connect", "disconnect"]
+  }
+];
+var OPCODE_STYLE = {};
+for (const g of ROBOT_GROUPS) {
+  for (const op of g.opcodes) if (op !== "---") OPCODE_STYLE[op] = g.id;
+}
+var events = () => category("이벤트", "events", blockColors.event, `
+    <block type="event_whenflagclicked"/>
+    <block type="event_whenkeypressed"/>
+    ${sep}
+    <block type="event_whenbroadcastreceived"/>
+    <block type="event_broadcast"><value name="BROADCAST_INPUT"><shadow type="event_broadcast_menu"/></value></block>
+    <block type="event_broadcastandwait"><value name="BROADCAST_INPUT"><shadow type="event_broadcast_menu"/></value></block>
+`);
+var control = () => category("제어", "control", blockColors.control, `
+    <block type="control_wait">${num("DURATION", 1, "math_positive_number")}</block>
+    ${sep}
+    <block type="control_repeat">${num("TIMES", 10, "math_whole_number")}</block>
+    <block type="control_forever"/>
+    ${sep}
+    <block type="control_if"/>
+    <block type="control_if_else"/>
+    <block type="control_wait_until"/>
+    <block type="control_repeat_until"/>
+    ${sep}
+    <block type="control_stop"/>
+`);
+var operators = () => category("연산", "operators", blockColors.operators, `
+    <block type="operator_add">${num("NUM1", "")}${num("NUM2", "")}</block>
+    <block type="operator_subtract">${num("NUM1", "")}${num("NUM2", "")}</block>
+    <block type="operator_multiply">${num("NUM1", "")}${num("NUM2", "")}</block>
+    <block type="operator_divide">${num("NUM1", "")}${num("NUM2", "")}</block>
+    ${sep}
+    <block type="operator_random">${num("FROM", 1)}${num("TO", 10)}</block>
+    ${sep}
+    <block type="operator_gt">${text("OPERAND1", "")}${text("OPERAND2", 50)}</block>
+    <block type="operator_lt">${text("OPERAND1", "")}${text("OPERAND2", 50)}</block>
+    <block type="operator_equals">${text("OPERAND1", "")}${text("OPERAND2", 50)}</block>
+    ${sep}
+    <block type="operator_and"/>
+    <block type="operator_or"/>
+    <block type="operator_not"/>
+    ${sep}
+    <block type="operator_join">${text("STRING1", "로봇")}${text("STRING2", " 출발")}</block>
+    <block type="operator_letter_of">${num("LETTER", 1, "math_whole_number")}${text("STRING", "로봇")}</block>
+    <block type="operator_length">${text("STRING", "로봇")}</block>
+    <block type="operator_contains">${text("STRING1", "로봇")}${text("STRING2", "봇")}</block>
+    ${sep}
+    <block type="operator_mod">${num("NUM1", "")}${num("NUM2", "")}</block>
+    <block type="operator_round">${num("NUM", "")}</block>
+    ${sep}
+    <block type="operator_mathop">${num("NUM", "")}</block>
+`);
+var variables = () => category("변수", "variables", blockColors.data, "", 'custom="VARIABLE"');
+var myBlocks = () => category("내 블록", "myBlocks", blockColors.more, "", 'custom="PROCEDURE"');
+var output = () => category("출력·타이머", "output", blockColors.looks, `
+    <block type="looks_say">${text("MESSAGE", "안녕!")}</block>
+    <block type="looks_sayforsecs">${text("MESSAGE", "안녕!")}${num("SECS", 2)}</block>
+    ${sep}
+    <block type="sensing_timer"/>
+    <block type="sensing_resettimer"/>
+    <block type="sensing_keypressed"><value name="KEY_OPTION"><shadow type="sensing_keyoptions"/></value></block>
+`);
+var xmlEscape = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+var label = (text2) => `<label text="${xmlEscape(text2)}"/>`;
+var withId = (xml, id) => id ? xml.replace(/(<field name="dxlId">)[^<]*(<\/field>)/g, `$1${id}$2`) : xml;
+var withModule = (xml, pair) => pair ? xml.replace(/(<field name="MODULE">)[^<]*(<\/field>)/, `$1${pair.a},${pair.b}$2`) : xml;
+var myMotorsBody = (robotBlockXML, motors, desc) => {
+  if (!motors.length) {
+    return label("로봇을 연결하면 모터 종류에 맞는 블록이 여기에 나타납니다.");
+  }
+  const counts = {};
+  for (const m of motors) counts[modelName(m.model)] = (counts[modelName(m.model)] || 0) + 1;
+  const parts = [label(`검색된 모터: ${Object.entries(counts).map(([k, v]) => `${k} ${v}개`).join(", ")}`)];
+  if (desc.pairs.length) {
+    parts.push(label(`2축 모듈 ${desc.pairs.length}개 (A축·B축을 한 번에)`));
+    parts.push(withModule(robotBlockXML.dxlModuleMove || "", desc.pairs[0]));
+    parts.push(withModule(robotBlockXML.dxlModuleWheels || "", desc.pairs[0]));
+    parts.push(sep);
+  }
+  const current = motors.filter((m) => modelInfo(m.model) && modelInfo(m.model).current);
+  if (current.length) {
+    parts.push(label(`힘 조절(전류 제어) 모터: ID ${current.map((m) => m.id).join(", ")}`));
+    parts.push(withId(robotBlockXML.dxlGrip || "", current[0].id));
+    parts.push(sep);
+  }
+  parts.push(withId(robotBlockXML.dxlModelName || "", motors[0].id));
+  return parts.join("\n");
+};
+var makeToolbox = (robotBlockXML, scan) => {
+  const motors = scan && scan.motors || [];
+  const desc = scan && scan.desc || { pairs: [], labels: {}, axis: {} };
+  const firstId = motors.length && !motors.some((m) => m.id === 1) ? motors[0].id : 0;
+  const robot = {};
+  for (const g of ROBOT_GROUPS) {
+    const body = g.dynamic ? myMotorsBody(robotBlockXML, motors, desc) : g.opcodes.map((op) => op === "---" ? sep : withId(robotBlockXML[op] || "", firstId)).join("\n");
+    robot[g.id] = category(g.name, g.id, ROBOT_STYLES[g.id], body);
+  }
+  return [
+    '<xml style="display: none">',
+    events(),
+    control(),
+    robot.db_dxl,
+    robot.db_mymotors,
+    robot.db_controller,
+    robot.db_port,
+    robot.db_motion,
+    operators(),
+    variables(),
+    myBlocks(),
+    output(),
+    robot.db_advanced,
+    "</xml>"
+  ].join("\n");
+};
+
+// src/dialogs.js
+import * as ScratchBlocks from "https://cdn.jsdelivr.net/npm/scratch-blocks@2.2.1/dist/main.mjs";
+var el = (tag, attrs = {}, children = []) => {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") e.className = v;
+    else if (k === "text") e.textContent = v;
+    else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+    else e.setAttribute(k, v);
+  }
+  for (const c of [].concat(children)) if (c) e.append(c);
+  return e;
+};
+var openModal = (title, body, buttons, onClose) => {
+  const box = el("div", { class: "db-modal" }, [
+    el("div", { class: "db-modal-title", text: title }),
+    body,
+    el("div", { class: "db-modal-buttons" }, buttons)
+  ]);
+  const overlay = el("div", { class: "db-overlay" }, box);
+  overlay.addEventListener("mousedown", (e) => {
+    if (e.target === overlay) close();
+  });
+  const keyHandler = (e) => {
+    if (e.key === "Escape") close();
+  };
+  function close() {
+    document.removeEventListener("keydown", keyHandler, true);
+    overlay.remove();
+    if (onClose) onClose();
+  }
+  document.addEventListener("keydown", keyHandler, true);
+  document.body.append(overlay);
+  return { overlay, close };
+};
+var TITLES = {
+  "": "새로운 변수",
+  "list": "새로운 리스트",
+  "broadcast_msg": "새로운 메시지"
+};
+var makePromptHandler = (vm2) => (message, defaultValue, callback, optTitle, optVarType) => {
+  const varType = typeof optVarType === "string" ? optVarType : "";
+  const title = optTitle || TITLES[varType] || "이름 입력";
+  const input = el("input", { class: "db-input", type: "text", value: defaultValue || "" });
+  let done = false;
+  const finish = (value) => {
+    if (done) return;
+    done = true;
+    modal.close();
+    callback(value, vm2.runtime.getAllVarNamesOfType(varType), { scope: "global", isCloud: false });
+  };
+  const ok = el("button", { class: "db-btn db-btn-primary", text: "확인", onclick: () => finish(input.value) });
+  const cancel = el("button", { class: "db-btn", text: "취소", onclick: () => finish(null) });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") finish(input.value);
+  });
+  const modal = openModal(title, el("div", { class: "db-modal-body" }, [
+    el("label", { class: "db-label", text: message }),
+    input
+  ]), [cancel, ok], () => {
+    if (!done) {
+      done = true;
+      callback(null);
+    }
+  });
+  setTimeout(() => {
+    input.focus();
+    input.select();
+  });
+};
+var makeProcedureEditor = (workspaceOptions2, onDone) => (mutator, callback) => {
+  const host = el("div", { class: "db-proc-workspace" });
+  let workspace2 = null;
+  let root = null;
+  let result = null;
+  const nextName = (prefix) => {
+    const used = new Set(root.displayNames_ || []);
+    let i = 1;
+    while (used.has(`${prefix}${i}`)) i++;
+    return `${prefix}${i}`;
+  };
+  const addArgument = (kind) => {
+    if (kind === "label") {
+      root.addLabelExternal();
+      root.procCode_ = root.procCode_.replace(/ label text$/, " 설명");
+    } else {
+      const name = nextName(kind === "boolean" ? "조건" : "값");
+      if (kind === "boolean") root.addBooleanExternal();
+      else root.addStringNumberExternal();
+      root.displayNames_[root.displayNames_.length - 1] = name;
+    }
+    root.updateDisplay_();
+    root.focusLastEditor_();
+  };
+  const addBtn = (label2, fn) => el("button", { class: "db-btn", text: label2, onclick: () => root && fn() });
+  const warp = el("input", { type: "checkbox", id: "db-warp" });
+  warp.addEventListener("change", () => root && root.setWarp(warp.checked));
+  const ok = el("button", { class: "db-btn db-btn-primary", text: "확인", onclick: () => {
+    result = root ? root.mutationToDom(true) : null;
+    modal.close();
+  } });
+  const cancel = el("button", { class: "db-btn", text: "취소", onclick: () => modal.close() });
+  const body = el("div", { class: "db-modal-body" }, [
+    host,
+    el("div", { class: "db-proc-tools" }, [
+      addBtn("+ 입력값 (숫자/문자)", () => addArgument("string")),
+      addBtn("+ 입력값 (참/거짓)", () => addArgument("boolean")),
+      addBtn("+ 라벨 글자", () => addArgument("label"))
+    ]),
+    el("label", { class: "db-check", for: "db-warp" }, [warp, document.createTextNode(" 화면 새로 고침 없이 실행하기")])
+  ]);
+  const modal = openModal("블록 만들기", body, [cancel, ok], () => {
+    if (workspace2) {
+      ScratchBlocks.WidgetDiv.hide();
+      const main = ScratchBlocks.getMainWorkspace();
+      if (main) ScratchBlocks.getFocusManager().focusTree(main);
+      workspace2.dispose();
+    }
+    if (result) callback(result);
+    if (onDone) onDone();
+  });
+  modal.overlay.querySelector(".db-modal").classList.add("db-modal-wide");
+  workspace2 = ScratchBlocks.inject(host, Object.assign({}, workspaceOptions2, {
+    zoom: { controls: false, wheel: false, startScale: 0.9 },
+    comments: false,
+    collapse: false,
+    scrollbars: true,
+    sounds: false,
+    toolbox: null
+  }));
+  root = workspace2.newBlock("procedures_declaration");
+  root.setMovable(false);
+  root.setDeletable(false);
+  root.contextMenu = false;
+  workspace2.addChangeListener(() => {
+    root.onChangeFn();
+    const m = workspace2.getMetrics();
+    const { x, y } = root.getRelativeToSurfaceXY();
+    const dy = m.viewHeight / 2 - root.height / 2 - y;
+    let dx = m.viewWidth / 2 - root.width / 2 - x;
+    if (root.width > m.viewWidth) dx = m.viewWidth - root.width - x;
+    root.moveBy(dx, dy);
+  });
+  root.domToMutation(mutator);
+  root.initSvg();
+  root.render();
+  warp.checked = root.getWarp();
+  setTimeout(() => root.focusLastEditor_());
+};
+var confirmDialog = (title, message, okText = "확인") => new Promise((resolve) => {
+  let answer = false;
+  const ok = el("button", { class: "db-btn db-btn-primary", text: okText, onclick: () => {
+    answer = true;
+    modal.close();
+  } });
+  const cancel = el("button", { class: "db-btn", text: "취소", onclick: () => modal.close() });
+  const modal = openModal(
+    title,
+    el("div", { class: "db-modal-body" }, el("p", { text: message })),
+    [cancel, ok],
+    () => resolve(answer)
+  );
+});
+
+// src/project.js
+var AUTOSAVE_KEY = "dynamicmakers.autosave.v1";
+var COSTUME = {
+  name: "robot",
+  bitmapResolution: 1,
+  dataFormat: "svg",
+  assetId: "cd21514d0531fdffb22204e0ec5ed84a",
+  md5ext: "cd21514d0531fdffb22204e0ec5ed84a.svg",
+  rotationCenterX: 0,
+  rotationCenterY: 0
+};
+var emptyProject = () => ({
+  targets: [
+    {
+      isStage: true,
+      name: "Stage",
+      variables: {},
+      lists: {},
+      broadcasts: {},
+      blocks: {},
+      comments: {},
+      currentCostume: 0,
+      costumes: [Object.assign({}, COSTUME, { name: "backdrop" })],
+      sounds: [],
+      volume: 100,
+      layerOrder: 0,
+      tempo: 60,
+      videoTransparency: 50,
+      videoState: "off",
+      textToSpeechLanguage: null
+    },
+    {
+      isStage: false,
+      name: "로봇",
+      variables: {},
+      lists: {},
+      broadcasts: {},
+      comments: {},
+      blocks: {
+        start: {
+          opcode: "event_whenflagclicked",
+          next: null,
+          parent: null,
+          inputs: {},
+          fields: {},
+          shadow: false,
+          topLevel: true,
+          x: 60,
+          y: 60
+        }
+      },
+      currentCostume: 0,
+      costumes: [COSTUME],
+      sounds: [],
+      volume: 100,
+      layerOrder: 1,
+      visible: false,
+      x: 0,
+      y: 0,
+      size: 100,
+      direction: 90,
+      draggable: false,
+      rotationStyle: "all around"
+    }
+  ],
+  monitors: [],
+  extensions: ["cm550"],
+  meta: { semver: "3.0.0", vm: "0.2.0", agent: "Dynamic Makers" }
+});
+var loadAutosave = () => {
+  try {
+    const raw = window.localStorage.getItem(AUTOSAVE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+};
+var saveAutosave = (name, projectJSON) => {
+  try {
+    window.localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({ name, project: projectJSON, savedAt: Date.now() }));
+    return true;
+  } catch (e) {
+    return false;
+  }
+};
+var download = (filename, content, type) => {
+  const blob = new Blob([content], { type });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.append(a);
+  a.click();
+  setTimeout(() => {
+    a.remove();
+    URL.revokeObjectURL(a.href);
+  }, 1500);
+};
+var safeFileName = (name) => String(name || "").trim().replace(/[\\/:*?"<>|]+/g, "_") || "다이나믹 메이커스";
+var pickFile = () => new Promise((resolve) => {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = ".dmk,.dbx,.sb3,.json";
+  input.addEventListener("change", () => {
+    const file = input.files && input.files[0];
+    if (!file) return resolve(null);
+    const reader = new FileReader();
+    const isZip = /\.sb3$/i.test(file.name);
+    reader.onload = () => resolve({ name: file.name.replace(/\.(dmk|dbx|sb3|json)$/i, ""), data: reader.result });
+    if (isZip) reader.readAsArrayBuffer(file);
+    else reader.readAsText(file);
+  });
+  input.click();
+});
+
+// src/main.js
+var import_python_panel_dom = __toESM(require_python_panel_dom());
+var import_extension = __toESM(require_extension());
+var import_sim_robot = __toESM(require_sim_robot());
+
+// src/generated/media.js
+var MEDIA = {
+  "green-flag.svg": "data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0idXRmLTgiPz4KPCEtLSBHZW5lcmF0b3I6IEFkb2JlIElsbHVzdHJhdG9yIDIxLjAuMCwgU1ZHIEV4cG9ydCBQbHVnLUluIC4gU1ZHIFZlcnNpb246IDYuMDAgQnVpbGQgMCkgIC0tPgo8c3ZnIHZlcnNpb249IjEuMSIgaWQ9ImdyZWVuZmxhZyIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIiB4bWxuczp4bGluaz0iaHR0cDovL3d3dy53My5vcmcvMTk5OS94bGluayIgeD0iMHB4IiB5PSIwcHgiCgkgdmlld0JveD0iMCAwIDI0IDI0IiBzdHlsZT0iZW5hYmxlLWJhY2tncm91bmQ6bmV3IDAgMCAyNCAyNDsiIHhtbDpzcGFjZT0icHJlc2VydmUiPgo8c3R5bGUgdHlwZT0idGV4dC9jc3MiPgoJLnN0MHtmaWxsOiM0NTk5M0Q7fQoJLnN0MXtmaWxsOiM0Q0JGNTY7fQo8L3N0eWxlPgo8dGl0bGU+Z3JlZW5mbGFnPC90aXRsZT4KPHBhdGggY2xhc3M9InN0MCIgZD0iTTIwLjgsMy43Yy0wLjQtMC4yLTAuOS0wLjEtMS4yLDAuMmMtMiwxLjYtNC44LDEuNi02LjgsMGMtMi4zLTEuOS01LjYtMi4zLTguMy0xVjIuNWMwLTAuNi0wLjUtMS0xLTEKCXMtMSwwLjQtMSwxdjE4LjhjMCwwLjUsMC41LDEsMSwxaDAuMWMwLjUsMCwxLTAuNSwxLTF2LTYuNGMxLTAuNywyLjEtMS4yLDMuNC0xLjNjMS4yLDAsMi40LDAuNCwzLjQsMS4yYzIuOSwyLjMsNywyLjMsOS44LDAKCWMwLjMtMC4yLDAuNC0wLjUsMC40LTAuOVY0LjdDMjEuNiw0LjIsMjEuMywzLjgsMjAuOCwzLjd6IE0yMC41LDEzLjlDMjAuNSwxMy45LDIwLjUsMTMuOSwyMC41LDEzLjlDMTgsMTYsMTQuNCwxNiwxMS45LDE0CgljLTEuMS0wLjktMi41LTEuNC00LTEuNGMtMS4yLDAuMS0yLjMsMC41LTMuNCwxLjFWNEM3LDIuNiwxMCwyLjksMTIuMiw0LjZjMi40LDEuOSw1LjcsMS45LDguMSwwYzAuMSwwLDAuMSwwLDAuMiwwCgljMCwwLDAuMSwwLjEsMC4xLDAuMUwyMC41LDEzLjl6Ii8+CjxwYXRoIGNsYXNzPSJzdDEiIGQ9Ik0yMC42LDQuOGwtMC4xLDkuMWMwLDAsMCwwLjEsMCwwLjFjLTIuNSwyLTYuMSwyLTguNiwwYy0xLjEtMC45LTIuNS0xLjQtNC0xLjRjLTEuMiwwLjEtMi4zLDAuNS0zLjQsMS4xVjQKCUM3LDIuNiwxMCwyLjksMTIuMiw0LjZjMi40LDEuOSw1LjcsMS45LDguMSwwYzAuMSwwLDAuMSwwLDAuMiwwQzIwLjUsNC43LDIwLjYsNC43LDIwLjYsNC44eiIvPgo8L3N2Zz4K",
+  "repeat.svg": "data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0idXRmLTgiPz4KPCEtLSBHZW5lcmF0b3I6IEFkb2JlIElsbHVzdHJhdG9yIDIxLjAuMCwgU1ZHIEV4cG9ydCBQbHVnLUluIC4gU1ZHIFZlcnNpb246IDYuMDAgQnVpbGQgMCkgIC0tPgo8c3ZnIHZlcnNpb249IjEuMSIgaWQ9InJlcGVhdCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIiB4bWxuczp4bGluaz0iaHR0cDovL3d3dy53My5vcmcvMTk5OS94bGluayIgeD0iMHB4IiB5PSIwcHgiCgkgdmlld0JveD0iMCAwIDI0IDI0IiBzdHlsZT0iZW5hYmxlLWJhY2tncm91bmQ6bmV3IDAgMCAyNCAyNDsiIHhtbDpzcGFjZT0icHJlc2VydmUiPgo8c3R5bGUgdHlwZT0idGV4dC9jc3MiPgoJLnN0MHtmaWxsOiNDRjhCMTc7fQoJLnN0MXtmaWxsOiNGRkZGRkY7fQo8L3N0eWxlPgo8dGl0bGU+cmVwZWF0PC90aXRsZT4KPHBhdGggY2xhc3M9InN0MCIgZD0iTTIzLjMsMTFjLTAuMywwLjYtMC45LDEtMS41LDFoLTEuNmMtMC4xLDEuMy0wLjUsMi41LTEuMSwzLjZjLTAuOSwxLjctMi4zLDMuMi00LjEsNC4xCgljLTEuNywwLjktMy42LDEuMi01LjUsMC45Yy0xLjgtMC4zLTMuNS0xLjEtNC45LTIuM2MtMC43LTAuNy0wLjctMS45LDAtMi42YzAuNi0wLjYsMS42LTAuNywyLjMtMC4ySDdjMC45LDAuNiwxLjksMC45LDIuOSwwLjkKCXMxLjktMC4zLDIuNy0wLjljMS4xLTAuOCwxLjgtMi4xLDEuOC0zLjVoLTEuNWMtMC45LDAtMS43LTAuNy0xLjctMS43YzAtMC40LDAuMi0wLjksMC41LTEuMmw0LjQtNC40YzAuNy0wLjYsMS43LTAuNiwyLjQsMEwyMyw5LjIKCUMyMy41LDkuNywyMy42LDEwLjQsMjMuMywxMXoiLz4KPHBhdGggY2xhc3M9InN0MSIgZD0iTTIxLjgsMTFoLTIuNmMwLDEuNS0wLjMsMi45LTEsNC4yYy0wLjgsMS42LTIuMSwyLjgtMy43LDMuNmMtMS41LDAuOC0zLjMsMS4xLTQuOSwwLjhjLTEuNi0wLjItMy4yLTEtNC40LTIuMQoJYy0wLjQtMC4zLTAuNC0wLjktMC4xLTEuMmMwLjMtMC40LDAuOS0wLjQsMS4yLTAuMWwwLDBjMSwwLjcsMi4yLDEuMSwzLjQsMS4xczIuMy0wLjMsMy4zLTFjMC45LTAuNiwxLjYtMS41LDItMi42CgljMC4zLTAuOSwwLjQtMS44LDAuMi0yLjhoLTIuNGMtMC40LDAtMC43LTAuMy0wLjctMC43YzAtMC4yLDAuMS0wLjMsMC4yLTAuNGw0LjQtNC40YzAuMy0wLjMsMC43LTAuMywwLjksMEwyMiw5LjgKCWMwLjMsMC4zLDAuNCwwLjYsMC4zLDAuOVMyMiwxMSwyMS44LDExeiIvPgo8L3N2Zz4K",
+  "rotate-left.svg": "data:image/svg+xml;base64,PHN2ZyBpZD0icm90YXRlLWNsb2Nrd2lzZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIiB2aWV3Qm94PSIwIDAgMjQgMjQiPjxkZWZzPjxzdHlsZT4uY2xzLTF7ZmlsbDojM2Q3OWNjO30uY2xzLTJ7ZmlsbDojZmZmO308L3N0eWxlPjwvZGVmcz48dGl0bGU+cm90YXRlLWNsb2Nrd2lzZTwvdGl0bGU+PHBhdGggY2xhc3M9ImNscy0xIiBkPSJNMjAuMzQsMTguMjFhMTAuMjQsMTAuMjQsMCwwLDEtOC4xLDQuMjIsMi4yNiwyLjI2LDAsMCwxLS4xNi00LjUyaDBhNS41OCw1LjU4LDAsMCwwLDQuMjUtMi41Myw1LjA2LDUuMDYsMCwwLDAsLjU0LTQuNjJBNC4yNSw0LjI1LDAsMCwwLDE1LjU1LDlhNC4zMSw0LjMxLDAsMCwwLTItLjhBNC44Miw0LjgyLDAsMCwwLDEwLjQsOWwxLjEyLDEuNDFBMS41OSwxLjU5LDAsMCwxLDEwLjM2LDEzSDIuNjdhMS41NiwxLjU2LDAsMCwxLTEuMjYtLjYzQTEuNTQsMS41NCwwLDAsMSwxLjEzLDExTDIuODUsMy41N0ExLjU5LDEuNTksMCwwLDEsNC4zOCwyLjQsMS41NywxLjU3LDAsMCwxLDUuNjIsM0w2LjcsNC4zNWExMC42NiwxMC42NiwwLDAsMSw3LjcyLTEuNjhBOS44OCw5Ljg4LDAsMCwxLDE5LDQuODEsOS42MSw5LjYxLDAsMCwxLDIxLjgzLDksMTAuMDgsMTAuMDgsMCwwLDEsMjAuMzQsMTguMjFaIi8+PHBhdGggY2xhc3M9ImNscy0yIiBkPSJNMTkuNTYsMTcuNjVhOS4yOSw5LjI5LDAsMCwxLTcuMzUsMy44MywxLjMxLDEuMzEsMCwwLDEtLjA4LTIuNjIsNi41Myw2LjUzLDAsMCwwLDUtMi45Miw2LjA1LDYuMDUsMCwwLDAsLjY3LTUuNTEsNS4zMiw1LjMyLDAsMCwwLTEuNjQtMi4xNiw1LjIxLDUuMjEsMCwwLDAtMi40OC0xQTUuODYsNS44NiwwLDAsMCw5LDguODRMMTAuNzQsMTFhLjU5LjU5LDAsMCwxLS40MywxSDIuN2EuNi42LDAsMCwxLS42LS43NUwzLjgxLDMuODNhLjU5LjU5LDAsMCwxLDEtLjIxbDEuNjcsMi4xYTkuNzEsOS43MSwwLDAsMSw3Ljc1LTIuMDcsOC44NCw4Ljg0LDAsMCwxLDQuMTIsMS45Miw4LjY4LDguNjgsMCwwLDEsMi41NCwzLjcyQTkuMTQsOS4xNCwwLDAsMSwxOS41NiwxNy42NVoiLz48L3N2Zz4=",
+  "rotate-right.svg": "data:image/svg+xml;base64,PHN2ZyBpZD0icm90YXRlLWNvdW50ZXItY2xvY2t3aXNlIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PGRlZnM+PHN0eWxlPi5jbHMtMXtmaWxsOiMzZDc5Y2M7fS5jbHMtMntmaWxsOiNmZmY7fTwvc3R5bGU+PC9kZWZzPjx0aXRsZT5yb3RhdGUtY291bnRlci1jbG9ja3dpc2U8L3RpdGxlPjxwYXRoIGNsYXNzPSJjbHMtMSIgZD0iTTIyLjY4LDEyLjJhMS42LDEuNiwwLDAsMS0xLjI3LjYzSDEzLjcyYTEuNTksMS41OSwwLDAsMS0xLjE2LTIuNThsMS4xMi0xLjQxYTQuODIsNC44MiwwLDAsMC0zLjE0LS43Nyw0LjMxLDQuMzEsMCwwLDAtMiwuOCw0LjI1LDQuMjUsMCwwLDAtMS4zNCwxLjczLDUuMDYsNS4wNiwwLDAsMCwuNTQsNC42MkE1LjU4LDUuNTgsMCwwLDAsMTIsMTcuNzRoMGEyLjI2LDIuMjYsMCwwLDEtLjE2LDQuNTJBMTAuMjUsMTAuMjUsMCwwLDEsMy43NCwxOCwxMC4xNCwxMC4xNCwwLDAsMSwyLjI1LDguNzgsOS43LDkuNywwLDAsMSw1LjA4LDQuNjQsOS45Miw5LjkyLDAsMCwxLDkuNjYsMi41YTEwLjY2LDEwLjY2LDAsMCwxLDcuNzIsMS42OGwxLjA4LTEuMzVhMS41NywxLjU3LDAsMCwxLDEuMjQtLjYsMS42LDEuNiwwLDAsMSwxLjU0LDEuMjFsMS43LDcuMzdBMS41NywxLjU3LDAsMCwxLDIyLjY4LDEyLjJaIi8+PHBhdGggY2xhc3M9ImNscy0yIiBkPSJNMjEuMzgsMTEuODNIMTMuNzdhLjU5LjU5LDAsMCwxLS40My0xbDEuNzUtMi4xOWE1LjksNS45LDAsMCwwLTQuNy0xLjU4LDUuMDcsNS4wNywwLDAsMC00LjExLDMuMTdBNiw2LDAsMCwwLDcsMTUuNzdhNi41MSw2LjUxLDAsMCwwLDUsMi45MiwxLjMxLDEuMzEsMCwwLDEtLjA4LDIuNjIsOS4zLDkuMywwLDAsMS03LjM1LTMuODJBOS4xNiw5LjE2LDAsMCwxLDMuMTcsOS4xMiw4LjUxLDguNTEsMCwwLDEsNS43MSw1LjQsOC43Niw4Ljc2LDAsMCwxLDkuODIsMy40OGE5LjcxLDkuNzEsMCwwLDEsNy43NSwyLjA3bDEuNjctMi4xYS41OS41OSwwLDAsMSwxLC4yMUwyMiwxMS4wOEEuNTkuNTksMCwwLDEsMjEuMzgsMTEuODNaIi8+PC9zdmc+",
+  "zoom-in.svg": "data:image/svg+xml;base64,PHN2ZyBpZD0iTGF5ZXJfMSIgZGF0YS1uYW1lPSJMYXllciAxIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzNiAzNiI+PGRlZnM+PHN0eWxlPi5jbHMtMXtmaWxsOiMyMzFmMjA7b3BhY2l0eTowLjE1O30uY2xzLTJ7ZmlsbDojZmZmO30uY2xzLTN7b3BhY2l0eTowLjc1O30uY2xzLTR7ZmlsbDpub25lO3N0cm9rZTojNTc1ZTc1O3N0cm9rZS1saW5lY2FwOnJvdW5kO3N0cm9rZS1saW5lam9pbjpyb3VuZDtzdHJva2Utd2lkdGg6MS41cHg7fTwvc3R5bGU+PC9kZWZzPjx0aXRsZT56b29tLWluPC90aXRsZT48Y2lyY2xlIGNsYXNzPSJjbHMtMSIgY3g9IjE4IiBjeT0iMTgiIHI9IjE4Ii8+PGNpcmNsZSBjbGFzcz0iY2xzLTIiIGN4PSIxOCIgY3k9IjE4IiByPSIxNiIvPjxnIGNsYXNzPSJjbHMtMyI+PGNpcmNsZSBjbGFzcz0iY2xzLTQiIGN4PSIxOCIgY3k9IjE4IiByPSI3Ii8+PGxpbmUgY2xhc3M9ImNscy00IiB4MT0iMjMiIHkxPSIyMyIgeDI9IjI2IiB5Mj0iMjYiLz48bGluZSBjbGFzcz0iY2xzLTQiIHgxPSIxNiIgeTE9IjE4IiB4Mj0iMjAiIHkyPSIxOCIvPjxsaW5lIGNsYXNzPSJjbHMtNCIgeDE9IjE4IiB5MT0iMTYiIHgyPSIxOCIgeTI9IjIwIi8+PC9nPjwvc3ZnPg==",
+  "zoom-out.svg": "data:image/svg+xml;base64,PHN2ZyBpZD0iTGF5ZXJfMSIgZGF0YS1uYW1lPSJMYXllciAxIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzNiAzNiI+PGRlZnM+PHN0eWxlPi5jbHMtMXtmaWxsOiMyMzFmMjA7b3BhY2l0eTowLjE1O30uY2xzLTJ7ZmlsbDojZmZmO30uY2xzLTN7b3BhY2l0eTowLjc1O30uY2xzLTR7ZmlsbDpub25lO3N0cm9rZTojNTc1ZTc1O3N0cm9rZS1saW5lY2FwOnJvdW5kO3N0cm9rZS1saW5lam9pbjpyb3VuZDtzdHJva2Utd2lkdGg6MS41cHg7fTwvc3R5bGU+PC9kZWZzPjx0aXRsZT56b29tLW91dDwvdGl0bGU+PGNpcmNsZSBjbGFzcz0iY2xzLTEiIGN4PSIxOCIgY3k9IjE4IiByPSIxOCIvPjxjaXJjbGUgY2xhc3M9ImNscy0yIiBjeD0iMTgiIGN5PSIxOCIgcj0iMTYiLz48ZyBjbGFzcz0iY2xzLTMiPjxjaXJjbGUgY2xhc3M9ImNscy00IiBjeD0iMTgiIGN5PSIxOCIgcj0iNyIvPjxsaW5lIGNsYXNzPSJjbHMtNCIgeDE9IjIzIiB5MT0iMjMiIHgyPSIyNiIgeTI9IjI2Ii8+PGxpbmUgY2xhc3M9ImNscy00IiB4MT0iMTYiIHkxPSIxOCIgeDI9IjIwIiB5Mj0iMTgiLz48L2c+PC9zdmc+",
+  "zoom-reset.svg": "data:image/svg+xml;base64,PHN2ZyBpZD0iTGF5ZXJfMSIgZGF0YS1uYW1lPSJMYXllciAxIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzNiAzNiI+PGRlZnM+PHN0eWxlPi5jbHMtMXtmaWxsOiMyMzFmMjA7b3BhY2l0eTowLjE1O30uY2xzLTJ7ZmlsbDojZmZmO30uY2xzLTN7b3BhY2l0eTowLjc1O30uY2xzLTR7ZmlsbDojNTc1ZTc1O308L3N0eWxlPjwvZGVmcz48dGl0bGU+em9vbS1yZXNldDwvdGl0bGU+PGNpcmNsZSBjbGFzcz0iY2xzLTEiIGN4PSIxOCIgY3k9IjE4IiByPSIxOCIvPjxjaXJjbGUgY2xhc3M9ImNscy0yIiBjeD0iMTgiIGN5PSIxOCIgcj0iMTYiLz48ZyBjbGFzcz0iY2xzLTMiPjxyZWN0IGNsYXNzPSJjbHMtNCIgeD0iMTMiIHk9IjE0IiB3aWR0aD0iMTAiIGhlaWdodD0iMiIgcng9IjEiIHJ5PSIxIi8+PHJlY3QgY2xhc3M9ImNscy00IiB4PSIxMyIgeT0iMjAiIHdpZHRoPSIxMCIgaGVpZ2h0PSIyIiByeD0iMSIgcnk9IjEiLz48L2c+PC9zdmc+",
+  "delete-icon.svg": "data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPHN2ZyB3aWR0aD0iMzJweCIgaGVpZ2h0PSIzMnB4IiB2aWV3Qm94PSItMTQgLTEwIDMyIDMyIiB2ZXJzaW9uPSIxLjEiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgeG1sbnM6eGxpbms9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkveGxpbmsiPgogICAgPCEtLSBHZW5lcmF0b3I6IFNrZXRjaCA1MC4yICg1NTA0NykgLSBodHRwOi8vd3d3LmJvaGVtaWFuY29kaW5nLmNvbS9za2V0Y2ggLS0+CiAgICA8dGl0bGU+ZGVsZXRlLXg8L3RpdGxlPgogICAgPGRlc2M+Q3JlYXRlZCB3aXRoIFNrZXRjaC48L2Rlc2M+CiAgICA8ZGVmcz48L2RlZnM+CiAgICA8ZyBpZD0iZGVsZXRlLXgiIHN0cm9rZT0ibm9uZSIgc3Ryb2tlLXdpZHRoPSIxIiBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPgogICAgICAgIDxwYXRoIGQ9Ik0xMC44NzYxMTIzLDEwLjg3ODI1IEMxMC4yNDIxMTIzLDExLjUyMTI1IDkuMjA1MTEyMzEsMTEuNTIxMjUgOC41NjIxMTIzMSwxMC44NzgyNSBMNS45MjkxMTIzMSw4LjI0NTI1IEwzLjI5NTExMjMxLDEwLjg3ODI1IEMyLjY1NjExMjMxLDExLjUxNzI1IDEuNjIwMTEyMzEsMTEuNTE3MjUgMC45ODExMTIzMDYsMTAuODc4MjUgQzAuNjYyMTEyMzA2LDEwLjU1OTI1IDAuNTAwMTEyMzA2LDEwLjEzNzI1IDAuNTAwMTEyMzA2LDkuNzIxMjUgQzAuNTAwMTEyMzA2LDkuMzA0MjUgMC42NjIxMTIzMDYsOC44ODMyNSAwLjk4MTExMjMwNiw4LjU2NDI1IEwzLjYxNDExMjMxLDUuOTMxMjUgTDAuOTc3MTEyMzA2LDMuMjkzMjUgQzAuNjU3MTEyMzA2LDIuOTczMjUgMC40OTUxMTIzMDYsMi41NTIyNSAwLjUwMDExMjMwNiwyLjEzMTI1IEMwLjUwMDExMjMwNiwxLjcxNDI1IDAuNjU3MTEyMzA2LDEuMjk4MjUgMC45NzcxMTIzMDYsMC45NzkyNSBDMS42MTUxMTIzMSwwLjM0MDI1IDIuNjUxMTEyMzEsMC4zNDAyNSAzLjI5MTExMjMxLDAuOTc5MjUgTDUuOTI5MTEyMzEsMy42MTYyNSBMOC41NjYxMTIzMSwwLjk3OTI1IEM5LjIwNTExMjMxLDAuMzQwMjUgMTAuMjQyMTEyMywwLjM0MDI1IDEwLjg4MTExMjMsMC45NzkyNSBDMTEuNTIwMTEyMywxLjYxNzI1IDExLjUyMDExMjMsMi42NTQyNSAxMC44ODExMTIzLDMuMjkzMjUgTDguMjQyMTEyMzEsNS45MzEyNSBMMTAuODgxMTEyMyw4LjU2ODI1IEMxMS41MjAxMTIzLDkuMjA3MjUgMTEuNTIwMTEyMywxMC4yMzQyNSAxMC44NzYxMTIzLDEwLjg3ODI1IiBpZD0iRmlsbC0xIiBmaWxsPSIjNTc1RTc1Ij48L3BhdGg+CiAgICA8L2c+Cjwvc3ZnPgo=",
+  "foldout-icon.svg": "data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPHN2ZyB3aWR0aD0iMzJweCIgaGVpZ2h0PSIzMnB4IiB2aWV3Qm94PSItNC41IC02IDI0IDI0IiB2ZXJzaW9uPSIxLjEiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgeG1sbnM6eGxpbms9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkveGxpbmsiPgogICAgPCEtLSBHZW5lcmF0b3I6IFNrZXRjaCA1MC4yICg1NTA0NykgLSBodHRwOi8vd3d3LmJvaGVtaWFuY29kaW5nLmNvbS9za2V0Y2ggLS0+CiAgICA8dGl0bGU+ZHJvcGRvd24tY2FyZXQtdXA8L3RpdGxlPgogICAgPGRlc2M+Q3JlYXRlZCB3aXRoIFNrZXRjaC48L2Rlc2M+CiAgICA8ZGVmcz48L2RlZnM+CiAgICA8ZyBpZD0iZHJvcGRvd24tY2FyZXQtdXAiIHN0cm9rZT0ibm9uZSIgc3Ryb2tlLXdpZHRoPSIxIiBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPgogICAgICAgIDxwYXRoIGQ9Ik02LDkgQzUuNzI1MjA3MDgsOSA1LjQ1MTYzMDA2LDguODk2OTUwNDUgNS4yNDEyNzk3Myw4LjY4OTY1MzExIEwyLjMxNDYxMzU3LDUuODA2NjYyMjcgQzEuODk1MTI4ODEsNS4zOTMyNjU4MyAxLjg5NTEyODgxLDQuNzI0NjQyMDIgMi4zMTQ2MTM1Nyw0LjMxMDA0NzMzIEMyLjczMjg4MjQ0LDMuODk2NjUwODkgOS4yNjcxMTc1NiwzLjg5NjY1MDg5IDkuNjg1Mzg2NDMsNC4zMTAwNDczMyBDMTAuMTA0ODcxMiw0LjcyMzQ0Mzc3IDEwLjEwNDg3MTIsNS4zOTMyNjU4MyA5LjY4NTM4NjQzLDUuODA2NjYyMjcgTDYuNzU5OTM2MTcsOC42ODk2NTMxMSBDNi41NDk1ODU4Myw4Ljg5Njk1MDQ1IDYuMjc2MDA4ODIsOSA2LDkiIGlkPSJkcm9wZG93bi1jYXJldCIgZmlsbD0iIzU3NUU3NSI+PC9wYXRoPgogICAgPC9nPgo8L3N2Zz4K",
+  "resize-handle.svg": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGhlaWdodD0iMjAiIHZpZXdCb3g9IjAgMCAyMCAyMCIgd2lkdGg9IjE2IiBmaWxsPSJ0cmFuc3BhcmVudCIgc3Ryb2tlPSIjODg4Ij4KPGxpbmUgY2xhc3M9ImJsb2NrbHlSZXNpemVMaW5lIiB4MT0iNS4zMzMzMzMzMzMzMzMzMzMiIHkxPSIxNSIgeDI9IjE1IiB5Mj0iNS4zMzMzMzMzMzMzMzMzMzMiPjwvbGluZT48bGluZSBjbGFzcz0iYmxvY2tseVJlc2l6ZUxpbmUiIHgxPSIxMC42NjY2NjY2NjY2NjY2NjYiIHkxPSIxNSIgeDI9IjE1IiB5Mj0iMTAuNjY2NjY2NjY2NjY2NjY2Ij48L2xpbmU+Cjwvc3ZnPgo=",
+  "icons/arrow.svg": "data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiIHN0YW5kYWxvbmU9Im5vIj8+Cjxzdmcgd2lkdGg9IjhweCIgaGVpZ2h0PSIxMHB4IiB2aWV3Qm94PSIwIDAgOCAxMCIgdmVyc2lvbj0iMS4xIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIj4KICAgIDwhLS0gR2VuZXJhdG9yOiBTa2V0Y2ggNDMuMiAoMzkwNjkpIC0gaHR0cDovL3d3dy5ib2hlbWlhbmNvZGluZy5jb20vc2tldGNoIC0tPgogICAgPHRpdGxlPmFycm93PC90aXRsZT4KICAgIDxkZXNjPkNyZWF0ZWQgd2l0aCBTa2V0Y2guPC9kZXNjPgogICAgPGRlZnM+PC9kZWZzPgogICAgPGcgaWQ9IlBhZ2UtMSIgc3Ryb2tlPSJub25lIiBzdHJva2Utd2lkdGg9IjEiIGZpbGw9Im5vbmUiIGZpbGwtcnVsZT0iZXZlbm9kZCIgdHJhbnNmb3JtPSJyb3RhdGUoOTAsIDQsIDUpIj4KICAgICAgICA8ZyBpZD0iYXJyb3ciIHRyYW5zZm9ybT0idHJhbnNsYXRlKC00LjAwMDAwMCwgLTMuMDAwMDAwKSIgZmlsbD0iIzRDOTdGRiI+CiAgICAgICAgICAgIDxwYXRoIGQ9Ik04LjAxODkxMDgzLDYuNjgyMjMwNTUgTDMuNTA5OTE2MDEsNy40MzM3Mjk2OSBDMy4yNDY3OTEzMSw3LjQ3NzU4MzggMy4wMTg5MTA4Myw3LjczOTQyMTUxIDMuMDE4OTEwODMsOC4wMTU1NjM4OCBDMy4wMTg5MTA4Myw4LjI4MzYzMDI5IDMuMjM4NzQxMzQsOC41NTIyMDIzIDMuNTA5OTE2MDEsOC41OTczOTgwOCBMOC4wMTg5MTA4Myw5LjM0ODg5NzIyIEw4LjAxODkxMDgzLDExLjAxODUzMzcgQzguMDE4OTEwODMsMTEuNTYyNTI3NiA4LjM4MzI2Njg2LDExLjc1MjAwMzIgOC44MzI3MjI3OSwxMS40MjY4ODQ3IEwxMi42NDEwMTc2LDguNjcyMTE1ODcgQzEzLjA5ODE2MzgsOC4zNDE0MzQ1NSAxMy4wOTU3MjIzLDcuODE0NzA1MTggMTIuNjUyNzQxMSw3LjQ4MzIwODA2IEw4LjgyMDk5OTM2LDQuNjE1NzkyNTMgQzguMzc1NTc2NjQsNC4yODI0NjgzOCA4LjAxODkxMDgzLDQuNDYxOTQ5NDggOC4wMTg5MTA4Myw1LjAxMjU5NDAyIEw4LjAxODkxMDgzLDYuNjgyMjMwNTUgWiIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoOC4wMDE2NzMsIDguMDE3MjM3KSByb3RhdGUoLTkwLjAwMDAwMCkgdHJhbnNsYXRlKC04LjAwMTY3MywgLTguMDE3MjM3KSAiPjwvcGF0aD4KICAgICAgICA8L2c+CiAgICA8L2c+Cjwvc3ZnPgo=",
+  "icons/arrow_button.svg": "data:image/svg+xml;base64,PHN2ZyBpZD0iTGF5ZXJfMSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIiB2aWV3Qm94PSIwIDAgMzIgMzIiIGVuYWJsZS1iYWNrZ3JvdW5kPSJuZXcgMCAwIDMyIDMyIj48c3R5bGU+LnN0MntmaWxsOiNmZmZ9PC9zdHlsZT48ZyBpZD0iVHV0b3JpYWxzX3gyRl9OYXZpZ2F0aW9uX3gyRl9OZXh0Ij48cGF0aCBkPSJNMjIuNiAxNi4zek0xNi4yIDE5bC01LjYtLjhhMi41IDIuNSAwIDAgMS0yLjEtMi40di0uM2MuMi0xLjEgMS0xLjkgMi0ybDUuNi0uOHYtMS4xYzAtLjcuNC0xLjMgMS0xLjYuNi0uMyAxLjMtLjEgMS44LjRsNC4zIDQuM2MuMy4zLjUuNy41IDEuMiAwIC40LS4yLjktLjUgMS4yTDE5IDIxLjRjLS41LjUtMS4yLjYtMS44LjMtLjYtLjMtMS0uOS0xLTEuNVYxOXoiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLW9wYWNpdHk9Ii4xIi8+PGRlZnM+PGZpbHRlciBpZD0iQWRvYmVfT3BhY2l0eU1hc2tGaWx0ZXIiIGZpbHRlclVuaXRzPSJ1c2VyU3BhY2VPblVzZSIgeD0iNiIgeT0iNiIgd2lkdGg9IjIwIiBoZWlnaHQ9IjIwIj48ZmVDb2xvck1hdHJpeCB2YWx1ZXM9IjEgMCAwIDAgMCAwIDEgMCAwIDAgMCAwIDEgMCAwIDAgMCAwIDEgMCIvPjwvZmlsdGVyPjwvZGVmcz48bWFzayBtYXNrVW5pdHM9InVzZXJTcGFjZU9uVXNlIiB4PSI2IiB5PSI2IiB3aWR0aD0iMjAiIGhlaWdodD0iMjAiIGlkPSJtYXNrLTJfMV8iPjxnIGZpbHRlcj0idXJsKCNBZG9iZV9PcGFjaXR5TWFza0ZpbHRlcikiPjxwYXRoIGlkPSJwYXRoLTFfMV8iIGNsYXNzPSJzdDIiIGQ9Ik0yMyAxNi43TDE4LjcgMjFjLS40LjMtLjkuNC0xLjMuMnMtLjctLjYtLjctMS4xdi0xLjZsLTYtLjhjLTEtLjEtMS43LS45LTEuNy0xLjl2LS4yYy4xLS45LjgtMS41IDEuNi0xLjZsNi0uOXYtMS42YzAtLjUuMy0uOS43LTEuMS40LS4yLjktLjEgMS4zLjNMMjMgMTVjLjIuMi4zLjUuMy44bC0uMy45eiIvPjwvZz48L21hc2s+PGcgaWQ9IkNvbG9yX3gyRl9XaGl0ZSIgbWFzaz0idXJsKCNtYXNrLTJfMV8pIj48cGF0aCBjbGFzcz0ic3QyIiBkPSJNNiA2aDIwdjIwSDZ6IiBpZD0iQ29sb3IiLz48L2c+PC9nPjwvc3ZnPg==",
+  "icons/remove.svg": "data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiIHN0YW5kYWxvbmU9Im5vIj8+Cjxzdmcgd2lkdGg9IjIwcHgiIGhlaWdodD0iMjBweCIgdmlld0JveD0iMCAwIDIwIDIwIiB2ZXJzaW9uPSIxLjEiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgeG1sbnM6eGxpbms9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkveGxpbmsiPgogICAgPCEtLSBHZW5lcmF0b3I6IFNrZXRjaCA0OC4xICg0NzI1MCkgLSBodHRwOi8vd3d3LmJvaGVtaWFuY29kaW5nLmNvbS9za2V0Y2ggLS0+CiAgICA8dGl0bGU+ZGVsZXRlLWFyZ3VtZW50IHYyPC90aXRsZT4KICAgIDxkZXNjPkNyZWF0ZWQgd2l0aCBTa2V0Y2guPC9kZXNjPgogICAgPGRlZnM+PC9kZWZzPgogICAgPGcgaWQ9IlBhZ2UtMSIgc3Ryb2tlPSJub25lIiBzdHJva2Utd2lkdGg9IjEiIGZpbGw9Im5vbmUiIGZpbGwtcnVsZT0iZXZlbm9kZCI+CiAgICAgICAgPGcgaWQ9ImRlbGV0ZS1hcmd1bWVudC12MiIgc3Ryb2tlPSIjRkY2NjFBIj4KICAgICAgICAgICAgPGcgaWQ9Ikdyb3VwIiB0cmFuc2Zvcm09InRyYW5zbGF0ZSgzLjAwMDAwMCwgMi41MDAwMDApIj4KICAgICAgICAgICAgICAgIDxwYXRoIGQ9Ik0xLDMgTDEzLDMgTDExLjg5MDA0OTYsMTQuMDk5NTAzNyBDMTEuODM4OTI5NCwxNC42MTA3MDU1IDExLjQwODc2MzksMTUgMTAuODk1MDEyNCwxNSBMMy4xMDQ5ODc1NiwxNSBDMi41OTEyMzYxMSwxNSAyLjE2MTA3MDU1LDE0LjYxMDcwNTUgMi4xMDk5NTAzNywxNC4wOTk1MDM3IEwxLDMgWiIgaWQ9IlJlY3RhbmdsZSIgc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PC9wYXRoPgogICAgICAgICAgICAgICAgPHBhdGggZD0iTTcsMTEgTDcsNiIgaWQ9IkxpbmUiIHN0cm9rZS13aWR0aD0iMS41IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjwvcGF0aD4KICAgICAgICAgICAgICAgIDxwYXRoIGQ9Ik05LjUsMTEgTDkuNSw2IiBpZD0iTGluZS1Db3B5IiBzdHJva2Utd2lkdGg9IjEuNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48L3BhdGg+CiAgICAgICAgICAgICAgICA8cGF0aCBkPSJNNC41LDExIEw0LjUsNiIgaWQ9IkxpbmUtQ29weS0yIiBzdHJva2Utd2lkdGg9IjEuNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48L3BhdGg+CiAgICAgICAgICAgICAgICA8cmVjdCBpZD0iUmVjdGFuZ2xlLTIiIGZpbGw9IiNGRjY2MUEiIHg9IjAiIHk9IjIuNSIgd2lkdGg9IjE0IiBoZWlnaHQ9IjEiIHJ4PSIwLjUiPjwvcmVjdD4KICAgICAgICAgICAgICAgIDxwYXRoIGQ9Ik02LDAgTDgsMCBDOC41NTIyODQ3NSwtMS4wMTQ1MzA2M2UtMTYgOSwwLjQ0NzcxNTI1IDksMSBMOSwzIEw1LDMgTDUsMSBDNSwwLjQ0NzcxNTI1IDUuNDQ3NzE1MjUsMS4wMTQ1MzA2M2UtMTYgNiwwIFoiIGlkPSJSZWN0YW5nbGUtMyIgc3Ryb2tlLXdpZHRoPSIxLjUiPjwvcGF0aD4KICAgICAgICAgICAgPC9nPgogICAgICAgIDwvZz4KICAgIDwvZz4KPC9zdmc+"
+};
+
+// src/media.js
+var MEDIA_PREFIX = "dm-media/";
+var XLINK = "http://www.w3.org/1999/xlink";
+var fix = (el3) => {
+  for (const attr of ["href", "xlink:href", "src"]) {
+    const v = el3.getAttribute && el3.getAttribute(attr);
+    if (v && v.startsWith(MEDIA_PREFIX)) {
+      const data = MEDIA[v.slice(MEDIA_PREFIX.length)];
+      if (!data) continue;
+      if (attr === "xlink:href") el3.setAttributeNS(XLINK, "xlink:href", data);
+      else el3.setAttribute(attr, data);
+    }
+  }
+};
+var installMediaRewriter = () => {
+  const scan = (root) => {
+    if (root.nodeType !== 1) return;
+    fix(root);
+    if (root.querySelectorAll) root.querySelectorAll("image, img").forEach(fix);
+  };
+  new MutationObserver((records) => {
+    for (const r of records) {
+      if (r.type === "attributes") fix(r.target);
+      else r.addedNodes.forEach(scan);
+    }
+  }).observe(document.documentElement, {
+    subtree: true,
+    childList: true,
+    attributes: true,
+    attributeFilter: ["href", "xlink:href", "src"]
+  });
+  scan(document.documentElement);
+};
+
+// src/monitor.js
+var { PORT } = require_cm550();
+var P2 = require_protocol2();
+var CM_ID = 200;
+var { modelName: registryName } = require_models();
+var modelName2 = (n) => registryName(n);
+var HW_ERRORS = [
+  [1, "입력 전압"],
+  [4, "과열"],
+  [8, "엔코더"],
+  [16, "전기 충격"],
+  [32, "과부하"]
+];
+var PORT_SENSORS = [
+  { value: "", label: "사용 안 함" },
+  { value: "ir", label: "적외선(IR)", spec: PORT.IR },
+  { value: "dms", label: "거리(DMS)", spec: PORT.DMS },
+  { value: "touch", label: "터치", spec: PORT.TOUCH, fmt: (v) => v ? "눌림" : "안 눌림" },
+  { value: "brightness", label: "밝기", spec: PORT.BRIGHTNESS },
+  {
+    value: "color",
+    label: "컬러",
+    spec: PORT.COLOR,
+    fmt: (v) => ["알 수 없음", "흰색", "검정", "빨강", "초록", "파랑", "노랑"][v] || v
+  },
+  { value: "temperature", label: "온도", spec: PORT.TEMPERATURE, fmt: (v) => `${v} °C` },
+  { value: "magnet", label: "자석", spec: PORT.MAGNET, fmt: (v) => v ? "감지" : "없음" },
+  { value: "motion", label: "인체 감지", spec: PORT.MOTION, fmt: (v) => v ? "감지" : "없음" },
+  { value: "moisture", label: "습도 (포트 1·2)", spec: PORT.MOISTURE, fmt: (v) => `${v} %` },
+  { value: "user", label: "사용자 장치(아날로그)", spec: PORT.USER }
+];
+var STORAGE_PORTS = "dynamicmakers.monitor.ports";
+var el2 = (tag, cls, text2) => {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text2 !== void 0) e.textContent = text2;
+  return e;
+};
+var signed = (v, size) => v >= 2 ** (size * 8 - 1) ? v - 2 ** (size * 8) : v;
+var le = (bytes, off, size, isSigned) => {
+  const v = P2.fromLE(bytes, off, size);
+  return isSigned ? signed(v, size) : v;
+};
+var delay = (ms) => new Promise((r) => setTimeout(r, ms));
+var BAUDS = ["9,600", "57,600", "115,200", "1M", "2M", "3M", "4M", "4.5M"];
+var MODES = ["IDLE", "Task 실행", "Manage", "Bootloader", "Reboot"];
+var BYPASS = ["BLE", "UART", "USB"];
+var hex = (bytes) => bytes.map((b) => b.toString(16).padStart(2, "0")).join(" ");
+var Monitor = class {
+  /**
+   * @param {object} opts
+   * @param {HTMLElement} opts.host
+   * @param {object} opts.device CM550Device
+   * @param {Function} opts.isRunning () => boolean
+   * @param {Function} [opts.log] (text, kind) => void
+   */
+  constructor({ host, device, isRunning, log: log2 }) {
+    this.host = host;
+    this.device = device;
+    this.isRunning = isRunning;
+    this.log = log2 || (() => {
+    });
+    this.visible = false;
+    this.rows = /* @__PURE__ */ new Map();
+    this.scanning = false;
+    this.ports = this._loadPorts();
+    this.timer = null;
+    this._build();
+  }
+  // ------------------------------------------------------------------ UI
+  _build() {
+    const h = this.host;
+    h.classList.add("mon");
+    const header = el2("header", "mon-header");
+    header.append(el2("span", "mon-title", "모니터"));
+    this.stateEl = el2("span", "mon-state", "");
+    header.append(this.stateEl);
+    this.diagBtn = el2("button", "mon-btn", "진단");
+    this.diagBtn.title = "다이나믹셀이 안 보일 때 원인을 확인합니다";
+    this.diagBtn.addEventListener("click", () => this.diagnose());
+    header.append(this.diagBtn);
+    this.scanBtn = el2("button", "mon-btn", "다이나믹셀 검색");
+    this.scanBtn.addEventListener("click", () => this.scan());
+    header.append(this.scanBtn);
+    h.append(header);
+    const body = el2("div", "mon-body");
+    h.append(body);
+    this.diagCard = el2("section", "mon-card mon-diag");
+    this.diagCard.hidden = true;
+    body.append(this.diagCard);
+    const cm = el2("section", "mon-card");
+    cm.append(el2("h3", "", "컨트롤러 CM-550"));
+    this.cmGrid = el2("div", "mon-grid");
+    cm.append(this.cmGrid);
+    this.cmFields = {};
+    for (const [key, label2] of [
+      ["link", "연결"],
+      ["model", "모델 / 펌웨어"],
+      ["voltage", "배터리 전압"],
+      ["temp", "컨트롤러 온도"],
+      ["tilt", "기울기 (롤 / 피치 / 요)"],
+      ["button", "버튼"],
+      ["power", "다이나믹셀 전원"],
+      ["motions", "저장된 모션"]
+    ]) {
+      const k = el2("div", "mon-k", label2);
+      const v = el2("div", "mon-v", "–");
+      this.cmFields[key] = v;
+      this.cmGrid.append(k, v);
+    }
+    body.append(cm);
+    const dx = el2("section", "mon-card");
+    this.dxTitle = el2("h3", "", "다이나믹셀");
+    dx.append(this.dxTitle);
+    dx.append(el2(
+      "p",
+      "mon-note",
+      "CM-550의 다이나믹셀 포트 6개는 한 줄로 연결된 같은 통로라서, 어느 포트에 꽂혔는지는 알 수 없습니다. [찾기]를 누르면 그 모터의 LED가 깜빡입니다."
+    ));
+    const table = el2("table", "mon-table");
+    const thead = el2("thead");
+    const tr = el2("tr");
+    for (const t of ["ID", "모델", "각도", "온도", "전압", "토크", "상태", ""]) tr.append(el2("th", "", t));
+    thead.append(tr);
+    this.tbody = el2("tbody");
+    table.append(thead, this.tbody);
+    dx.append(table);
+    this.dxEmpty = el2("p", "mon-empty", "연결 후 [다이나믹셀 검색]을 누르세요.");
+    dx.append(this.dxEmpty);
+    body.append(dx);
+    const pt = el2("section", "mon-card");
+    pt.append(el2("h3", "", "센서 포트 (5핀)"));
+    pt.append(el2("p", "mon-note", "포트에 꽂은 센서 종류를 고르면 값이 표시됩니다. 센서 종류는 자동으로 알 수 없습니다."));
+    this.portRows = [];
+    const grid = el2("div", "mon-ports");
+    for (let port = 1; port <= 5; port++) {
+      const sel = el2("select", "mon-select");
+      for (const s of PORT_SENSORS) {
+        if (s.value === "moisture" && port > 2) continue;
+        const o = el2("option", "", s.label);
+        o.value = s.value;
+        sel.append(o);
+      }
+      sel.value = this.ports[port] || "";
+      sel.addEventListener("change", () => {
+        this.ports[port] = sel.value;
+        this._savePorts();
+        val.textContent = sel.value ? "…" : "";
+      });
+      const val = el2("span", "mon-port-val", "");
+      grid.append(el2("span", "mon-port-no", `포트 ${port}`), sel, val);
+      this.portRows.push({ port, sel, val });
+    }
+    pt.append(grid);
+    body.append(pt);
+  }
+  _loadPorts() {
+    try {
+      return JSON.parse(window.localStorage.getItem(STORAGE_PORTS)) || {};
+    } catch (e) {
+      return {};
+    }
+  }
+  _savePorts() {
+    try {
+      window.localStorage.setItem(STORAGE_PORTS, JSON.stringify(this.ports));
+    } catch (e) {
+    }
+  }
+  get motors() {
+    return this.device.motors;
+  }
+  /** Re-render the motor table from the device's last scan. */
+  renderMotors() {
+    this._renderMotors();
+  }
+  _renderMotors() {
+    this.tbody.textContent = "";
+    this.rows.clear();
+    const desc = this.device.motorDesc;
+    const pairs = desc.pairs.length ? ` · 2축 모듈 ${desc.pairs.length}개` : "";
+    this.dxTitle.textContent = this.motors.length ? `다이나믹셀 (${this.motors.length}개${pairs})` : "다이나믹셀";
+    this.dxEmpty.hidden = this.motors.length > 0;
+    for (const m of this.motors) {
+      const tr = el2("tr");
+      const cells = {};
+      tr.append(el2("td", "mon-id", String(m.id)));
+      const ax = desc.axis[m.id];
+      const modelTd = el2("td", "", modelName2(m.model));
+      if (ax) modelTd.append(el2("span", "mon-axis", ` 모듈${ax.module} ${ax.axis}축`));
+      tr.append(modelTd);
+      for (const key of ["angle", "temp", "volt"]) {
+        cells[key] = el2("td", "mon-num", "–");
+        tr.append(cells[key]);
+      }
+      const torqueTd = el2("td");
+      const torque = el2("button", "mon-toggle", "–");
+      torque.title = "눌러서 토크 켜기/끄기 (끄면 손으로 돌려 각도를 볼 수 있습니다)";
+      torque.addEventListener("click", () => this._toggleTorque(m.id, torque));
+      torqueTd.append(torque);
+      tr.append(torqueTd);
+      cells.torque = torque;
+      cells.status = el2("td", "mon-status", "");
+      tr.append(cells.status);
+      const findTd = el2("td");
+      const find = el2("button", "mon-btn-small", "찾기");
+      find.addEventListener("click", () => this.blink(m.id, tr));
+      findTd.append(find);
+      tr.append(findTd);
+      this.tbody.append(tr);
+      this.rows.set(m.id, { tr, cells });
+    }
+  }
+  // ------------------------------------------------------------ actions
+  async scan() {
+    if (this.scanning || this.diagRunning) return;
+    if (!this.device.connected) {
+      this.log("먼저 CM-550을 연결하세요.", "warn");
+      return;
+    }
+    this.scanning = true;
+    this.scanBtn.disabled = true;
+    this.scanBtn.textContent = "검색 중…";
+    try {
+      const found = await this.device.scanMotors(30, (id, max) => {
+        this.scanBtn.textContent = `검색 중… ${id}/${max}`;
+      });
+      if (!found.length) {
+        this.log("다이나믹셀을 찾지 못했습니다. 모니터의 [진단]을 눌러 원인을 확인하세요.", "warn");
+      }
+      if (!found.length && !this._autoDiagnosed) {
+        this._autoDiagnosed = true;
+        setTimeout(() => this.diagnose(), 0);
+      }
+    } catch (e) {
+      this.log(`검색 실패: ${e.message}`, "err");
+    } finally {
+      this.scanning = false;
+      this.scanBtn.disabled = false;
+      this.scanBtn.textContent = "다이나믹셀 검색";
+    }
+  }
+  async blink(id, tr) {
+    if (!this.device.connected || this.isRunning()) return;
+    tr.classList.add("mon-blink");
+    try {
+      for (let i = 0; i < 4; i++) {
+        await this.device.write(id, 65, 1, 1);
+        await delay(250);
+        await this.device.write(id, 65, 0, 1);
+        await delay(250);
+      }
+    } catch (e) {
+      this.log(`ID ${id} 찾기 실패: ${e.message}`, "err");
+    } finally {
+      tr.classList.remove("mon-blink");
+    }
+  }
+  async _toggleTorque(id, btn) {
+    if (!this.device.connected) return;
+    const on = btn.dataset.on !== "1";
+    try {
+      await this.device.write(id, 64, on ? 1 : 0, 1);
+      btn.dataset.on = on ? "1" : "0";
+      btn.textContent = on ? "켜짐" : "꺼짐";
+    } catch (e) {
+      this.log(`ID ${id} 토크 변경 실패: ${e.message}`, "err");
+    }
+  }
+  // --------------------------------------------------------- diagnosis
+  /**
+   * Step-by-step check of why DYNAMIXELs are not visible:
+   * power voltage, DXL power switch, baud/mode/bypass, the CM-550's own scan
+   * (addr 40 → 39), then relayed pings with raw byte capture.
+   */
+  async diagnose() {
+    if (this.diagRunning) return;
+    const d = this.device;
+    const card = this.diagCard;
+    card.hidden = false;
+    card.textContent = "";
+    card.append(el2("h3", "", "연결 진단"));
+    const list = el2("ul", "mon-diag-list");
+    card.append(list);
+    const lines = [];
+    const add = (mark, text2) => {
+      const li = el2("li", `mon-diag-${mark}`);
+      li.append(el2("span", "mon-diag-mark", { ok: "✓", bad: "✗", warn: "!", info: "·" }[mark]), document.createTextNode(text2));
+      list.append(li);
+      lines.push(`${{ ok: "[OK]", bad: "[문제]", warn: "[주의]", info: "[정보]" }[mark]} ${text2}`);
+      return li;
+    };
+    if (!d.connected) {
+      add("bad", "CM-550이 연결되어 있지 않습니다. 먼저 USB 또는 블루투스로 연결하세요.");
+      return;
+    }
+    this.diagRunning = true;
+    this.diagBtn.disabled = true;
+    this.diagBtn.textContent = "진단 중…";
+    const savedTimeout = d.timeoutMs;
+    const verdicts = [];
+    try {
+      add("info", `연결 방식: ${d.transportName}`);
+      let head;
+      try {
+        head = await d.readBytes(CM_ID, 0, 13);
+        add("ok", `CM-550 응답: ${modelName2(le(head, 0, 2))}, 펌웨어 v${head[6]}`);
+      } catch (e) {
+        add("bad", `CM-550이 응답하지 않습니다 (${e.message}). 케이블을 다시 꽂거나 연결을 끊고 다시 연결하세요.`);
+        verdicts.push("controller");
+        return;
+      }
+      const baud = head[12];
+      const r = await d.readBytes(CM_ID, 20, 4);
+      const volt = (await d.readBytes(CM_ID, 89, 1))[0] / 10;
+      if (volt < 6.5) {
+        add("bad", `입력 전압 ${volt.toFixed(1)} V — 배터리나 전원 어댑터가 연결되지 않았습니다. USB 전원만으로는 CM-550만 켜지고 다이나믹셀은 동작하지 않습니다 (6.5~15 V 필요).`);
+        verdicts.push("voltage");
+      } else {
+        add(volt < 10.5 ? "warn" : "ok", `입력 전압 ${volt.toFixed(1)} V${volt < 10.5 ? " (배터리가 부족합니다)" : ""}`);
+      }
+      if (!r[2]) {
+        const li = add("bad", "다이나믹셀 전원 스위치(주소 22)가 꺼져 있습니다. ");
+        const fix2 = el2("button", "mon-btn-small", "전원 켜기");
+        fix2.addEventListener("click", async () => {
+          await d.write(CM_ID, 22, 1, 1);
+          await delay(500);
+          this.diagnose();
+        });
+        li.append(fix2);
+        verdicts.push("power");
+      } else {
+        add("ok", "다이나믹셀 전원 스위치 켜짐");
+      }
+      add(baud === 3 ? "ok" : "warn", `다이나믹셀 통신 속도(주소 12): ${BAUDS[baud] || baud} bps` + (baud === 3 ? "" : " — 키트 다이나믹셀은 보통 1M(값 3)입니다. 다이나믹셀과 다르면 서로 통신할 수 없습니다."));
+      add("info", `CM-550 모드: ${MODES[r[1]] || r[1]}, 바이패스 포트: ${BYPASS[r[0]] || r[0]}, 오류 코드: ${r[3]}`);
+      if (r[1] !== 2) {
+        await d.write(CM_ID, 21, 2, 1);
+        add("info", "Manage 모드로 전환했습니다.");
+      }
+      let count = null;
+      try {
+        await d.write(CM_ID, 40, 1, 1);
+        const t0 = Date.now();
+        while (Date.now() - t0 < 1e4) {
+          await delay(300);
+          if ((await d.readBytes(CM_ID, 40, 1))[0] === 0) break;
+        }
+        count = (await d.readBytes(CM_ID, 39, 1))[0];
+        add(count > 0 ? "ok" : "bad", `CM-550 자체 검색(주소 40→39): 다이나믹셀 ${count}개 인식`);
+      } catch (e) {
+        add("warn", `CM-550 자체 검색 실패: ${e.message}`);
+      }
+      d.timeoutMs = Math.max(savedTimeout, 400);
+      d._rawTap = [];
+      const bc = (await d.broadcastPing(800)).filter((x) => x.id !== CM_ID);
+      const bcRaw = d._rawTap.slice(0, 96);
+      d._rawTap = [];
+      const single = [];
+      for (let id = 1; id <= 12; id++) {
+        const info = await d.pingInfo(id);
+        if (info) single.push(info);
+      }
+      const pingRaw = d._rawTap.slice(0, 96);
+      d._rawTap = null;
+      const relayed = bc.length ? bc : single;
+      add(relayed.length ? "ok" : "bad", relayed.length ? `앱에서 다이나믹셀 응답 받음: ${relayed.map((x) => `ID ${x.id} (${modelName2(x.model)})`).join(", ")}` : "앱이 보낸 다이나믹셀 명령에 응답이 없습니다 (브로드캐스트 핑, ID 1~12 개별 핑).");
+      add("info", `받은 원본 바이트 — 브로드캐스트: ${bcRaw.length ? hex(bcRaw) : "없음"} / 개별 핑: ${pingRaw.length ? hex(pingRaw) : "없음"}`);
+      if (relayed.length) {
+        verdicts.push("ok");
+        this.device.setMotors(relayed, volt);
+      } else if (verdicts.includes("voltage") || verdicts.includes("power")) {
+      } else if (count > 0) {
+        verdicts.push("relay");
+      } else if (count === 0) {
+        verdicts.push("bus");
+      }
+    } catch (e) {
+      add("bad", `진단 중 오류: ${e.message}`);
+    } finally {
+      d.timeoutMs = savedTimeout;
+      d._rawTap = null;
+      this.diagRunning = false;
+      this.diagBtn.disabled = false;
+      this.diagBtn.textContent = "진단";
+    }
+    const summary = {
+      ok: "다이나믹셀과 통신됩니다. 목록을 갱신했습니다.",
+      voltage: "→ 배터리(또는 12V 어댑터)를 CM-550에 연결하고 전원 스위치를 켠 뒤 [다이나믹셀 검색]을 누르세요.",
+      power: "→ [전원 켜기]를 누르세요. 다시 꺼지면 과전류·과열 등 오류가 있는지 확인하세요.",
+      relay: "→ CM-550은 다이나믹셀을 인식하지만 PC로 응답을 전달하지 않습니다. 아래 [결과 복사]로 내용을 보내 주시면 원인을 분석하겠습니다.",
+      bus: "→ CM-550도 다이나믹셀을 찾지 못합니다. 케이블 방향·접촉, 다이나믹셀 통신 속도(1M)와 ID 중복을 확인하세요. R+ Manager 2.0에서도 보이지 않으면 다이나믹셀 펌웨어 복구가 필요할 수 있습니다.",
+      controller: "→ CM-550과의 연결을 확인하세요."
+    };
+    const key = ["ok", "voltage", "power", "relay", "bus", "controller"].find((k) => verdicts.includes(k));
+    if (key) {
+      const p = el2("p", `mon-diag-summary${key === "ok" ? " good" : ""}`, summary[key]);
+      card.append(p);
+      lines.push(summary[key]);
+    }
+    const copy = el2("button", "mon-btn-small", "결과 복사");
+    copy.addEventListener("click", () => {
+      const text2 = `[다이나믹 메이커스 연결 진단 ${(/* @__PURE__ */ new Date()).toLocaleString("ko-KR")}]
+${lines.join("\n")}`;
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(text2).then(() => {
+          copy.textContent = "복사됨";
+        }, () => {
+        });
+      }
+    });
+    card.append(copy);
+    this.log(`연결 진단: ${key ? summary[key] : "완료"}`, key === "ok" ? "ok" : "warn");
+  }
+  // ------------------------------------------------------------ polling
+  setVisible(visible) {
+    this.visible = visible;
+    if (visible) {
+      this._tick();
+      if (this.device.connected && !this.motors.length && !this.scanning) this.scan();
+    } else {
+      clearTimeout(this.timer);
+    }
+  }
+  onConnectionChange(connected, kindName) {
+    this.cmFields.link.textContent = connected ? kindName : "연결 안 됨";
+    if (!connected) {
+      this._renderMotors();
+      for (const f of Object.values(this.cmFields)) if (f !== this.cmFields.link) f.textContent = "–";
+      for (const r of this.portRows) r.val.textContent = "";
+      this._model = null;
+    }
+  }
+  async _tick() {
+    clearTimeout(this.timer);
+    if (!this.visible) return;
+    const d = this.device;
+    let interval = d.transportName === "BLE" ? 1200 : 500;
+    if (!d.connected) {
+      this.stateEl.textContent = "연결 안 됨";
+    } else if (this.isRunning() || this.scanning || this.diagRunning) {
+      this.stateEl.textContent = this.scanning ? "검색 중" : this.diagRunning ? "진단 중" : "프로그램 실행 중 — 일시 정지";
+      interval = 400;
+    } else {
+      this.stateEl.textContent = "실시간";
+      try {
+        await this._poll();
+      } catch (e) {
+        this.stateEl.textContent = "응답 없음";
+      }
+    }
+    this.timer = setTimeout(() => this._tick(), interval);
+  }
+  async _poll() {
+    const d = this.device;
+    const f = this.cmFields;
+    if (!this._model) {
+      const head = await d.readBytes(CM_ID, 0, 7);
+      this._model = `${modelName2(le(head, 0, 2))} / v${head[6]}`;
+    }
+    f.model.textContent = this._model;
+    const a = await d.readBytes(CM_ID, 21, 8);
+    f.power.textContent = a[1] ? "켜짐" : "꺼짐";
+    f.power.classList.toggle("mon-warn", !a[1]);
+    f.button.textContent = ["–", "START", "MODE", "START + MODE"][a[5]] || "–";
+    const b = await d.readBytes(CM_ID, 71, 2);
+    f.motions.textContent = `${le(b, 0, 2)}개`;
+    const c = await d.readBytes(CM_ID, 89, 22);
+    const volt = c[0] / 10;
+    f.voltage.textContent = `${volt.toFixed(1)} V`;
+    f.voltage.classList.toggle("mon-warn", volt > 0 && volt < 10.5);
+    f.temp.textContent = `${signed(c[1], 1)} °C`;
+    const roll = le(c, 102 - 89, 2, true) / 100;
+    const pitch = le(c, 104 - 89, 2, true) / 100;
+    const yaw = le(c, 106 - 89, 2, true) / 100;
+    f.tilt.textContent = `${roll.toFixed(1)}° / ${pitch.toFixed(1)}° / ${yaw.toFixed(1)}°`;
+    for (const m of this.motors) {
+      const row = this.rows.get(m.id);
+      if (!row) continue;
+      try {
+        const r = await d.readBytes(m.id, 64, 83);
+        const at = (addr) => addr - 64;
+        const pos = le(r, at(132), 4, true);
+        row.cells.angle.textContent = `${(pos / 4096 * 360).toFixed(1)}°`;
+        row.cells.temp.textContent = `${r[at(146)]} °C`;
+        row.cells.volt.textContent = `${(le(r, at(144), 2) / 10).toFixed(1)} V`;
+        const torque = r[at(64)];
+        row.cells.torque.dataset.on = torque ? "1" : "0";
+        row.cells.torque.textContent = torque ? "켜짐" : "꺼짐";
+        const hw = r[at(70)];
+        const errs = HW_ERRORS.filter(([bit]) => hw & bit).map(([, name]) => name);
+        row.cells.status.textContent = errs.length ? `오류: ${errs.join(", ")}` : r[at(122)] ? "움직이는 중" : "정상";
+        row.tr.classList.toggle("mon-err", errs.length > 0);
+        row.tr.classList.remove("mon-lost");
+      } catch (e) {
+        row.cells.status.textContent = "응답 없음";
+        row.tr.classList.add("mon-lost");
+      }
+    }
+    for (const r of this.portRows) {
+      const s = PORT_SENSORS.find((x) => x.value === r.sel.value);
+      if (!s || !s.spec) continue;
+      try {
+        const v = await d.readPort(s.spec, r.port);
+        r.val.textContent = s.fmt ? s.fmt(v) : String(v);
+      } catch (e) {
+        r.val.textContent = "응답 없음";
+      }
+    }
+  }
+};
+
+// src/main.js
+var $ = (id) => document.getElementById(id);
+var log = (text2, kind = "out") => {
+  const box = $("console-lines");
+  const line = document.createElement("div");
+  line.className = `line ${kind}`;
+  const d = /* @__PURE__ */ new Date();
+  const time = [d.getHours(), d.getMinutes(), d.getSeconds()].map((n) => String(n).padStart(2, "0")).join(":");
+  line.innerHTML = `<span class="t">${time}</span>`;
+  line.append(document.createTextNode(String(text2)));
+  box.append(line);
+  while (box.childElementCount > 500) box.firstChild.remove();
+  box.scrollTop = box.scrollHeight;
+};
+var VMClass = window.VirtualMachine && (window.VirtualMachine.default || window.VirtualMachine);
+var vm = new VMClass();
+window.dynamicmakers = { vm, ScratchBlocks: ScratchBlocks2 };
+var theme = new ScratchBlocks2.Theme("dynamicmakers", blockColors);
+installMediaRewriter();
+var workspaceOptions = {
+  media: MEDIA_PREFIX,
+  theme,
+  scratchTheme: "classic",
+  zoom: { controls: true, wheel: true, pinch: true, startScale: 0.75 },
+  move: { wheel: true },
+  grid: { spacing: 40, length: 2, colour: "#e1e7f0" },
+  comments: true,
+  collapse: false,
+  sounds: false,
+  trashcan: false,
+  modalInputs: false
+};
+ScratchBlocks2.ScratchMsgs.setLocale("ko");
+var promptHandler = makePromptHandler(vm);
+ScratchBlocks2.dialog.setPrompt(promptHandler);
+ScratchBlocks2.ScratchVariables.setPromptHandler(promptHandler);
+var robotXML = {};
+var restyleMenuToParent = (type) => {
+  const def = ScratchBlocks2.Blocks[type];
+  if (!def || def.__dbWrapped) return;
+  const init = def.init;
+  def.init = function() {
+    init.call(this);
+    const setParent = this.setParent;
+    this.setParent = function(parent) {
+      setParent.call(this, parent);
+      const styleName = parent && parent.getStyleName && parent.getStyleName();
+      if (styleName && styleName.startsWith("db_") && this.getStyleName() !== styleName) {
+        this.setStyle(styleName);
+      }
+    };
+  };
+  def.__dbWrapped = true;
+};
+var robotBlocksDefined = false;
+var defineRobotBlocks = (categoryInfo) => {
+  if (!categoryInfo || categoryInfo.id !== "cm550") return;
+  if (robotBlocksDefined) return;
+  robotBlocksDefined = true;
+  const json = [];
+  for (const menu of categoryInfo.menus || []) {
+    if (menu.json) json.push(menu.json);
+  }
+  for (const b of categoryInfo.blocks || []) {
+    if (!b.json || !b.info || !b.info.opcode) continue;
+    b.json.style = OPCODE_STYLE[b.info.opcode] || "db_advanced";
+    json.push(b.json);
+    robotXML[b.info.opcode] = b.xml;
+  }
+  ScratchBlocks2.defineBlocksWithJsonArray(json);
+  for (const menu of categoryInfo.menus || []) if (menu.json) restyleMenuToParent(menu.json.type);
+  const styles = Object.assign({ cm550: ROBOT_STYLES.db_dxl }, ROBOT_STYLES);
+  for (const [name, s] of Object.entries(styles)) {
+    theme.setBlockStyle(name, s);
+    theme.setBlockStyle(`${name}_selected`, {
+      colourPrimary: s.colourQuaternary,
+      colourSecondary: s.colourQuaternary,
+      colourTertiary: s.colourQuaternary,
+      colourQuaternary: s.colourQuaternary
+    });
+  }
+};
+vm.on("EXTENSION_ADDED", defineRobotBlocks);
+vm.on("BLOCKSINFO_UPDATE", defineRobotBlocks);
+var CM550Extension = (0, import_extension.createExtension)({
+  ArgumentType: window.VirtualMachine.ArgumentType || VMClass.ArgumentType,
+  BlockType: window.VirtualMachine.BlockType || VMClass.BlockType,
+  formatMessage: (msg) => msg.default
+});
+var ext = new CM550Extension(vm.runtime);
+{
+  let lastMsg = "";
+  let lastAt = 0;
+  ext.onError = (message) => {
+    const now = Date.now();
+    if (message === lastMsg && now - lastAt < 3e3) return;
+    lastMsg = message;
+    lastAt = now;
+    log(`⚠ ${message}`, "err");
+  };
+}
+{
+  const em = vm.extensionManager;
+  const serviceName = em._registerInternalExtension(ext);
+  em._loadedExtensions.set("cm550", serviceName);
+}
+var workspace = ScratchBlocks2.inject($("blocks"), Object.assign({ toolbox: makeToolbox(robotXML) }, workspaceOptions));
+var refreshMotorLabels = () => {
+  for (const block of workspace.getAllBlocks(false)) {
+    for (const input of block.inputList) {
+      for (const field of input.fieldRow) {
+        if (!(field instanceof ScratchBlocks2.FieldDropdown) || !(block.type === "cm550_menu_dxlId" || field.name === "MODULE")) continue;
+        const value = field.getValue();
+        const option = field.getOptions(false).find((o) => o[1] === value);
+        if (option) {
+          field.selectedOption = option;
+          field.forceRerender();
+        }
+      }
+    }
+  }
+};
+workspace.registerToolboxCategoryCallback("VARIABLE", ScratchBlocks2.ScratchVariables.getVariablesCategory);
+workspace.registerToolboxCategoryCallback("PROCEDURE", ScratchBlocks2.ScratchProcedures.getProceduresCategory);
+workspace.getToolbox().forceRerender();
+setTimeout(() => fitFlyoutSoon(), 0);
+var FLYOUT_MIN = 250;
+var flyoutWidth = FLYOUT_MIN;
+var fitFlyout = () => {
+  const flyout = workspace.getFlyout();
+  const fws = flyout && flyout.getWorkspace();
+  if (!fws) return;
+  let right = 0;
+  for (const b of fws.getTopBlocks(false)) right = Math.max(right, b.getBoundingRectangle().right);
+  const cap = Math.max(FLYOUT_MIN, Math.round(($("blocks").clientWidth - 60) * 0.55));
+  const want = Math.max(FLYOUT_MIN, Math.min(cap, Math.ceil(right * fws.scale + 20)));
+  if (want === flyoutWidth && flyout.getWidth() === want) return;
+  flyoutWidth = want;
+  flyout.getWidth = () => flyoutWidth;
+  if (flyout.width_ !== void 0) flyout.width_ = flyoutWidth;
+  if (flyout.position) flyout.position();
+  resizeBlocks();
+};
+var fitTimer = null;
+var fitFlyoutSoon = () => {
+  clearTimeout(fitTimer);
+  fitTimer = setTimeout(() => {
+    try {
+      fitFlyout();
+    } catch (e) {
+      console.warn("[flyout] fit failed:", e);
+    }
+  }, 150);
+};
+window.addEventListener("resize", fitFlyoutSoon);
+var refreshToolbox = () => {
+  try {
+    workspace.updateToolbox(makeToolbox(robotXML, { motors: ext.device.motors, desc: ext.device.motorDesc }));
+    workspace.getToolbox().forceRerender();
+    fitFlyoutSoon();
+  } catch (e) {
+    console.warn("[toolbox] refresh failed:", e);
+  }
+};
+var toolboxTimer = null;
+var scheduleToolboxRefresh = () => {
+  clearTimeout(toolboxTimer);
+  toolboxTimer = setTimeout(() => {
+    if (workspace.isDragging && workspace.isDragging()) scheduleToolboxRefresh();
+    else refreshToolbox();
+  }, workspace.isDragging && workspace.isDragging() ? 300 : 0);
+};
+ScratchBlocks2.ScratchProcedures.externalProcedureDefCallback = makeProcedureEditor(workspaceOptions, () => {
+  scheduleToolboxRefresh();
+});
+var E = ScratchBlocks2.Events;
+workspace.addChangeListener((event) => {
+  if (event.type === E.VAR_CREATE || event.type === E.VAR_RENAME || event.type === E.VAR_DELETE || event.type === E.BLOCK_DELETE && event.oldJson && event.oldJson.type === "procedures_definition" || event.type === E.BLOCK_CREATE && event.json && event.json.type === "procedures_definition" && !event.recordUndo) {
+    scheduleToolboxRefresh();
+  }
+});
+workspace.addChangeListener(vm.blockListener);
+workspace.getFlyout().getWorkspace().addChangeListener(vm.flyoutBlockListener);
+vm.on("workspaceUpdate", (data) => {
+  try {
+    E.disable();
+    const dom = ScratchBlocks2.utils.xml.textToDom(data.xml);
+    ScratchBlocks2.clearWorkspaceAndLoadFromXml(dom, workspace);
+  } catch (e) {
+    log(`블록을 불러오는 중 문제가 있었습니다: ${e.message}`, "err");
+  } finally {
+    E.enable();
+  }
+  workspace.clearUndo();
+  scheduleToolboxRefresh();
+});
+vm.on("SCRIPT_GLOW_ON", (d) => ScratchBlocks2.glowStack(d.id, true));
+vm.on("SCRIPT_GLOW_OFF", (d) => ScratchBlocks2.glowStack(d.id, false));
+vm.on("VISUAL_REPORT", (d) => ScratchBlocks2.reportValue(d.id, d.value));
+var resizeBlocks = () => {
+  if (ScratchBlocks2.svgResize) ScratchBlocks2.svgResize(workspace);
+  else window.dispatchEvent(new Event("resize"));
+};
+var python = (0, import_python_panel_dom.mountPythonPanel)(vm, { host: $("python"), accent: BRAND, onToggle: () => setTimeout(resizeBlocks) });
+ext.device.onMotorsChange = (motors, desc) => {
+  refreshMotorLabels();
+  scheduleToolboxRefresh();
+  if (typeof monitor !== "undefined") monitor.renderMotors();
+  if (!motors.length) return;
+  const counts = {};
+  for (const m of motors) {
+    const kind = desc.labels[m.id].replace(/ [AB]축$/, "");
+    counts[kind] = (counts[kind] || 0) + 1;
+  }
+  log(`다이나믹셀 ${motors.length}개 인식: ${Object.entries(counts).map(([k, v]) => `${k} ${v}개`).join(", ")}` + (desc.pairs.length ? ` · 2축 모듈 ${desc.pairs.length}개 (A/B축 자동 짝)` : ""), "ok");
+  for (const w of desc.warnings) log(`⚠ ${w}`, "err");
+};
+var monitor = new Monitor({
+  host: $("monitor"),
+  device: ext.device,
+  isRunning: () => document.body.classList.contains("running"),
+  log: (text2, kind) => log(text2, kind)
+});
+var showView = (view) => {
+  const mon = view === "monitor";
+  $("python").hidden = mon;
+  $("monitor").hidden = !mon;
+  $("view-python").classList.toggle("active", !mon);
+  $("view-monitor").classList.toggle("active", mon);
+  monitor.setVisible(mon);
+  setTimeout(resizeBlocks);
+};
+$("view-python").addEventListener("click", () => showView("python"));
+$("view-monitor").addEventListener("click", () => showView("monitor"));
+var runBtn = $("run");
+var stopBtn = $("stop");
+runBtn.addEventListener("click", () => {
+  if (!ext.device.connected) log("CM-550이 연결되지 않았습니다. 로봇 블록은 동작하지 않습니다.", "warn");
+  vm.greenFlag();
+});
+stopBtn.addEventListener("click", () => vm.stopAll());
+vm.on("PROJECT_RUN_START", () => document.body.classList.add("running"));
+vm.on("PROJECT_RUN_STOP", () => document.body.classList.remove("running"));
+vm.runtime.on("SAY", (target, type, text2) => {
+  if (text2 !== "" && text2 !== null && typeof text2 !== "undefined") log(text2);
+});
+var isTyping = (t) => t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable || t.closest && t.closest(".blocklyWidgetDiv, .blocklyDropDownDiv, .db-overlay"));
+for (const type of ["keydown", "keyup"]) {
+  document.addEventListener(type, (e) => {
+    if (isTyping(e.target)) return;
+    vm.postIOData("keyboard", { key: e.key, isDown: type === "keydown" });
+    if (e.key === " " && e.target === document.body) e.preventDefault();
+  });
+}
+var status = $("status");
+var setStatus = (state, text2) => {
+  status.dataset.state = state;
+  status.textContent = text2;
+  $("disconnect").hidden = state !== "connected";
+  $("connect-usb").hidden = state === "connected";
+  $("connect-ble").hidden = state === "connected";
+  $("connect-sim").hidden = state === "connected";
+};
+var KIND_NAME = { usb: "USB", ble: "블루투스", sim: "가상 로봇" };
+var connect = async (kind) => {
+  setStatus("connecting", "연결 중…");
+  await ext._connect(kind === "sim" ? new import_sim_robot.SimTransport((text2) => log(`🤖 ${text2}`, "sim")) : kind);
+  if (ext.device.connected) {
+    setStatus("connected", `${KIND_NAME[kind]} 연결됨`);
+    log(kind === "sim" ? "가상 로봇에 연결되었습니다. 로봇이 할 동작이 이 창에 표시됩니다." : `CM-550이 ${KIND_NAME[kind]}로 연결되었습니다.`, "ok");
+    if (ext.device.lastError) log(ext.device.lastError, "warn");
+    monitor.onConnectionChange(true, KIND_NAME[kind]);
+  } else {
+    setStatus("idle", "연결 안 됨");
+    const msg = ext.lastError();
+    if (msg && !/No port selected|User cancelled|cancel/i.test(msg)) log(`연결 실패: ${msg}`, "err");
+  }
+};
+$("connect-usb").addEventListener("click", () => connect("usb"));
+$("connect-ble").addEventListener("click", () => connect("ble"));
+$("connect-sim").addEventListener("click", () => connect("sim"));
+$("disconnect").addEventListener("click", () => ext.disconnect());
+vm.runtime.on("PERIPHERAL_DISCONNECTED", () => {
+  setStatus("idle", "연결 안 됨");
+  ext.device.setMotors([]);
+  monitor.onConnectionChange(false);
+  log("CM-550 연결이 끊어졌습니다.", "warn");
+});
+var policyAllows = (feature) => {
+  const policy = document.permissionsPolicy || document.featurePolicy;
+  try {
+    return policy ? policy.allowsFeature(feature) : true;
+  } catch (e) {
+    return true;
+  }
+};
+var hwBlocked = [];
+for (const [id, api, feature] of [["connect-usb", "serial", "serial"], ["connect-ble", "bluetooth", "bluetooth"]]) {
+  if (!(api in navigator)) {
+    $(id).disabled = true;
+    $(id).title = "이 브라우저에서는 지원되지 않습니다. Chrome 또는 Edge를 사용하세요.";
+    hwBlocked.push(id);
+  } else if (!policyAllows(feature)) {
+    $(id).disabled = true;
+    $(id).title = "이 미리보기 화면에서는 USB/블루투스가 차단되어 있습니다. 앱 주소로 직접 열어 주세요.";
+    hwBlocked.push(id);
+  }
+}
+var nameInput = $("project-name");
+var dirty = false;
+var loadIntoVM = async (data) => {
+  try {
+    await vm.loadProject(data);
+  } catch (e) {
+    if (data instanceof ArrayBuffer) {
+      throw new Error("이 화면에서는 .sb3 파일을 열 수 없습니다. .dmk 또는 .json 파일을 사용하세요.");
+    }
+    const json = typeof data === "string" ? JSON.parse(data) : data;
+    if (!json || !Array.isArray(json.targets)) throw e;
+    await vm.deserializeProject(Object.assign({}, json, { projectVersion: 3 }), null);
+    vm.runtime.handleProjectLoaded();
+  }
+};
+var loadProject = async (data, name) => {
+  vm.stopAll();
+  await loadIntoVM(data);
+  const robot = vm.runtime.targets.find((t) => !t.isStage) || vm.runtime.getTargetForStage();
+  vm.setEditingTarget(robot.id);
+  if (name !== void 0) nameInput.value = name;
+  dirty = false;
+  python.regenerate();
+};
+$("new").addEventListener("click", async () => {
+  if (dirty && !await confirmDialog("새로 만들기", "지금 작업을 지우고 새로 시작할까요? 저장하지 않은 내용은 사라집니다.", "새로 만들기")) return;
+  await loadProject(emptyProject(), "새 프로그램");
+  log("새 프로그램을 시작했습니다.", "ok");
+});
+$("open").addEventListener("click", async () => {
+  const file = await pickFile();
+  if (!file) return;
+  try {
+    await loadProject(file.data, file.name);
+    log(`'${file.name}' 을(를) 열었습니다.`, "ok");
+  } catch (e) {
+    log(`파일을 열 수 없습니다: ${e.message || e}`, "err");
+  }
+});
+var hostDownloads = () => window.claude && typeof window.claude.use === "function" ? window.claude.use("downloads") : Promise.resolve(void 0);
+var saveFile = async (base, ext2, sandboxExt, content, type) => {
+  const host = await hostDownloads();
+  if (host === void 0) {
+    download(`${base}.${ext2}`, content, type);
+    return `.${ext2}`;
+  }
+  if (!host) throw new Error("이 화면에서는 파일 저장을 사용할 수 없습니다. Python은 복사 버튼을 이용하세요.");
+  try {
+    await host.save({ filename: `${base}.${sandboxExt}`, data: content });
+  } catch (e) {
+    if (e && e.code === "declined") return null;
+    throw new Error(e && e.message ? e.message : String(e));
+  }
+  return `.${sandboxExt}`;
+};
+$("save").addEventListener("click", async () => {
+  try {
+    const ext2 = await saveFile(safeFileName(nameInput.value), "dmk", "json", vm.toJSON(), "application/json");
+    if (!ext2) return;
+    dirty = false;
+    log(`프로그램을 저장했습니다 (${ext2}).`, "ok");
+  } catch (e) {
+    log(e.message, "err");
+  }
+});
+$("save-py").addEventListener("click", async () => {
+  try {
+    const ext2 = await saveFile(safeFileName(nameInput.value), "py", "txt", python.getCode(), "text/x-python");
+    if (ext2) log(`Python 코드를 저장했습니다 (${ext2}).`, "ok");
+  } catch (e) {
+    log(e.message, "err");
+  }
+});
+var autosaveTimer = null;
+var scheduleAutosave = () => {
+  dirty = true;
+  clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(() => saveAutosave(nameInput.value, vm.toJSON()), 800);
+};
+vm.on("PROJECT_CHANGED", scheduleAutosave);
+nameInput.addEventListener("input", scheduleAutosave);
+window.addEventListener("beforeunload", () => saveAutosave(nameInput.value, vm.toJSON()));
+$("console-clear").addEventListener("click", () => {
+  $("console-lines").textContent = "";
+});
+var STORE = {
+  get: (k, d) => {
+    try {
+      const v = localStorage.getItem(k);
+      return v === null ? d : Number(v);
+    } catch (e) {
+      return d;
+    }
+  },
+  set: (k, v) => {
+    try {
+      localStorage.setItem(k, String(v));
+    } catch (e) {
+    }
+  }
+};
+var dragResize = (handle, { onMove, onEnd }) => {
+  handle.addEventListener("pointerdown", (down) => {
+    down.preventDefault();
+    handle.setPointerCapture(down.pointerId);
+    document.body.classList.add("dm-resizing");
+    const move = (ev) => {
+      onMove(ev, down);
+      resizeBlocks();
+    };
+    const up = () => {
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", up);
+      handle.removeEventListener("pointercancel", up);
+      document.body.classList.remove("dm-resizing");
+      onEnd();
+      resizeBlocks();
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", up);
+    handle.addEventListener("pointercancel", up);
+  });
+};
+{
+  const MIN_H = 70;
+  const maxH = () => Math.round(window.innerHeight * 0.7);
+  let consoleH = Math.min(maxH(), Math.max(MIN_H, STORE.get("dm.consoleH", 150)));
+  const applyH = () => document.documentElement.style.setProperty("--console-h", `${consoleH}px`);
+  applyH();
+  const handle = document.createElement("div");
+  handle.className = "dm-hresizer";
+  handle.title = "끌어서 출력 창 높이 조절 (두 번 클릭하면 원래대로)";
+  $("console").prepend(handle);
+  let startH = consoleH;
+  handle.addEventListener("pointerdown", () => {
+    startH = consoleH;
+    document.body.classList.remove("console-collapsed");
+  });
+  dragResize(handle, {
+    onMove: (ev, down) => {
+      consoleH = Math.min(maxH(), Math.max(MIN_H, startH + (down.clientY - ev.clientY)));
+      applyH();
+    },
+    onEnd: () => STORE.set("dm.consoleH", consoleH)
+  });
+  handle.addEventListener("dblclick", () => {
+    consoleH = 150;
+    applyH();
+    STORE.set("dm.consoleH", consoleH);
+    resizeBlocks();
+  });
+  window.addEventListener("resize", () => {
+    if (consoleH > maxH()) {
+      consoleH = maxH();
+      applyH();
+    }
+  });
+}
+{
+  const mon = $("monitor");
+  let monW = STORE.get("dm.monitorW", 0);
+  const applyW = () => {
+    if (monW) mon.style.width = `${monW}px`;
+  };
+  applyW();
+  const handle = document.createElement("div");
+  handle.className = "dm-vresizer";
+  handle.title = "끌어서 모니터 폭 조절";
+  mon.prepend(handle);
+  let startW = 0;
+  handle.addEventListener("pointerdown", () => {
+    startW = mon.getBoundingClientRect().width;
+  });
+  dragResize(handle, {
+    onMove: (ev, down) => {
+      monW = Math.round(Math.max(300, Math.min(window.innerWidth * 0.7, startW + (down.clientX - ev.clientX))));
+      applyW();
+    },
+    onEnd: () => STORE.set("dm.monitorW", monW)
+  });
+}
+$("console-toggle").addEventListener("click", () => {
+  document.body.classList.toggle("console-collapsed");
+  setTimeout(resizeBlocks);
+});
+(async () => {
+  vm.start();
+  const saved = loadAutosave();
+  try {
+    if (saved && saved.project) {
+      await loadProject(saved.project, saved.name || "새 프로그램");
+      log("이전에 작업하던 프로그램을 불러왔습니다.", "ok");
+    } else {
+      await loadProject(emptyProject(), "새 프로그램");
+    }
+  } catch (e) {
+    await loadProject(emptyProject(), "새 프로그램");
+  }
+  setStatus("idle", "연결 안 됨");
+  if (hwBlocked.length === 2) {
+    log("이 화면에서는 USB·블루투스를 쓸 수 없습니다. [가상 로봇]으로 프로그램을 시험해 보세요.", "warn");
+  }
+  resizeBlocks();
+  document.body.classList.add("ready");
+})();
