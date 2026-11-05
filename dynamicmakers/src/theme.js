@@ -20,7 +20,9 @@ export const ROBOT_STYLES = {
     db_port: style('#E5739B', '#DB5C88', '#C94A76'), // 센서·포트
     db_motion: style('#7E57D9', '#6E48C7', '#5E3BB0'), // 모션
     db_advanced: style('#5E6E87', '#516078', '#435168'), // 고급
-    db_mymotors: style('#1C8FB8', '#187CA0', '#136786') // 연결된 모터 (model-specific)
+    db_mymotors: style('#1C8FB8', '#187CA0', '#136786'), // 연결된 모터 (model-specific)
+    db_pose: style('#E07B39', '#CC6A2C', '#B25B22'), // 자세 가르치기
+    db_ai: style('#8E44AD', '#7D3C98', '#6C3483'), // AI 학습
 };
 
 export const blockColors = {

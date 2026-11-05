@@ -79,6 +79,30 @@ from cm550 import *      # cm, dxl, port(), motion, wait, start, ... 를 가져�
 | 다음 모션 페이지를 [n] 번으로 | `motion.set_next(n)` |
 | 모션이 재생 중인가? · 저장된 모션 개수 | `motion.is_playing()` · `motion.count()` |
 
+## 자세 가르치기 (`pose`)
+
+자세는 프로젝트의 리스트 **로봇 자세**에 `1:180 2:175.5 …`(ID:각도) 형식으로 한 줄씩 저장됩니다.
+
+| 블록 | Python |
+|---|---|
+| 모든 관절 [힘 빼기 / 힘 주기] | `pose.torque(False)` / `pose.torque(True)` — 힘을 줄 때 지금 자세를 그대로 유지 |
+| 지금 자세를 [n] 번 자세로 기록하기 | `pose.record(n)` |
+| 자세 [n] 번으로 [s] 초 동안 움직이기 | `pose.play(n, s)` — 모든 관절이 s초 뒤 함께 도착 |
+| 기록한 자세 모두 차례로 움직이기 (자세마다 [s] 초) | `pose.play_all(s)` |
+| 기록한 자세 개수 · 기록한 자세 모두 지우기 | `pose.count()` · `pose.clear()` |
+
+## AI 학습 (`ai`)
+
+AI 학습 패널에서 카메라·소리·로봇 센서 중 하나로 종류별 예시를 모은 뒤 사용합니다(k-최근접 이웃 분류).
+
+| 블록 | Python |
+|---|---|
+| AI가 [종류] 을(를) 알아봤을 때 | `@ai.when_recognized("종류")` 를 붙인 함수 |
+| AI가 알아본 것 | `ai.label()` — 확신이 60% 미만이면 빈 문자열 |
+| AI가 알아본 것이 [종류] 인가? | `ai.label() == "종류"` |
+| AI가 [종류] (이)라고 생각하는 정도 (%) | `ai.confidence("종류")` |
+| AI 인식 [켜기/끄기] | `ai.start()` / `ai.stop()` |
+
 ## Scratch 기본 블록
 
 | 블록 | Python |

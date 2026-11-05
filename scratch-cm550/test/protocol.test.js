@@ -306,3 +306,71 @@ test('no block text starts with a digit (the engine prefixes "%1 %2", so "2축" 
     const bad = new Cls(null).getInfo().blocks.filter(b => b.opcode && /^\d/.test(b.text)).map(b => b.opcode);
     assert.deepEqual(bad, []);
 });
+
+// ---- poses taught by hand ------------------------------------------------------
+test('poses round-trip through the list text and tolerate hand edits', () => {
+    const {encodePose, decodePose} = require('../src/poses');
+    assert.equal(encodePose({3: 92.34, 1: 180, 2: 175.55}), '1:180 2:175.6 3:92.3');
+    assert.deepEqual(decodePose('1:180, 2=175.5  3:-12'), {1: 180, 2: 175.5, 3: -12});
+    assert.deepEqual(decodePose(''), {});
+});
+
+test('movePose makes joints arrive together; torque-on holds the hand-made pose', async () => {
+    const dev = new CM550Device();
+    const bus = dualAxisBus();
+    const deg = d => Math.round(d / 360 * 4096);
+    bus.regs['1:132'] = deg(90); // present positions
+    bus.regs['2:132'] = deg(180);
+    bus.regs['3:132'] = deg(170);
+    bus.regs['1:116'] = deg(10); // stale goals from before the hand posing
+    attach(dev, new FakeTransport(bus.responder));
+    dev.setMotors([{id: 1, model: 1090}, {id: 2, model: 1090}, {id: 3, model: 1060}]);
+
+    // torque on: goal = present first, so no jump back to 10°
+    bus.regs['1:64'] = 0;
+    await dev.setJointsTorque([1], true);
+    const goalWrites = bus.writes.filter(w => w[0] === 1 && w[1] === 116);
+    assert.equal(goalWrites[0][2], deg(90), 'goal set to present before torque on');
+    assert.ok(bus.writes.findIndex(w => w[0] === 1 && w[1] === 116) <
+        bus.writes.findIndex(w => w[0] === 1 && w[1] === 64 && w[2] === 1), 'goal written before torque');
+
+    // pose: ID1 moves 90°, ID2 moves 10°, ID3 does not move, all in 2 s
+    bus.writes.length = 0;
+    await dev.movePose({1: 180, 2: 190, 3: 170}, 2);
+    const pv = id => bus.writes.filter(w => w[0] === id && w[1] === 112).pop()[2];
+    assert.equal(pv(1), Math.ceil(90 / 2 / 6 / 0.229)); // 33
+    assert.equal(pv(2), Math.ceil(10 / 2 / 6 / 0.229)); // 4
+    assert.ok(pv(3) >= 1, 'never 0 (0 means unlimited speed)');
+    const lastPv = bus.writes.map(w => w[1]).lastIndexOf(112);
+    const firstGoal = bus.writes.map(w => w[1]).indexOf(116);
+    assert.ok(lastPv < firstGoal, 'all speeds set before any joint starts');
+    assert.equal(bus.regs['1:116'], deg(180));
+});
+
+test('pose blocks store poses in the project list "로봇 자세"', async () => {
+    const {createExtension} = require('../src/extension');
+    const Cls = createExtension({
+        ArgumentType: {NUMBER: 'number', STRING: 'string'},
+        BlockType: {COMMAND: 'command', REPORTER: 'reporter', BOOLEAN: 'Boolean', BUTTON: 'button'},
+        formatMessage: m => m.default
+    });
+    const lists = {};
+    const stage = {
+        lookupVariableById: id => lists[id],
+        lookupVariableByNameAndType: name => Object.values(lists).find(l => l.name === name),
+        lookupOrCreateList: (id, name) => (lists[id] = lists[id] || {id, name, value: []})
+    };
+    const runtime = {getTargetForStage: () => stage, emitProjectChanged () {}};
+    const ext = new Cls(runtime);
+    const bus = dualAxisBus();
+    bus.regs['1:132'] = 1024; bus.regs['2:132'] = 2048; bus.regs['3:132'] = 3072;
+    attach(ext.device, new FakeTransport(bus.responder));
+    ext.device.setMotors([{id: 1, model: 1090}, {id: 2, model: 1090}, {id: 3, model: 1060}]);
+    await ext.poseRecord({N: 2});
+    const list = lists['dm-robot-poses'];
+    assert.equal(list.name, '로봇 자세');
+    assert.deepEqual(list.value, ['', '1:90 2:180 3:270']);
+    assert.equal(ext.poseCount(), 1);
+    ext.poseClear();
+    assert.deepEqual(list.value, []);
+});

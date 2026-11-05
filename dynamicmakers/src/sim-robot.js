@@ -39,6 +39,7 @@ class SimTransport {
         this.regs = new Map();
         this.last = new Map(); // key -> last value logged (only report changes)
         this.moves = new Map(); // dxl id -> {from, to, start, end}
+        this.limp = new Map(); // dxl id -> {base, since}: torque turned off, "moved by hand"
         this.motionUntil = 0;
         this.t0 = Date.now();
         this.models = (typeof window !== 'undefined' && window.__dmSimModels) || DEFAULT_MODELS;
@@ -98,6 +99,18 @@ class SimTransport {
         this.onAction(text);
     }
 
+    /**
+     * A relaxed joint is "moved by hand": it drifts slowly (±35°) so recorded
+     * poses differ, unless a test placed it with window.__dmSimHand(id, deg).
+     */
+    _handPosition (id, now) {
+        const placed = typeof window !== 'undefined' && window.__dmSimHandPose && window.__dmSimHandPose[id];
+        if (typeof placed === 'number') return Math.round((placed / 360) * 4096);
+        const l = this.limp.get(id);
+        const t = (now - l.since) / 1000;
+        return Math.round(l.base + (Math.sin((t * 0.8) + id) - Math.sin(id)) * 400);
+    }
+
     /** Live values for sensors and moving joints. */
     _read (id, addr, size) {
         const now = Date.now();
@@ -105,6 +118,7 @@ class SimTransport {
         if (this.ids.includes(id)) {
             const mv = this.moves.get(id);
             if (addr === 122) return mv && now < mv.end ? 1 : 0; // MOVING
+            if (addr === 132 && this.limp.has(id)) return this._handPosition(id, now);
             if (addr === 132 && mv) { // PRESENT_POSITION interpolated
                 const k = Math.min(1, (now - mv.start) / Math.max(1, mv.end - mv.start));
                 return Math.round(mv.from + ((mv.to - mv.from) * k));
@@ -115,6 +129,13 @@ class SimTransport {
         }
         if (id === CM_ID) {
             if (addr === 68) return now < this.motionUntil ? 1 : 0; // motion playing
+            const tilt = typeof window !== 'undefined' && window.__dmSimTilt; // tests: {roll, pitch, shake}
+            if (tilt && addr >= 102 && addr <= 118) {
+                const wob = tilt.shake ? Math.sin(now / 40) * tilt.shake : 0;
+                const v = {102: tilt.roll || 0, 104: tilt.pitch || 0, 106: 0, 108: wob * 50, 110: wob * 30,
+                    112: 0, 114: wob / 20, 116: 0, 118: 1}[addr];
+                return Math.round(v * 100);
+            }
             if (addr === 102) return Math.round(Math.sin(t / 3) * 300); // roll ±3°
             if (addr === 104) return Math.round(Math.cos(t / 4) * 200);
             if (addr === 124) return now - this.t0;
@@ -226,7 +247,16 @@ class SimTransport {
     }
 
     _describeDxl (id, addr, v, size, prev) {
-        if (addr === 64) return this._report(`t${id}`, v, `다이나믹셀 ${id} 토크 ${onOff(v)}`);
+        if (addr === 64) {
+            if (!v && !this.limp.has(id)) {
+                this.limp.set(id, {base: this._read(id, 132), since: Date.now()});
+                this.moves.delete(id);
+            } else if (v && this.limp.has(id)) {
+                this.regs.set(`${id}:132`, this._handPosition(id, Date.now())); // holds the hand-made pose
+                this.limp.delete(id);
+            }
+            return this._report(`t${id}`, v, `다이나믹셀 ${id} 토크 ${onOff(v)}${v ? '' : ' — 손으로 움직일 수 있음'}`);
+        }
         if (addr === 65) return this._report(`l${id}`, v, `다이나믹셀 ${id} LED ${onOff(v)}`);
         if (addr === 11) {
             const names = {0: '전류', 1: '바퀴(속도)', 3: '위치(관절)', 4: '확장 위치', 5: '전류 기반 위치(잡기)', 16: 'PWM'};
@@ -235,6 +265,7 @@ class SimTransport {
         }
         if (addr === 116) {
             const to = signed(v, 4);
+            if (this.limp.has(id)) return undefined; // torque off: a goal does not move the joint
             const from = this._read(id, 132);
             const pv = this.regs.get(`${id}:112`) || 0; // profile velocity (0 = max)
             const rpm = (pv || VELOCITY_LIMIT) * 0.229;

@@ -414,6 +414,16 @@ var require_python_generator = __commonJS({
         const op = block.opcode;
         if (op.startsWith("cm550_")) return this.cm550Expr(block, op.slice(6));
         switch (op) {
+          // AI 학습 (Dynamic Makers)
+          case "dmai_aiLabel":
+            this.uses.add("ai");
+            return "ai.label()";
+          case "dmai_aiIs":
+            this.uses.add("ai");
+            return `(ai.label() == ${this.choice(block, "CLASS")})`;
+          case "dmai_aiConfidence":
+            this.uses.add("ai");
+            return `ai.confidence(${this.choice(block, "CLASS")})`;
           // operators
           case "operator_add":
             return `(${this.num(block, "NUM1")} + ${this.num(block, "NUM2")})`;
@@ -519,6 +529,8 @@ var require_python_generator = __commonJS({
             return `dxl.is_moving(${id()})`;
           case "dxlModelName":
             return `dxl.model_name(${id()})`;
+          case "poseCount":
+            return "pose.count()";
           case "dxlScan":
             return "dxl.scan()";
           case "cmButton":
@@ -574,6 +586,11 @@ var require_python_generator = __commonJS({
         const op = block.opcode;
         if (op.startsWith("cm550_")) {
           this.cm550Statement(block, op.slice(6));
+          return;
+        }
+        if (op === "dmai_aiSwitch") {
+          this.uses.add("ai");
+          this.line(this.choice(block, "STATE") === '"off"' ? "ai.stop()" : "ai.start()");
           return;
         }
         const a = (n) => stripOuter(this.num(block, n));
@@ -748,6 +765,21 @@ var require_python_generator = __commonJS({
           case "dxlLed":
             this.line(`dxl.led(${id()}, ${this.onOff(block, "ONOFF")})`);
             break;
+          case "poseRelax":
+            this.line(`pose.torque(${this.onOff(block, "STATE")})  # False = 힘 빼기, True = 힘 주기`);
+            break;
+          case "poseRecord":
+            this.line(`pose.record(${this.num(block, "N")})`);
+            break;
+          case "posePlay":
+            this.line(`pose.play(${this.num(block, "N")}, ${this.num(block, "SECS")})`);
+            break;
+          case "posePlayAll":
+            this.line(`pose.play_all(${this.num(block, "SECS")})`);
+            break;
+          case "poseClear":
+            this.line("pose.clear()");
+            break;
           case "dxlAllTorque":
             this.line(`dxl.torque_all(${this.onOff(block, "ONOFF")})`);
             break;
@@ -889,6 +921,11 @@ var require_python_generator = __commonJS({
           case "event_whenthisspriteclicked":
           case "event_whenstageclicked":
             return "@when_clicked";
+          case "dmai_aiWhen": {
+            const c = hat.inputs && hat.inputs.CLASS && this.blocks[hat.inputs.CLASS.block];
+            const name = c && c.fields ? Object.values(c.fields)[0].value : "";
+            return `@ai.when_recognized(${pyString(name)})`;
+          }
           default:
             return null;
         }
@@ -917,7 +954,8 @@ var require_python_generator = __commonJS({
               event_whenkeypressed: "on_key",
               event_whenbroadcastreceived: "on_message",
               event_whenthisspriteclicked: "on_click",
-              event_whenstageclicked: "on_click"
+              event_whenstageclicked: "on_click",
+              dmai_aiWhen: "on_ai"
             }[hat.opcode];
             counters[base] = (counters[base] || 0) + 1;
             const fname = this._uniqueName(counters[base] === 1 ? base : `${base}_${counters[base]}`);
@@ -1126,7 +1164,7 @@ var require_python_panel_dom = __commonJS({
         }
       }
     };
-    var el3 = (tag, cls, text2) => {
+    var el5 = (tag, cls, text2) => {
       const e = document.createElement(tag);
       if (cls) e.className = cls;
       if (text2) e.textContent = text2;
@@ -1135,31 +1173,31 @@ var require_python_panel_dom = __commonJS({
     var mountPythonPanel2 = (vm2, options = {}) => {
       if (typeof document === "undefined" || !vm2 || typeof vm2.on !== "function") return;
       if (document.getElementById(`${P}-style`)) return;
-      const style2 = el3("style");
+      const style2 = el5("style");
       style2.id = `${P}-style`;
       style2.textContent = CSS;
       document.head.appendChild(style2);
       let open = store.get(`${P}.open`, true);
       let width = store.get(`${P}.width`, Math.round(Math.max(280, Math.min(380, window.innerWidth * 0.24))));
       let code = "";
-      const panel = el3("section", `${P}-panel`);
+      const panel = el5("section", `${P}-panel`);
       panel.setAttribute("aria-label", "Python 코드");
-      const resizer = el3("div", `${P}-resizer`);
-      const header = el3("header", `${P}-header`);
-      const copyBtn = el3("button", `${P}-btn`, "복사");
-      const closeBtn = el3("button", `${P}-btn`, "닫기");
+      const resizer = el5("div", `${P}-resizer`);
+      const header = el5("header", `${P}-header`);
+      const copyBtn = el5("button", `${P}-btn`, "복사");
+      const closeBtn = el5("button", `${P}-btn`, "닫기");
       header.append(
-        el3("span", `${P}-title`, "Python"),
-        el3("span", `${P}-sub`, "블록에서 자동 생성 · 읽기 전용"),
+        el5("span", `${P}-title`, "Python"),
+        el5("span", `${P}-sub`, "블록에서 자동 생성 · 읽기 전용"),
         copyBtn,
         closeBtn
       );
-      const scroll = el3("div", `${P}-scroll`);
-      const gutter = el3("pre", `${P}-gutter`);
-      const pre = el3("pre", `${P}-code`);
+      const scroll = el5("div", `${P}-scroll`);
+      const gutter = el5("pre", `${P}-gutter`);
+      const pre = el5("pre", `${P}-code`);
       scroll.append(gutter, pre);
       panel.append(resizer, header, scroll);
-      const tab = el3("button", `${P}-tab`, "Python");
+      const tab = el5("button", `${P}-tab`, "Python");
       tab.title = "Python 코드 보기";
       if (options.accent) {
         header.style.background = options.accent;
@@ -1802,7 +1840,7 @@ var require_cm550 = __commonJS({
     var clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
     var degToTick = (deg) => Math.round(deg / 360 * 4096);
     var tickToDeg = (tick) => tick / 4096 * 360;
-    var delay2 = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    var delay3 = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     var CM550Device = class {
       constructor() {
         this.transport = null;
@@ -1967,7 +2005,7 @@ var require_cm550 = __commonJS({
           this._collector = [];
           try {
             await this.transport.write(P22.ping(P22.BROADCAST_ID));
-            await delay2(wait);
+            await delay3(wait);
             return this._collector;
           } finally {
             this._collector = null;
@@ -2084,7 +2122,7 @@ var require_cm550 = __commonJS({
         if (this._categoryCache[port] === category2) return;
         await this.writeCM(CM.MODULE_CATEGORY, category2, port);
         this._categoryCache[port] = category2;
-        await delay2(50);
+        await delay3(50);
       }
       async readPort(spec, port) {
         port = clamp(Math.round(port), 1, spec.ports);
@@ -2213,12 +2251,74 @@ var require_cm550 = __commonJS({
       }
       async waitUntilStopped(id, timeoutMs = 1e4) {
         const start = Date.now();
-        await delay2(30);
+        await delay3(30);
         while (Date.now() - start < timeoutMs) {
           const moving = await this.readDXL(id, DXL.MOVING);
           if (!moving) return;
-          await delay2(30);
+          await delay3(30);
         }
+      }
+      // ---- poses (teach by hand / play back) --------------------------------
+      /** IDs a pose uses: the last scan's motors (or the given list). */
+      poseIds(ids) {
+        const list = ids && ids.length ? ids : this.motors.map((m) => m.id);
+        return list.map(Number).filter((n) => n >= 0 && n <= 252);
+      }
+      /**
+       * Read the present angle of every joint.
+       * @returns {Promise<Object<number, number>>} {id: degrees (0.1° steps)}
+       */
+      async readPose(ids) {
+        const pose = {};
+        for (const id of this.poseIds(ids)) {
+          const tick = await this.readDXL(id, DXL.PRESENT_POSITION);
+          pose[id] = Math.round(tickToDeg(tick) * 10) / 10;
+        }
+        return pose;
+      }
+      /**
+       * Let joints go limp so a student can pose them by hand (torque off), or
+       * stiffen them again. Before torque comes back on each goal is set to the
+       * joint's present angle, so the robot holds the hand-made pose instead of
+       * jumping back to an old goal.
+       */
+      async setJointsTorque(ids, on) {
+        for (const id of this.poseIds(ids)) {
+          if (!on) {
+            await this.writeDXL(id, DXL.TORQUE_ENABLE, 0);
+            continue;
+          }
+          const hold = await this.readDXL(id, DXL.PRESENT_POSITION);
+          await this.writeDXL(id, DXL.GOAL_POSITION, hold);
+          await this.ensureMode(id, [OP_MODE.POSITION, OP_MODE.EXTENDED_POSITION]);
+          const now = await this.readDXL(id, DXL.PRESENT_POSITION);
+          await this.writeDXL(id, DXL.GOAL_POSITION, now);
+        }
+      }
+      /**
+       * Move every joint of `pose` so that all of them arrive together after
+       * `seconds` (each joint's profile velocity is set from its own distance).
+       * @param {Object<number, number>} pose {id: degrees}
+       * @param {number} seconds
+       * @returns {Promise<number[]>} IDs that were moved
+       */
+      async movePose(pose, seconds) {
+        const secs = clamp(Number(seconds) || 0, 0.1, 30);
+        const ids = Object.keys(pose).map(Number);
+        const plan = [];
+        for (const id of ids) {
+          await this.ensureMode(id, [OP_MODE.POSITION, OP_MODE.EXTENDED_POSITION]);
+          const cur = tickToDeg(await this.readDXL(id, DXL.PRESENT_POSITION));
+          const target = Number(pose[id]);
+          const degPerSec = Math.abs(target - cur) / secs;
+          let pv = Math.max(1, Math.ceil(degPerSec / 6 / 0.229));
+          const limit = await this.getVelocityLimit(id);
+          if (limit) pv = Math.min(pv, limit);
+          plan.push({ id, pv, goal: degToTick(target) });
+        }
+        for (const p of plan) await this.writeDXL(p.id, DXL.PROFILE_VELOCITY, p.pv);
+        for (const p of plan) await this.writeDXL(p.id, DXL.GOAL_POSITION, p.goal);
+        return ids;
       }
       // ---- motion ----------------------------------------------------------
       playMotion(page) {
@@ -2229,11 +2329,11 @@ var require_cm550 = __commonJS({
       }
       async waitMotionDone(timeoutMs = 6e4) {
         const start = Date.now();
-        await delay2(100);
+        await delay3(100);
         while (Date.now() - start < timeoutMs) {
           const playing = await this.readCM(CM.MOTION_STATUS);
           if (!playing) return;
-          await delay2(50);
+          await delay3(50);
         }
       }
       // ---- buzzer ----------------------------------------------------------
@@ -2258,7 +2358,7 @@ var require_cm550 = __commonJS({
       degToTick,
       tickToDeg,
       clamp,
-      delay: delay2
+      delay: delay3
     };
   }
 });
@@ -2282,6 +2382,25 @@ var require_icons = __commonJS({
   }
 });
 
+// ../scratch-cm550/src/poses.js
+var require_poses = __commonJS({
+  "../scratch-cm550/src/poses.js"(exports, module) {
+    var POSE_LIST_NAME = "로봇 자세";
+    var POSE_LIST_ID = "dm-robot-poses";
+    var encodePose = (pose) => Object.keys(pose).map(Number).sort((a, b) => a - b).map((id) => `${id}:${Math.round(Number(pose[id]) * 10) / 10}`).join(" ");
+    var decodePose = (text2) => {
+      const pose = {};
+      String(text2 || "").split(/[\s,;]+/).forEach((part) => {
+        const m = /^(\d{1,3})[:=](-?\d+(?:\.\d+)?)$/.exec(part.trim());
+        if (m) pose[Number(m[1])] = Number(m[2]);
+      });
+      return pose;
+    };
+    var poseSize2 = (pose) => Object.keys(pose).length;
+    module.exports = { POSE_LIST_NAME, POSE_LIST_ID, encodePose, decodePose, poseSize: poseSize2 };
+  }
+});
+
 // ../scratch-cm550/src/extension.js
 var require_extension = __commonJS({
   "../scratch-cm550/src/extension.js"(exports, module) {
@@ -2294,10 +2413,11 @@ var require_extension = __commonJS({
       MOTION_STOP,
       tickToDeg,
       clamp,
-      delay: delay2
+      delay: delay3
     } = require_cm550();
     var icons = require_icons();
     var { modelName: modelName3 } = require_models();
+    var { POSE_LIST_NAME, POSE_LIST_ID, encodePose, decodePose, poseSize: poseSize2 } = require_poses();
     var EXTENSION_ID = "cm550";
     var LED_MIX = {
       red: { name: "빨강", rgb: [1, 0, 0] },
@@ -2486,6 +2606,43 @@ var require_extension = __commonJS({
                 arguments: { ID: ARG_NUM(1, "dxlId") }
               },
               "---",
+              // ---------------- poses taught by hand ----------------
+              {
+                opcode: "poseRelax",
+                blockType: BlockType.COMMAND,
+                text: t("poseRelax", "모든 관절 [STATE]"),
+                arguments: { STATE: ARG_STR("off", "relax") }
+              },
+              {
+                opcode: "poseRecord",
+                blockType: BlockType.COMMAND,
+                text: t("poseRecord", "지금 자세를 [N] 번 자세로 기록하기"),
+                arguments: { N: ARG_NUM(1) }
+              },
+              {
+                opcode: "posePlay",
+                blockType: BlockType.COMMAND,
+                text: t("posePlay", "자세 [N] 번으로 [SECS] 초 동안 움직이기"),
+                arguments: { N: ARG_NUM(1), SECS: ARG_NUM(1) }
+              },
+              {
+                opcode: "posePlayAll",
+                blockType: BlockType.COMMAND,
+                text: t("posePlayAll", "기록한 자세 모두 차례로 움직이기 (자세마다 [SECS] 초)"),
+                arguments: { SECS: ARG_NUM(1) }
+              },
+              {
+                opcode: "poseCount",
+                blockType: BlockType.REPORTER,
+                text: t("poseCount", "기록한 자세 개수"),
+                disableMonitor: true
+              },
+              {
+                opcode: "poseClear",
+                blockType: BlockType.COMMAND,
+                text: t("poseClear", "기록한 자세 모두 지우기")
+              },
+              "---",
               // ---------------- CM-550 built-ins ----------------
               {
                 // the auxiliary LED has red/green/blue elements (addr 91-93);
@@ -2649,6 +2806,13 @@ var require_extension = __commonJS({
                 items: [
                   { text: t("menu.usb", "USB"), value: "usb" },
                   { text: t("menu.ble", "블루투스"), value: "ble" }
+                ]
+              },
+              relax: {
+                acceptReporters: false,
+                items: [
+                  { text: t("menu.relaxOff", "힘 빼기 (손으로 움직이기)"), value: "off" },
+                  { text: t("menu.relaxOn", "힘 주기 (지금 자세 유지)"), value: "on" }
                 ]
               },
               onOff: {
@@ -2946,7 +3110,7 @@ var require_extension = __commonJS({
         dxlAllTorque(args) {
           return this._guard(async () => {
             await this.device.writeCM(CM.DXL_TORQUE, this._onOff(args.ONOFF) ? 2 : 1);
-            await delay2(100);
+            await delay3(100);
           });
         }
         dxlRead(args) {
@@ -3004,6 +3168,94 @@ var require_extension = __commonJS({
           return this._guard(async () => modelName3(await this.device.requireModel(num2(args.ID)).catch(() => this.device._modelCache[num2(args.ID)])), "");
         }
         // ------------------------------------------------------------------
+        // Poses (teach by hand). Kept in the project list "로봇 자세".
+        // ------------------------------------------------------------------
+        /** The pose list on the stage (created on first use when `create`). */
+        _poseList(create) {
+          const rt = this.runtime;
+          const stage = rt && rt.getTargetForStage && rt.getTargetForStage();
+          if (!stage) return null;
+          let list = stage.lookupVariableById(POSE_LIST_ID) || stage.lookupVariableByNameAndType && stage.lookupVariableByNameAndType(POSE_LIST_NAME, "list");
+          if (!list && create) {
+            if (typeof this.onCreateList === "function") {
+              try {
+                this.onCreateList(POSE_LIST_NAME, POSE_LIST_ID);
+              } catch (e) {
+              }
+              list = stage.lookupVariableById(POSE_LIST_ID);
+            }
+            if (!list) list = stage.lookupOrCreateList(POSE_LIST_ID, POSE_LIST_NAME);
+          }
+          return list;
+        }
+        /** @returns {Array<Object<number, number>>} poses 1..n (empty {} for gaps) */
+        getPoses() {
+          const list = this._poseList(false);
+          return list ? list.value.map(decodePose) : [];
+        }
+        _savePoses(poses) {
+          const list = this._poseList(true);
+          list.value = poses.map((p) => p && poseSize2(p) ? encodePose(p) : "");
+          list._monitorUpToDate = false;
+          if (this.runtime.emitProjectChanged) this.runtime.emitProjectChanged();
+          if (typeof this.onPosesChange === "function") this.onPosesChange(this.getPoses());
+        }
+        async _ensureMotors() {
+          if (!this.device.motors.length) await this.device.scanMotors();
+          if (!this.device.motors.length) throw new Error("다이나믹셀을 찾지 못했습니다. 전원과 케이블을 확인하세요.");
+        }
+        /** Record the present pose as pose `n` (1-based; 0/empty = append). */
+        async recordPose(n) {
+          await this._ensureMotors();
+          const pose = await this.device.readPose();
+          const poses = this.getPoses();
+          const index = n >= 1 ? Math.floor(n) - 1 : poses.length;
+          if (index > 200) throw new Error("자세 번호는 200번까지 쓸 수 있습니다.");
+          while (poses.length < index) poses.push({});
+          poses[index] = pose;
+          this._savePoses(poses);
+          return index + 1;
+        }
+        async playPose(n, seconds, wait = true) {
+          const pose = this.getPoses()[Math.floor(n) - 1];
+          if (!pose || !poseSize2(pose)) throw new Error(`${Math.floor(n)}번 자세가 기록되어 있지 않습니다.`);
+          const secs = clamp(Number(seconds) || 1, 0.1, 30);
+          await this.device.movePose(pose, secs);
+          if (wait) await delay3(secs * 1e3 + 100);
+        }
+        async relaxJoints(ids, on) {
+          await this._ensureMotors();
+          await this.device.setJointsTorque(ids, on);
+        }
+        deletePose(n) {
+          const poses = this.getPoses();
+          poses.splice(Math.floor(n) - 1, 1);
+          this._savePoses(poses);
+        }
+        poseRelax(args) {
+          return this._guard(() => this.relaxJoints(null, args.STATE === "on"));
+        }
+        poseRecord(args) {
+          return this._guard(() => this.recordPose(num2(args.N)));
+        }
+        posePlay(args) {
+          return this._guard(() => this.playPose(num2(args.N), num2(args.SECS)));
+        }
+        posePlayAll(args) {
+          return this._guard(async () => {
+            const poses = this.getPoses();
+            for (let i = 0; i < poses.length; i++) {
+              if (poseSize2(poses[i])) await this.playPose(i + 1, num2(args.SECS));
+            }
+          });
+        }
+        poseCount() {
+          return this.getPoses().filter((p) => poseSize2(p)).length;
+        }
+        poseClear() {
+          if (this._poseList(false)) this._savePoses([]);
+        }
+        // ------------------------------------------------------------------
         // CM-550 built-ins
         // ------------------------------------------------------------------
         cmLedColor(args) {
@@ -3022,7 +3274,7 @@ var require_extension = __commonJS({
           const secs = clamp(num2(args.SECS), 0.1, 5);
           return this._guard(async () => {
             await this.device.playNote(num2(args.NOTE), secs);
-            await delay2(secs * 1e3);
+            await delay3(secs * 1e3);
           });
         }
         cmBuzzerMelody(args) {
@@ -3230,6 +3482,7 @@ var require_sim_robot = __commonJS({
         this.regs = /* @__PURE__ */ new Map();
         this.last = /* @__PURE__ */ new Map();
         this.moves = /* @__PURE__ */ new Map();
+        this.limp = /* @__PURE__ */ new Map();
         this.motionUntil = 0;
         this.t0 = Date.now();
         this.models = typeof window !== "undefined" && window.__dmSimModels || DEFAULT_MODELS;
@@ -3286,6 +3539,17 @@ var require_sim_robot = __commonJS({
         this.last.set(key, value);
         this.onAction(text2);
       }
+      /**
+       * A relaxed joint is "moved by hand": it drifts slowly (±35°) so recorded
+       * poses differ, unless a test placed it with window.__dmSimHand(id, deg).
+       */
+      _handPosition(id, now) {
+        const placed = typeof window !== "undefined" && window.__dmSimHandPose && window.__dmSimHandPose[id];
+        if (typeof placed === "number") return Math.round(placed / 360 * 4096);
+        const l = this.limp.get(id);
+        const t = (now - l.since) / 1e3;
+        return Math.round(l.base + (Math.sin(t * 0.8 + id) - Math.sin(id)) * 400);
+      }
       /** Live values for sensors and moving joints. */
       _read(id, addr, size) {
         const now = Date.now();
@@ -3293,6 +3557,7 @@ var require_sim_robot = __commonJS({
         if (this.ids.includes(id)) {
           const mv = this.moves.get(id);
           if (addr === 122) return mv && now < mv.end ? 1 : 0;
+          if (addr === 132 && this.limp.has(id)) return this._handPosition(id, now);
           if (addr === 132 && mv) {
             const k = Math.min(1, (now - mv.start) / Math.max(1, mv.end - mv.start));
             return Math.round(mv.from + (mv.to - mv.from) * k);
@@ -3303,6 +3568,22 @@ var require_sim_robot = __commonJS({
         }
         if (id === CM_ID2) {
           if (addr === 68) return now < this.motionUntil ? 1 : 0;
+          const tilt = typeof window !== "undefined" && window.__dmSimTilt;
+          if (tilt && addr >= 102 && addr <= 118) {
+            const wob = tilt.shake ? Math.sin(now / 40) * tilt.shake : 0;
+            const v2 = {
+              102: tilt.roll || 0,
+              104: tilt.pitch || 0,
+              106: 0,
+              108: wob * 50,
+              110: wob * 30,
+              112: 0,
+              114: wob / 20,
+              116: 0,
+              118: 1
+            }[addr];
+            return Math.round(v2 * 100);
+          }
           if (addr === 102) return Math.round(Math.sin(t / 3) * 300);
           if (addr === 104) return Math.round(Math.cos(t / 4) * 200);
           if (addr === 124) return now - this.t0;
@@ -3416,7 +3697,16 @@ var require_sim_robot = __commonJS({
         return void 0;
       }
       _describeDxl(id, addr, v, size, prev) {
-        if (addr === 64) return this._report(`t${id}`, v, `다이나믹셀 ${id} 토크 ${onOff(v)}`);
+        if (addr === 64) {
+          if (!v && !this.limp.has(id)) {
+            this.limp.set(id, { base: this._read(id, 132), since: Date.now() });
+            this.moves.delete(id);
+          } else if (v && this.limp.has(id)) {
+            this.regs.set(`${id}:132`, this._handPosition(id, Date.now()));
+            this.limp.delete(id);
+          }
+          return this._report(`t${id}`, v, `다이나믹셀 ${id} 토크 ${onOff(v)}${v ? "" : " — 손으로 움직일 수 있음"}`);
+        }
         if (addr === 65) return this._report(`l${id}`, v, `다이나믹셀 ${id} LED ${onOff(v)}`);
         if (addr === 11) {
           const names = { 0: "전류", 1: "바퀴(속도)", 3: "위치(관절)", 4: "확장 위치", 5: "전류 기반 위치(잡기)", 16: "PWM" };
@@ -3425,6 +3715,7 @@ var require_sim_robot = __commonJS({
         }
         if (addr === 116) {
           const to = signed2(v, 4);
+          if (this.limp.has(id)) return void 0;
           const from = this._read(id, 132);
           const pv = this.regs.get(`${id}:112`) || 0;
           const rpm = (pv || VELOCITY_LIMIT) * 0.229;
@@ -3511,8 +3802,12 @@ var ROBOT_STYLES = {
   // 모션
   db_advanced: style("#5E6E87", "#516078", "#435168"),
   // 고급
-  db_mymotors: style("#1C8FB8", "#187CA0", "#136786")
+  db_mymotors: style("#1C8FB8", "#187CA0", "#136786"),
   // 연결된 모터 (model-specific)
+  db_pose: style("#E07B39", "#CC6A2C", "#B25B22"),
+  // 자세 가르치기
+  db_ai: style("#8E44AD", "#7D3C98", "#6C3483")
+  // AI 학습
 };
 var blockColors = {
   motion: style("#4C97FF", "#4280D7", "#3373CC"),
@@ -3633,6 +3928,16 @@ var ROBOT_GROUPS = [
     ]
   },
   {
+    id: "db_pose",
+    name: "자세",
+    opcodes: ["poseRelax", "poseRecord", "---", "posePlay", "posePlayAll", "---", "poseCount", "poseClear"]
+  },
+  {
+    id: "db_ai",
+    name: "AI 학습",
+    opcodes: ["aiWhen", "---", "aiLabel", "aiIs", "aiConfidence", "---", "aiSwitch"]
+  },
+  {
     id: "db_mymotors",
     name: "연결된 모터",
     dynamic: true,
@@ -3746,6 +4051,8 @@ var makeToolbox = (robotBlockXML, scan) => {
     control(),
     robot.db_dxl,
     robot.db_mymotors,
+    robot.db_pose,
+    robot.db_ai,
     robot.db_controller,
     robot.db_port,
     robot.db_motion,
@@ -3999,9 +4306,9 @@ var loadAutosave = () => {
     return null;
   }
 };
-var saveAutosave = (name, projectJSON) => {
+var saveAutosave = (name, projectJSON2) => {
   try {
-    window.localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({ name, project: projectJSON, savedAt: Date.now() }));
+    window.localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({ name, project: projectJSON2, savedAt: Date.now() }));
     return true;
   } catch (e) {
     return false;
@@ -4061,14 +4368,14 @@ var MEDIA = {
 // src/media.js
 var MEDIA_PREFIX = "dm-media/";
 var XLINK = "http://www.w3.org/1999/xlink";
-var fix = (el3) => {
+var fix = (el5) => {
   for (const attr of ["href", "xlink:href", "src"]) {
-    const v = el3.getAttribute && el3.getAttribute(attr);
+    const v = el5.getAttribute && el5.getAttribute(attr);
     if (v && v.startsWith(MEDIA_PREFIX)) {
       const data = MEDIA[v.slice(MEDIA_PREFIX.length)];
       if (!data) continue;
-      if (attr === "xlink:href") el3.setAttributeNS(XLINK, "xlink:href", data);
-      else el3.setAttribute(attr, data);
+      if (attr === "xlink:href") el5.setAttributeNS(XLINK, "xlink:href", data);
+      else el5.setAttribute(attr, data);
     }
   }
 };
@@ -4604,6 +4911,1137 @@ ${lines.join("\n")}`;
   }
 };
 
+// src/teach.js
+var { poseSize } = require_poses();
+var el3 = (tag, cls, text2) => {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text2 !== void 0) e.textContent = text2;
+  return e;
+};
+var button = (cls, text2, onClick, title) => {
+  const b = el3("button", cls, text2);
+  b.type = "button";
+  if (title) b.title = title;
+  b.addEventListener("click", onClick);
+  return b;
+};
+var isTyping = (t) => t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable || t.closest && t.closest(".blocklyWidgetDiv, .blocklyDropDownDiv, .db-overlay"));
+var TeachPanel = class {
+  /**
+   * @param {object} o
+   * @param {HTMLElement} o.host
+   * @param {object} o.ext       cm550 extension instance
+   * @param {Function} o.log     (text, kind) -> void
+   * @param {Function} o.isRunning
+   * @param {Function} o.addScript (poseNumbers, seconds) -> void, puts blocks in the workspace
+   */
+  constructor({ host, ext: ext2, log: log2, isRunning, addScript }) {
+    this.host = host;
+    this.ext = ext2;
+    this.device = ext2.device;
+    this.log = log2;
+    this.isRunning = isRunning;
+    this.addScript = addScript;
+    this.visible = false;
+    this.busy = false;
+    this.playing = false;
+    this.selected = /* @__PURE__ */ new Set();
+    this.relaxed = /* @__PURE__ */ new Set();
+    this._build();
+    document.addEventListener("keydown", (e) => {
+      if (!this.visible || e.key !== " " || e.repeat || isTyping(e.target)) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      this.record();
+    }, true);
+    this.render();
+  }
+  _build() {
+    this.host.classList.add("mon", "tp");
+    const header = el3("header", "mon-header");
+    header.append(el3("span", "mon-title", "자세 가르치기"));
+    this.stateEl = el3("span", "mon-state", "");
+    header.append(this.stateEl);
+    this.host.append(header);
+    const body = el3("div", "mon-body");
+    this.host.append(body);
+    const c1 = el3("section", "mon-card");
+    c1.append(el3("h3", "", "1. 관절 힘 빼기"));
+    c1.append(el3(
+      "p",
+      "mon-note",
+      "로봇이 넘어지지 않게 한 손으로 받친 다음 힘을 빼세요. 팔만 가르칠 때는 팔 관절만 골라서 풀 수 있습니다."
+    ));
+    this.jointsEl = el3("div", "tp-joints");
+    c1.append(this.jointsEl);
+    const row1 = el3("div", "tp-row");
+    this.relaxBtn = button("tp-btn", "고른 관절 힘 빼기", () => this.relax(false));
+    this.stiffBtn = button("tp-btn tp-primary", "모두 힘 주기 (자세 유지)", () => this.relax(true));
+    row1.append(this.relaxBtn, this.stiffBtn);
+    c1.append(row1);
+    body.append(c1);
+    const c2 = el3("section", "mon-card");
+    c2.append(el3("h3", "", "2. 자세 기록하기"));
+    c2.append(el3(
+      "p",
+      "mon-note",
+      "손으로 자세를 만든 뒤 스페이스 키나 아래 버튼을 누르면 모든 관절의 각도가 저장됩니다."
+    ));
+    this.recordBtn = button("tp-record", "● 지금 자세 기록  (스페이스)", () => this.record());
+    c2.append(this.recordBtn);
+    body.append(c2);
+    const c3 = el3("section", "mon-card");
+    c3.append(el3("h3", "", "3. 기록한 자세"));
+    this.posesEl = el3("ol", "tp-poses");
+    c3.append(this.posesEl);
+    const row3 = el3("div", "tp-row");
+    row3.append(el3("span", "tp-label", "자세마다"));
+    this.secsInput = el3("input", "tp-secs");
+    this.secsInput.type = "number";
+    this.secsInput.min = "0.2";
+    this.secsInput.max = "10";
+    this.secsInput.step = "0.1";
+    this.secsInput.value = "1";
+    this.secsInput.setAttribute("aria-label", "자세마다 걸리는 시간(초)");
+    row3.append(this.secsInput, el3("span", "tp-label", "초"));
+    this.playBtn = button("tp-btn tp-primary", "▶ 처음부터 재생", () => this.playAll());
+    this.stopBtn = button("tp-btn", "■ 멈춤", () => {
+      this.playing = false;
+    });
+    row3.append(this.playBtn, this.stopBtn);
+    c3.append(row3);
+    const row4 = el3("div", "tp-row");
+    this.scriptBtn = button(
+      "tp-btn",
+      "블록으로 만들기",
+      () => this.makeScript(),
+      "기록한 자세를 차례로 움직이는 블록을 작업 영역에 넣습니다"
+    );
+    this.clearBtn = button("tp-btn tp-danger", "모두 지우기", () => this.clearAll());
+    row4.append(this.scriptBtn, this.clearBtn);
+    c3.append(row4);
+    body.append(c3);
+  }
+  setVisible(v) {
+    this.visible = v;
+    if (v) this.render();
+  }
+  get seconds() {
+    const s = Number(this.secsInput.value);
+    return Number.isFinite(s) && s > 0 ? Math.min(10, Math.max(0.2, s)) : 1;
+  }
+  /** Run one device action at a time; report errors in the output window. */
+  async _run(label2, fn) {
+    if (this.busy) return;
+    if (!this.device.connected) {
+      this.log("먼저 로봇을 연결하세요 (USB·블루투스·가상 로봇).", "warn");
+      return;
+    }
+    if (this.isRunning()) {
+      this.log("프로그램이 실행 중입니다. ■ 정지를 누른 뒤 다시 해 보세요.", "warn");
+      return;
+    }
+    this.busy = true;
+    this.render();
+    try {
+      await fn();
+    } catch (e) {
+      this.log(`⚠ ${label2}: ${e.message || e}`, "err");
+    } finally {
+      this.busy = false;
+      this.render();
+    }
+  }
+  _jointIds() {
+    return this.selected.size ? [...this.selected] : this.device.motors.map((m) => m.id);
+  }
+  relax(on) {
+    return this._run(on ? "힘 주기" : "힘 빼기", async () => {
+      await this.ext._ensureMotors();
+      const ids = on ? this.device.motors.map((m) => m.id) : this._jointIds();
+      await this.ext.relaxJoints(ids, on);
+      if (on) this.relaxed.clear();
+      else ids.forEach((id) => this.relaxed.add(id));
+      this.log(on ? "모든 관절에 힘을 주었습니다. 지금 자세를 유지합니다." : `관절 ${ids.length}개의 힘을 뺐습니다. 손으로 자세를 만들어 보세요.`);
+    });
+  }
+  record() {
+    return this._run("자세 기록", async () => {
+      const n = await this.ext.recordPose(0);
+      this.log(`${n}번 자세를 기록했습니다.`, "ok");
+      this._flash = n;
+    });
+  }
+  overwrite(n) {
+    return this._run("자세 덮어쓰기", async () => {
+      await this.ext.recordPose(n);
+      this.log(`${n}번 자세를 지금 자세로 바꿨습니다.`, "ok");
+      this._flash = n;
+    });
+  }
+  goTo(n) {
+    return this._run("자세로 이동", async () => {
+      this.relaxed.clear();
+      await this.ext.playPose(n, this.seconds);
+    });
+  }
+  playAll() {
+    return this._run("재생", async () => {
+      const poses = this.ext.getPoses();
+      if (!poses.some(poseSize)) throw new Error("기록한 자세가 없습니다.");
+      this.relaxed.clear();
+      this.playing = true;
+      this.render();
+      for (let i = 0; i < poses.length && this.playing; i++) {
+        if (!poseSize(poses[i])) continue;
+        this._current = i + 1;
+        this.render();
+        await this.ext.playPose(i + 1, this.seconds);
+      }
+      this.playing = false;
+      this._current = 0;
+    });
+  }
+  remove(n) {
+    this.ext.deletePose(n);
+    this.log(`${n}번 자세를 지웠습니다. 뒤의 자세 번호가 하나씩 당겨집니다.`);
+  }
+  clearAll() {
+    if (!this.ext.getPoses().length) return;
+    if (!window.confirm("기록한 자세를 모두 지울까요?")) return;
+    this.ext.poseClear();
+    this.log("기록한 자세를 모두 지웠습니다.");
+  }
+  makeScript() {
+    const numbers = this.ext.getPoses().map((p, i) => poseSize(p) ? i + 1 : 0).filter(Boolean);
+    if (!numbers.length) {
+      this.log("먼저 자세를 기록하세요.", "warn");
+      return;
+    }
+    this.addScript(numbers, this.seconds);
+    this.log(`자세 ${numbers.length}개를 차례로 움직이는 블록을 작업 영역에 넣었습니다.`, "ok");
+  }
+  render() {
+    const motors = this.device.motors;
+    const connected = this.device.connected;
+    this.stateEl.textContent = !connected ? "로봇이 연결되지 않았습니다" : this.playing ? `재생 중 · ${this._current || ""}번 자세` : this.busy ? "로봇과 통신 중…" : this.relaxed.size ? `힘 뺀 관절 ${this.relaxed.size}개` : `관절 ${motors.length}개`;
+    this.jointsEl.textContent = "";
+    if (!motors.length) {
+      this.jointsEl.append(el3("p", "mon-empty", connected ? "다이나믹셀을 찾는 중이거나 찾지 못했습니다. 모니터에서 [검색]을 눌러 보세요." : "로봇을 연결하면 관절 목록이 나타납니다."));
+    }
+    const labels = this.device.motorDesc.labels || {};
+    for (const m of motors) {
+      const chip = el3("label", "tp-joint");
+      const box = el3("input");
+      box.type = "checkbox";
+      box.checked = !this.selected.size || this.selected.has(m.id);
+      box.addEventListener("change", () => {
+        if (!this.selected.size) motors.forEach((x) => this.selected.add(x.id));
+        if (box.checked) this.selected.add(m.id);
+        else this.selected.delete(m.id);
+        if (this.selected.size === motors.length) this.selected.clear();
+        this.render();
+      });
+      chip.append(box, el3("b", "", String(m.id)), el3("span", "", labels[m.id] ? ` ${labels[m.id]}` : ""));
+      if (this.relaxed.has(m.id)) chip.classList.add("tp-limp");
+      this.jointsEl.append(chip);
+    }
+    const nSel = this.selected.size || motors.length;
+    this.relaxBtn.textContent = nSel === motors.length ? "모든 관절 힘 빼기" : `고른 관절 ${nSel}개 힘 빼기`;
+    const poses = this.ext.getPoses();
+    this.posesEl.textContent = "";
+    if (!poses.length) this.posesEl.append(el3("li", "tp-empty", "아직 기록한 자세가 없습니다."));
+    poses.forEach((p, i) => {
+      const n = i + 1;
+      const li = el3("li", "tp-pose");
+      if (this._current === n) li.classList.add("tp-now");
+      if (this._flash === n) li.classList.add("tp-flash");
+      li.append(el3("span", "tp-no", `${n}`));
+      li.append(el3("span", "tp-desc", poseSize(p) ? `관절 ${poseSize(p)}개` : "(비어 있음)"));
+      li.title = Object.keys(p).map((id) => `${id}: ${p[id]}°`).join("  ");
+      const disabled = this.busy || !connected;
+      const go = button("mon-btn-small", "▶ 이동", () => this.goTo(n));
+      const ow = button("mon-btn-small", "덮어쓰기", () => this.overwrite(n), "지금 자세로 바꾸기");
+      const rm = button("mon-btn-small tp-x", "✕", () => this.remove(n), "이 자세 지우기");
+      go.disabled = disabled || !poseSize(p);
+      ow.disabled = disabled;
+      rm.disabled = this.busy;
+      li.append(go, ow, rm);
+      this.posesEl.append(li);
+    });
+    this._flash = 0;
+    const any = poses.some(poseSize);
+    this.recordBtn.disabled = this.busy || !connected;
+    this.relaxBtn.disabled = this.busy || !connected || !motors.length;
+    this.stiffBtn.disabled = this.busy || !connected || !motors.length;
+    this.playBtn.disabled = this.busy || !connected || !any;
+    this.stopBtn.disabled = !this.playing;
+    this.scriptBtn.disabled = !any;
+    this.clearBtn.disabled = this.busy || !poses.length;
+  }
+};
+
+// src/ai/sources.js
+var delay2 = (ms) => new Promise((r) => setTimeout(r, ms));
+var tfPromise = null;
+var loadTF = () => {
+  if (!tfPromise) {
+    tfPromise = new Promise((resolve, reject) => {
+      if (window.DMAI_TF) return resolve(window.DMAI_TF);
+      const s = document.createElement("script");
+      s.src = "dm-ai.js";
+      s.onload = () => window.DMAI_TF ? resolve(window.DMAI_TF) : reject(new Error("AI 모듈을 불러오지 못했습니다."));
+      s.onerror = () => reject(new Error("AI 모듈(dm-ai.js)을 불러오지 못했습니다."));
+      document.head.append(s);
+    }).catch((e) => {
+      tfPromise = null;
+      throw e;
+    });
+  }
+  return tfPromise;
+};
+var mediaError = (e, what) => {
+  const name = e && e.name;
+  if (name === "NotAllowedError" || name === "SecurityError") {
+    return new Error(`${what} 사용이 허용되지 않았습니다. 주소창 옆의 권한 설정에서 ${what}를 허용해 주세요.`);
+  }
+  if (name === "NotFoundError" || name === "OverconstrainedError") return new Error(`${what}를 찾지 못했습니다.`);
+  return new Error(`${what}를 켤 수 없습니다: ${e && e.message || e}`);
+};
+var l2normalize = (v) => {
+  let n = 0;
+  for (let i = 0; i < v.length; i++) n += v[i] * v[i];
+  n = Math.sqrt(n) || 1;
+  for (let i = 0; i < v.length; i++) v[i] /= n;
+  return v;
+};
+var CameraSource = class {
+  constructor() {
+    this.kind = "camera";
+    this.metric = "cosine";
+    this.interval = 120;
+    this.video = document.createElement("video");
+    this.video.muted = true;
+    this.video.playsInline = true;
+    this.video.className = "ai-video";
+  }
+  async start() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error("이 브라우저에서는 카메라를 쓸 수 없습니다. Chrome이나 Edge를 사용하세요.");
+    }
+    const [{ tf, loadMobilenet }] = await Promise.all([loadTF()]);
+    this.tf = tf;
+    try {
+      this.stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 320 }, height: { ideal: 240 }, facingMode: "user" },
+        audio: false
+      });
+    } catch (e) {
+      throw mediaError(e, "카메라");
+    }
+    this.video.srcObject = this.stream;
+    await this.video.play().catch(() => {
+    });
+    if (!this.model) this.model = await loadMobilenet();
+  }
+  stop() {
+    if (this.stream) this.stream.getTracks().forEach((t) => t.stop());
+    this.stream = null;
+    this.video.srcObject = null;
+  }
+  async features() {
+    if (!this.model || this.video.readyState < 2 || !this.video.videoWidth) return null;
+    const tf = this.tf;
+    const out = tf.tidy(() => {
+      let img = tf.browser.fromPixels(this.video);
+      const [h, w] = img.shape;
+      const side = Math.min(h, w);
+      img = tf.slice(img, [Math.floor((h - side) / 2), Math.floor((w - side) / 2), 0], [side, side, 3]);
+      img = tf.image.resizeBilinear(img, [224, 224]);
+      const x = tf.expandDims(tf.sub(tf.div(tf.cast(img, "float32"), 127.5), 1), 0);
+      return this.model.predict(x);
+    });
+    const data = await out.data();
+    out.dispose();
+    return l2normalize(Float32Array.from(data));
+  }
+};
+var BANDS = 32;
+var SoundSource = class {
+  constructor() {
+    this.kind = "sound";
+    this.metric = "euclid";
+    this.interval = 100;
+    this.frames = [];
+    this.level = new Float32Array(BANDS);
+  }
+  async start() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error("이 브라우저에서는 마이크를 쓸 수 없습니다. Chrome이나 Edge를 사용하세요.");
+    }
+    try {
+      this.stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+        video: false
+      });
+    } catch (e) {
+      throw mediaError(e, "마이크");
+    }
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    this.ctx = new Ctx();
+    if (this.ctx.state === "suspended") await this.ctx.resume().catch(() => {
+    });
+    this.analyser = this.ctx.createAnalyser();
+    this.analyser.fftSize = 2048;
+    this.analyser.smoothingTimeConstant = 0;
+    this.ctx.createMediaStreamSource(this.stream).connect(this.analyser);
+    const bins = new Float32Array(this.analyser.frequencyBinCount);
+    const hzPerBin = this.ctx.sampleRate / this.analyser.fftSize;
+    const edges = Array.from({ length: BANDS + 1 }, (_, i) => 80 * Math.pow(100, i / BANDS));
+    this.timer = setInterval(() => {
+      this.analyser.getFloatFrequencyData(bins);
+      const frame = new Float32Array(BANDS);
+      for (let b = 0; b < BANDS; b++) {
+        const lo = Math.max(1, Math.floor(edges[b] / hzPerBin));
+        const hi = Math.max(lo + 1, Math.ceil(edges[b + 1] / hzPerBin));
+        let sum = 0;
+        let n = 0;
+        for (let k = lo; k < hi && k < bins.length; k++) {
+          sum += Number.isFinite(bins[k]) ? Math.max(-110, bins[k]) : -110;
+          n++;
+        }
+        frame[b] = n ? sum / n : -110;
+      }
+      this.level = frame;
+      this.frames.push(frame);
+      if (this.frames.length > 20) this.frames.shift();
+    }, 50);
+  }
+  stop() {
+    clearInterval(this.timer);
+    if (this.stream) this.stream.getTracks().forEach((t) => t.stop());
+    if (this.ctx) this.ctx.close().catch(() => {
+    });
+    this.stream = null;
+    this.ctx = null;
+    this.frames = [];
+  }
+  async features() {
+    if (this.frames.length < 6) return null;
+    const f = new Float32Array(BANDS * 2);
+    for (let b = 0; b < BANDS; b++) {
+      let sum = 0;
+      let max = -Infinity;
+      for (const fr of this.frames) {
+        sum += fr[b];
+        if (fr[b] > max) max = fr[b];
+      }
+      f[b] = sum / this.frames.length;
+      f[BANDS + b] = max;
+    }
+    return f;
+  }
+};
+var IMU_ADDR = 102;
+var IMU_LEN = 18;
+var SENSOR_CHANNELS = ["기울기 좌우", "기울기 앞뒤", "회전 X", "회전 Y", "회전 Z", "가속 X", "가속 Y", "가속 Z"];
+var SensorSource = class {
+  constructor(device) {
+    this.kind = "sensor";
+    this.metric = "euclid";
+    this.interval = 150;
+    this.device = device;
+    this.samples = [];
+    this.latest = null;
+  }
+  async start() {
+    if (!this.device.connected) throw new Error("로봇 센서를 쓰려면 먼저 로봇을 연결하세요.");
+    this.running = true;
+    const slow = /블루투스|BLE|Bluetooth/i.test(this.device.transportName || "");
+    (async () => {
+      while (this.running) {
+        try {
+          const b = await this.device.readBytes(200, IMU_ADDR, IMU_LEN);
+          const v = [];
+          for (let i = 0; i < IMU_LEN; i += 2) {
+            let x = b[i] | b[i + 1] << 8;
+            if (x >= 32768) x -= 65536;
+            v.push(x / 100);
+          }
+          const sample = [v[0], v[1], v[3], v[4], v[5], v[6], v[7], v[8]];
+          this.latest = sample;
+          this.samples.push(sample);
+          if (this.samples.length > (slow ? 5 : 10)) this.samples.shift();
+        } catch (e) {
+          if (!this.device.connected) this.running = false;
+        }
+        await delay2(slow ? 200 : 90);
+      }
+    })();
+  }
+  stop() {
+    this.running = false;
+    this.samples = [];
+  }
+  async features() {
+    if (this.samples.length < 3) return null;
+    const C = this.samples[0].length;
+    const f = new Float32Array(C * 4);
+    for (let c = 0; c < C; c++) {
+      const xs = this.samples.map((s) => s[c]);
+      const mean = xs.reduce((a, b) => a + b, 0) / xs.length;
+      const sd = Math.sqrt(xs.reduce((a, b) => a + (b - mean) ** 2, 0) / xs.length);
+      f[c * 4] = mean;
+      f[c * 4 + 1] = sd;
+      f[c * 4 + 2] = Math.min(...xs);
+      f[c * 4 + 3] = Math.max(...xs);
+    }
+    return f;
+  }
+};
+var makeSource = (kind, device) => {
+  if (kind === "sound") return new SoundSource();
+  if (kind === "sensor") return new SensorSource(device);
+  return new CameraSource();
+};
+
+// src/ai/engine.js
+var MAX_EXAMPLES = 300;
+var THRESHOLD = 0.6;
+var knnPredict = (examples, vec, metric) => {
+  if (!examples.length) return {};
+  let mean = null;
+  let sd = null;
+  if (metric === "euclid") {
+    const d = vec.length;
+    mean = new Float32Array(d);
+    sd = new Float32Array(d);
+    for (const e of examples) for (let i = 0; i < d; i++) mean[i] += e.vec[i];
+    for (let i = 0; i < d; i++) mean[i] /= examples.length;
+    for (const e of examples) for (let i = 0; i < d; i++) sd[i] += (e.vec[i] - mean[i]) ** 2;
+    for (let i = 0; i < d; i++) sd[i] = Math.sqrt(sd[i] / examples.length) || 1;
+  }
+  const dist = (e) => {
+    if (metric === "cosine") {
+      let dot = 0;
+      for (let i = 0; i < vec.length; i++) dot += vec[i] * e.vec[i];
+      return 1 - dot;
+    }
+    let s = 0;
+    for (let i = 0; i < vec.length; i++) s += ((vec[i] - mean[i] - (e.vec[i] - mean[i])) / sd[i]) ** 2;
+    return Math.sqrt(s / vec.length);
+  };
+  const scored = examples.map((e) => ({ label: e.label, d: dist(e) })).sort((a, b) => a.d - b.d);
+  const k = Math.min(scored.length, Math.max(3, Math.min(9, Math.round(Math.sqrt(scored.length)))));
+  const votes = {};
+  let total = 0;
+  for (const s of scored.slice(0, k)) {
+    const w = 1 / (s.d + 1e-3);
+    votes[s.label] = (votes[s.label] || 0) + w;
+    total += w;
+  }
+  for (const key of Object.keys(votes)) votes[key] /= total;
+  return votes;
+};
+var f32ToB64 = (vecs) => {
+  if (!vecs.length) return "";
+  const all = new Float32Array(vecs.length * vecs[0].length);
+  vecs.forEach((v, i) => all.set(v, i * v.length));
+  const bytes = new Uint8Array(all.buffer);
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 32768) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 32768));
+  return btoa(s);
+};
+var b64ToF32 = (b64, dim) => {
+  if (!b64 || !dim) return [];
+  const raw = atob(b64);
+  const bytes = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+  const all = new Float32Array(bytes.buffer);
+  const out = [];
+  for (let i = 0; i + dim <= all.length; i += dim) out.push(all.slice(i, i + dim));
+  return out;
+};
+var SOURCE_NAMES = { camera: "카메라", sound: "소리", sensor: "로봇 센서" };
+var AIEngine = class {
+  constructor({ device, log: log2 }) {
+    this.device = device;
+    this.log = log2 || (() => {
+    });
+    this.listeners = /* @__PURE__ */ new Set();
+    this.reset();
+  }
+  reset(sourceKind = "camera") {
+    this.stop();
+    this.sourceKind = sourceKind;
+    this.classes = [{ name: "종류 1", examples: [] }, { name: "종류 2", examples: [] }];
+    this.collecting = -1;
+    this._clearResult();
+    this._emit();
+  }
+  _clearResult() {
+    this.probs = {};
+    this.active = "";
+    this.best = "";
+    this._history = [];
+  }
+  // ---- listeners -------------------------------------------------------
+  onUpdate(fn) {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
+  _emit() {
+    for (const fn of this.listeners) {
+      try {
+        fn(this);
+      } catch (e) {
+      }
+    }
+  }
+  // ---- classes ----------------------------------------------------------
+  get names() {
+    return this.classes.map((c) => c.name);
+  }
+  get trainedCount() {
+    return this.classes.filter((c) => c.examples.length).length;
+  }
+  get ready() {
+    return this.trainedCount >= 2;
+  }
+  get exampleCount() {
+    return this.classes.reduce((n, c) => n + c.examples.length, 0);
+  }
+  addClass() {
+    let n = this.classes.length + 1;
+    while (this.names.includes(`종류 ${n}`)) n++;
+    this.classes.push({ name: `종류 ${n}`, examples: [] });
+    this._emit();
+  }
+  renameClass(i, name) {
+    const clean = String(name).trim().slice(0, 20);
+    if (!clean || this.classes.some((c, j) => j !== i && c.name === clean)) return false;
+    this.classes[i].name = clean;
+    this._clearResult();
+    this._emit();
+    return true;
+  }
+  removeClass(i) {
+    if (this.classes.length <= 2) return;
+    this.classes.splice(i, 1);
+    this._clearResult();
+    this._emit();
+  }
+  clearClass(i) {
+    this.classes[i].examples = [];
+    this._clearResult();
+    this._emit();
+  }
+  async setSource(kind) {
+    if (kind === this.sourceKind) return;
+    const was = this.running;
+    this.stop();
+    this.sourceKind = kind;
+    for (const c of this.classes) c.examples = [];
+    this._clearResult();
+    this._emit();
+    if (was) await this.start();
+  }
+  // ---- collecting ---------------------------------------------------------
+  startCollecting(i) {
+    this.collecting = i;
+    this._lastAdd = 0;
+    this._emit();
+    if (!this.running) this.start().catch((e) => this.log(`⚠ ${e.message}`, "err"));
+  }
+  stopCollecting() {
+    if (this.collecting < 0) return;
+    this.collecting = -1;
+    this._emit();
+  }
+  // ---- running ------------------------------------------------------------
+  async start() {
+    if (this.running || this._starting) return this._starting;
+    this._starting = (async () => {
+      const src = makeSource(this.sourceKind, this.device);
+      this.source = src;
+      this.error = "";
+      this._emit();
+      try {
+        await src.start();
+      } catch (e) {
+        this.source = null;
+        this.error = e.message || String(e);
+        this._emit();
+        throw e;
+      }
+      this.running = true;
+      this._emit();
+      this._loop(src);
+    })();
+    try {
+      await this._starting;
+    } finally {
+      this._starting = null;
+    }
+    return void 0;
+  }
+  stop() {
+    this.running = false;
+    this.collecting = -1;
+    if (this.source) this.source.stop();
+    this.source = null;
+    this._clearResult();
+  }
+  async _loop(src) {
+    while (this.running && this.source === src) {
+      const t0 = Date.now();
+      let vec = null;
+      try {
+        vec = await src.features();
+      } catch (e) {
+        this.error = e.message || String(e);
+      }
+      if (vec && this.running) this._step(vec);
+      const wait = src.interval - (Date.now() - t0);
+      await new Promise((r) => setTimeout(r, Math.max(10, wait)));
+    }
+  }
+  _step(vec) {
+    this.lastVec = vec;
+    const c = this.classes[this.collecting];
+    if (c && Date.now() - this._lastAdd >= 150) {
+      if (c.examples.length < MAX_EXAMPLES) c.examples.push(vec);
+      this._lastAdd = Date.now();
+    }
+    if (this.ready) {
+      const examples = [];
+      for (const k of this.classes) for (const v of k.examples) examples.push({ label: k.name, vec: v });
+      const probs = knnPredict(examples, vec, this.source.metric);
+      for (const name of this.names) probs[name] = probs[name] || 0;
+      this.probs = probs;
+      const best = Object.keys(probs).reduce((a, b) => probs[b] > probs[a] ? b : a, this.names[0]);
+      this._history.push(probs[best] >= THRESHOLD ? best : "");
+      if (this._history.length > 2) this._history.shift();
+      this.best = best;
+      this.active = this._history.every((h) => h === this._history[0]) ? this._history[0] : this.active;
+    } else {
+      this._clearResult();
+    }
+    this._emit();
+  }
+  confidence(name) {
+    return Math.round((this.probs[name] || 0) * 100);
+  }
+  // ---- saving with the project ----------------------------------------------
+  serialize() {
+    if (!this.exampleCount) return null;
+    const dim = (this.classes.find((c) => c.examples.length) || { examples: [[]] }).examples[0].length;
+    return {
+      version: 1,
+      source: this.sourceKind,
+      dim,
+      classes: this.classes.map((c) => ({ name: c.name, examples: f32ToB64(c.examples) }))
+    };
+  }
+  load(data) {
+    this.stop();
+    if (!data || !Array.isArray(data.classes)) {
+      this.reset(this.sourceKind);
+      return;
+    }
+    this.sourceKind = data.source || "camera";
+    this.classes = data.classes.map((c) => ({ name: String(c.name), examples: b64ToF32(c.examples, data.dim) }));
+    while (this.classes.length < 2) this.classes.push({ name: `종류 ${this.classes.length + 1}`, examples: [] });
+    this.collecting = -1;
+    this._clearResult();
+    this._emit();
+  }
+};
+
+// src/ai/ai-panel.js
+var el4 = (tag, cls, text2) => {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text2 !== void 0) e.textContent = text2;
+  return e;
+};
+var button2 = (cls, text2, onClick, title) => {
+  const b = el4("button", cls, text2);
+  b.type = "button";
+  if (title) b.title = title;
+  if (onClick) b.addEventListener("click", onClick);
+  return b;
+};
+var COLORS = ["#2E6ABF", "#E07B39", "#1FB36B", "#C0392B", "#8E44AD", "#16A2B8", "#B7950B", "#5D6D7E"];
+var NOTES = {
+  camera: "노트북 카메라로 손 모양, 표정, 물건, 색 카드 등을 알아봅니다. 사진은 저장되지 않고, 각 장면에서 뽑은 숫자 256개만 저장됩니다.",
+  sound: "마이크로 박수, 휘파람, 목소리, 조용함 등을 알아봅니다. 높고 낮은 소리 32칸의 크기를 비교합니다.",
+  sensor: "CM-550의 기울기·회전·가속 센서로 로봇이 흔들림, 기울어짐, 밀림, 넘어짐 같은 상태를 알아봅니다."
+};
+var AIPanel = class {
+  /**
+   * @param {object} o
+   * @param {HTMLElement} o.host
+   * @param {import('./engine').AIEngine} o.engine
+   * @param {Function} o.log
+   * @param {Function} o.onKindsChange  called when kind names change (refresh block menus)
+   * @param {Function} o.addScript      (kinds) -> void, example blocks into the workspace
+   */
+  constructor({ host, engine, log: log2, onKindsChange, addScript }) {
+    this.host = host;
+    this.engine = engine;
+    this.log = log2;
+    this.onKindsChange = onKindsChange;
+    this.addScript = addScript;
+    this.visible = false;
+    this._build();
+    engine.onUpdate(() => this._onEngine());
+    window.addEventListener("pointerup", () => engine.stopCollecting());
+    window.addEventListener("blur", () => engine.stopCollecting());
+    this.render();
+  }
+  _build() {
+    this.host.classList.add("mon", "aip");
+    const header = el4("header", "mon-header");
+    header.append(el4("span", "mon-title", "AI 학습"));
+    this.stateEl = el4("span", "mon-state", "");
+    header.append(this.stateEl);
+    this.runBtn = button2("mon-btn", "인식 시작", () => this.toggleRun());
+    header.append(this.runBtn);
+    this.host.append(header);
+    const body = el4("div", "mon-body");
+    this.host.append(body);
+    const c1 = el4("section", "mon-card");
+    c1.append(el4("h3", "", "1. 무엇으로 알아볼까요?"));
+    this.srcRow = el4("div", "ai-sources");
+    for (const kind of ["camera", "sound", "sensor"]) {
+      const b = button2(
+        "ai-src",
+        { camera: "📷 카메라", sound: "🎤 소리", sensor: "🤖 로봇 센서" }[kind],
+        () => this.chooseSource(kind)
+      );
+      b.dataset.kind = kind;
+      this.srcRow.append(b);
+    }
+    c1.append(this.srcRow);
+    this.noteEl = el4("p", "mon-note ai-note");
+    c1.append(this.noteEl);
+    this.preview = el4("div", "ai-preview");
+    this.canvas = el4("canvas", "ai-canvas");
+    this.canvas.width = 320;
+    this.canvas.height = 120;
+    this.previewMsg = el4("div", "ai-preview-msg", "");
+    c1.append(this.preview);
+    body.append(c1);
+    const c2 = el4("section", "mon-card");
+    c2.append(el4("h3", "", "2. 종류별로 예시 모으기"));
+    c2.append(el4("p", "mon-note", '종류 이름을 정하고 [누르고 있는 동안 모으기]를 꾹 누르세요. 종류마다 20개 이상 모으면 잘 알아봅니다. "아무것도 아님" 종류를 하나 두면 더 정확해집니다.'));
+    this.kindsEl = el4("div", "ai-kinds");
+    c2.append(this.kindsEl);
+    const row = el4("div", "tp-row");
+    row.append(button2("tp-btn", "+ 종류 추가", () => {
+      this.engine.addClass();
+      this._kindsChanged();
+    }));
+    c2.append(row);
+    body.append(c2);
+    const c3 = el4("section", "mon-card");
+    c3.append(el4("h3", "", "3. AI가 알아본 결과"));
+    this.resultEl = el4("div", "ai-result", "–");
+    this.barsEl = el4("div", "ai-bars");
+    c3.append(this.resultEl, this.barsEl);
+    c3.append(el4("p", "mon-note", '블록 분류의 [AI 학습]에서 "AI가 [종류] 을(를) 알아봤을 때" 블록으로 로봇이 반응하게 만들어 보세요.'));
+    const row3 = el4("div", "tp-row");
+    this.scriptBtn = button2(
+      "tp-btn",
+      "예시 블록 만들기",
+      () => this.addScript(this.engine.names),
+      '종류마다 "알아봤을 때 → 말하기" 블록을 작업 영역에 넣습니다'
+    );
+    row3.append(this.scriptBtn);
+    c3.append(row3);
+    body.append(c3);
+  }
+  setVisible(v) {
+    this.visible = v;
+    if (v) {
+      this.render();
+      this._draw();
+    }
+  }
+  _kindsChanged() {
+    if (this.onKindsChange) this.onKindsChange();
+    this.render();
+  }
+  async chooseSource(kind) {
+    const e = this.engine;
+    if (kind === e.sourceKind) return;
+    if (e.exampleCount && !window.confirm(
+      // eslint-disable-line no-alert
+      `${SOURCE_NAMES[kind]}(으)로 바꾸면 지금까지 모은 예시가 지워집니다. 바꿀까요?`
+    )) return;
+    try {
+      await e.setSource(kind);
+    } catch (err) {
+      this.log(`⚠ ${err.message}`, "err");
+    }
+    this.render();
+  }
+  async toggleRun() {
+    const e = this.engine;
+    if (e.running) {
+      e.stop();
+      e._emit();
+      return;
+    }
+    try {
+      this.runBtn.disabled = true;
+      this.stateEl.textContent = e.sourceKind === "camera" ? "AI 모델을 준비하는 중…" : "시작하는 중…";
+      await e.start();
+    } catch (err) {
+      this.log(`⚠ ${err.message}`, "err");
+    } finally {
+      this.runBtn.disabled = false;
+      this.render();
+    }
+  }
+  _onEngine() {
+    const sig = [
+      this.engine.sourceKind,
+      this.engine.running,
+      this.engine.names.join("|"),
+      this.engine.error
+    ].join("/");
+    if (sig !== this._sig) this.render();
+    else this._update();
+  }
+  render() {
+    const e = this.engine;
+    this._sig = [e.sourceKind, e.running, e.names.join("|"), e.error].join("/");
+    for (const b of this.srcRow.children) b.classList.toggle("active", b.dataset.kind === e.sourceKind);
+    this.noteEl.textContent = NOTES[e.sourceKind];
+    this.runBtn.textContent = e.running ? "인식 멈추기" : "인식 시작";
+    this.preview.textContent = "";
+    if (e.sourceKind === "camera" && e.source && e.source.video) this.preview.append(e.source.video);
+    else this.preview.append(this.canvas);
+    this.preview.append(this.previewMsg);
+    this.kindsEl.textContent = "";
+    e.classes.forEach((c, i) => {
+      const row = el4("div", "ai-kind");
+      row.style.setProperty("--kind", COLORS[i % COLORS.length]);
+      const name = el4("input", "ai-kind-name");
+      name.value = c.name;
+      name.maxLength = 20;
+      name.setAttribute("aria-label", `${i + 1}번 종류 이름`);
+      name.addEventListener("change", () => {
+        if (!e.renameClass(i, name.value)) {
+          name.value = c.name;
+          this.log("종류 이름이 비어 있거나 다른 종류와 같습니다.", "warn");
+        }
+        this._kindsChanged();
+      });
+      const count = el4("span", "ai-count", `${c.examples.length}개`);
+      count.dataset.i = i;
+      const hold = button2("ai-hold", "누르고 있는 동안 모으기");
+      hold.dataset.i = i;
+      hold.addEventListener("pointerdown", (ev) => {
+        ev.preventDefault();
+        e.startCollecting(i);
+      });
+      for (const t of ["pointerup", "pointerleave", "pointercancel"]) {
+        hold.addEventListener(t, () => e.stopCollecting());
+      }
+      const clear = button2("mon-btn-small", "지우기", () => e.clearClass(i), "이 종류의 예시를 지웁니다");
+      const rm = button2("mon-btn-small tp-x", "✕", () => {
+        e.removeClass(i);
+        this._kindsChanged();
+      }, "이 종류 지우기");
+      rm.disabled = e.classes.length <= 2;
+      row.append(name, count, hold, clear, rm);
+      this.kindsEl.append(row);
+    });
+    this._update();
+  }
+  _update() {
+    const e = this.engine;
+    this.stateEl.textContent = e.error ? `⚠ ${e.error}` : e._starting ? e.sourceKind === "camera" ? "AI 모델을 준비하는 중…" : "시작하는 중…" : e.running ? e.collecting >= 0 ? `'${e.names[e.collecting]}' 예시 모으는 중` : e.ready ? "인식하는 중" : "예시를 모아 주세요" : `${SOURCE_NAMES[e.sourceKind]} · 예시 ${e.exampleCount}개`;
+    for (const h of this.kindsEl.querySelectorAll(".ai-hold")) {
+      h.classList.toggle("on", Number(h.dataset.i) === e.collecting);
+    }
+    for (const c of this.kindsEl.querySelectorAll(".ai-count")) {
+      const k = e.classes[Number(c.dataset.i)];
+      if (k) c.textContent = `${k.examples.length}개`;
+    }
+    this.previewMsg.textContent = e.running ? "" : e.sourceKind === "sensor" && !e.device.connected ? "로봇을 연결한 뒤 [인식 시작]을 누르세요" : "[인식 시작]을 누르면 여기에 보입니다";
+    if (!e.running) this.resultEl.textContent = "인식이 꺼져 있습니다";
+    else if (!e.ready) this.resultEl.textContent = "두 가지 이상의 종류에 예시를 모아 주세요";
+    else this.resultEl.textContent = e.active ? `지금: ${e.active}` : "잘 모르겠어요 (확신 60% 미만)";
+    this.resultEl.classList.toggle("sure", Boolean(e.active));
+    this.barsEl.textContent = "";
+    e.classes.forEach((c, i) => {
+      const p = e.confidence(c.name);
+      const row = el4("div", "ai-bar");
+      row.append(el4("span", "ai-bar-name", c.name));
+      const track = el4("span", "ai-bar-track");
+      const fill = el4("span", "ai-bar-fill");
+      fill.style.width = `${p}%`;
+      fill.style.background = COLORS[i % COLORS.length];
+      track.append(fill);
+      row.append(track, el4("span", "ai-bar-pct", `${p}%`));
+      this.barsEl.append(row);
+    });
+    this.scriptBtn.disabled = !e.ready;
+    if (this.visible) this._draw();
+  }
+  /** Sound: 32 band levels. Sensor: 8 channels. */
+  _draw() {
+    const e = this.engine;
+    const src = e.source;
+    if (!src || e.sourceKind === "camera") return;
+    const ctx = this.canvas.getContext("2d");
+    const W = this.canvas.width;
+    const H = this.canvas.height;
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = "#f2f5fa";
+    ctx.fillRect(0, 0, W, H);
+    if (e.sourceKind === "sound" && src.level) {
+      const n = src.level.length;
+      const bw = W / n;
+      for (let b = 0; b < n; b++) {
+        const v = Math.max(0, Math.min(1, (src.level[b] + 100) / 70));
+        ctx.fillStyle = "#2E6ABF";
+        ctx.fillRect(b * bw + 1, H - v * (H - 14), bw - 2, v * (H - 14));
+      }
+      ctx.fillStyle = "#6b7689";
+      ctx.font = "10px sans-serif";
+      ctx.fillText("낮은 소리", 4, 11);
+      ctx.fillText("높은 소리", W - 48, 11);
+    } else if (e.sourceKind === "sensor" && src.latest) {
+      const n = SENSOR_CHANNELS.length;
+      const bh = (H - 4) / n;
+      const scale = [45, 45, 200, 200, 200, 2, 2, 2];
+      ctx.font = "10px sans-serif";
+      for (let c = 0; c < n; c++) {
+        const v = Math.max(-1, Math.min(1, src.latest[c] / scale[c]));
+        const y = 2 + c * bh;
+        ctx.fillStyle = "#6b7689";
+        ctx.fillText(SENSOR_CHANNELS[c], 4, y + bh - 4);
+        const mid = 70 + (W - 80) / 2;
+        ctx.fillStyle = "#dde3ec";
+        ctx.fillRect(70, y + 2, W - 80, bh - 4);
+        ctx.fillStyle = v >= 0 ? "#1FB36B" : "#E07B39";
+        ctx.fillRect(v >= 0 ? mid : mid + v * (W - 80) / 2, y + 2, Math.abs(v) * (W - 80) / 2, bh - 4);
+      }
+    }
+  }
+};
+
+// src/ai/ai-extension.js
+var AI_EXTENSION_ID = "dmai";
+var createAIExtension = ({ ArgumentType, BlockType }, engine, { log: log2, isRunning } = {}) => {
+  class DMAIBlocks {
+    constructor(runtime) {
+      this.runtime = runtime;
+      runtime.ext_dmai = this;
+    }
+    getInfo() {
+      const first = engine.names[0] || "종류 1";
+      const CLASS = { type: ArgumentType.STRING, menu: "kinds", defaultValue: first };
+      return {
+        id: AI_EXTENSION_ID,
+        name: "AI 학습",
+        color1: "#8E44AD",
+        color2: "#7D3C98",
+        color3: "#6C3483",
+        blocks: [
+          {
+            opcode: "aiWhen",
+            blockType: BlockType.HAT,
+            isEdgeActivated: true,
+            text: "AI가 [CLASS] 을(를) 알아봤을 때",
+            arguments: { CLASS }
+          },
+          {
+            opcode: "aiLabel",
+            blockType: BlockType.REPORTER,
+            text: "AI가 알아본 것",
+            disableMonitor: true
+          },
+          {
+            opcode: "aiIs",
+            blockType: BlockType.BOOLEAN,
+            text: "AI가 알아본 것이 [CLASS] 인가?",
+            arguments: { CLASS }
+          },
+          {
+            opcode: "aiConfidence",
+            blockType: BlockType.REPORTER,
+            text: "AI가 [CLASS] (이)라고 생각하는 정도 (%)",
+            arguments: { CLASS },
+            disableMonitor: true
+          },
+          {
+            opcode: "aiSwitch",
+            blockType: BlockType.COMMAND,
+            text: "AI 인식 [STATE]",
+            arguments: { STATE: { type: ArgumentType.STRING, menu: "aiState", defaultValue: "on" } }
+          }
+        ],
+        menus: {
+          kinds: { acceptReporters: true, items: "_kindMenu" },
+          aiState: { acceptReporters: false, items: [
+            { text: "켜기", value: "on" },
+            { text: "끄기", value: "off" }
+          ] }
+        }
+      };
+    }
+    _kindMenu() {
+      const names = engine.names;
+      return names.length ? names : ["종류 1"];
+    }
+    /** Blocks that need a result start recognition by themselves. */
+    _autoStart() {
+      if (engine.running || engine._starting || !engine.ready) return;
+      if (isRunning && !isRunning()) return;
+      engine.start().catch((e) => log2 && log2(`⚠ AI 인식을 시작할 수 없습니다: ${e.message}`, "err"));
+    }
+    aiWhen(args) {
+      return engine.running && engine.active === String(args.CLASS);
+    }
+    aiLabel() {
+      this._autoStart();
+      return engine.active;
+    }
+    aiIs(args) {
+      this._autoStart();
+      return engine.active === String(args.CLASS);
+    }
+    aiConfidence(args) {
+      this._autoStart();
+      return engine.confidence(String(args.CLASS));
+    }
+    async aiSwitch(args) {
+      if (args.STATE === "off") {
+        engine.stop();
+        engine._emit();
+        return;
+      }
+      if (!engine.ready) {
+        if (log2) log2("⚠ AI 학습 패널에서 두 가지 이상의 종류에 예시를 모은 뒤 사용하세요.", "err");
+        return;
+      }
+      try {
+        await engine.start();
+      } catch (e) {
+        if (log2) log2(`⚠ AI 인식을 시작할 수 없습니다: ${e.message}`, "err");
+      }
+    }
+  }
+  return DMAIBlocks;
+};
+
 // src/main.js
 var $ = (id) => document.getElementById(id);
 var log = (text2, kind = "out") => {
@@ -4658,11 +6096,14 @@ var restyleMenuToParent = (type) => {
   };
   def.__dbWrapped = true;
 };
-var robotBlocksDefined = false;
+var definedExtensions = /* @__PURE__ */ new Set();
 var defineRobotBlocks = (categoryInfo) => {
-  if (!categoryInfo || categoryInfo.id !== "cm550") return;
-  if (robotBlocksDefined) return;
-  robotBlocksDefined = true;
+  if (!categoryInfo || categoryInfo.id !== "cm550" && categoryInfo.id !== "dmai") return;
+  if (definedExtensions.has(categoryInfo.id)) {
+    for (const b of categoryInfo.blocks || []) if (b.info && b.info.opcode) robotXML[b.info.opcode] = b.xml;
+    return;
+  }
+  definedExtensions.add(categoryInfo.id);
   const json = [];
   for (const menu of categoryInfo.menus || []) {
     if (menu.json) json.push(menu.json);
@@ -4675,7 +6116,7 @@ var defineRobotBlocks = (categoryInfo) => {
   }
   ScratchBlocks2.defineBlocksWithJsonArray(json);
   for (const menu of categoryInfo.menus || []) if (menu.json) restyleMenuToParent(menu.json.type);
-  const styles = Object.assign({ cm550: ROBOT_STYLES.db_dxl }, ROBOT_STYLES);
+  const styles = Object.assign({ cm550: ROBOT_STYLES.db_dxl, dmai: ROBOT_STYLES.db_ai }, ROBOT_STYLES);
   for (const [name, s] of Object.entries(styles)) {
     theme.setBlockStyle(name, s);
     theme.setBlockStyle(`${name}_selected`, {
@@ -4709,6 +6150,19 @@ var ext = new CM550Extension(vm.runtime);
   const em = vm.extensionManager;
   const serviceName = em._registerInternalExtension(ext);
   em._loadedExtensions.set("cm550", serviceName);
+}
+var aiEngine = new AIEngine({ device: ext.device, log: (t, k) => log(t, k) });
+{
+  const AIExt = createAIExtension({
+    ArgumentType: window.VirtualMachine.ArgumentType || VMClass.ArgumentType,
+    BlockType: window.VirtualMachine.BlockType || VMClass.BlockType
+  }, aiEngine, {
+    log: (t, k) => log(t, k),
+    isRunning: () => document.body.classList.contains("running")
+  });
+  const em = vm.extensionManager;
+  const serviceName = em._registerInternalExtension(new AIExt(vm.runtime));
+  em._loadedExtensions.set(AI_EXTENSION_ID, serviceName);
 }
 var workspace = ScratchBlocks2.inject($("blocks"), Object.assign({ toolbox: makeToolbox(robotXML) }, workspaceOptions));
 var refreshMotorLabels = () => {
@@ -4799,6 +6253,7 @@ vm.on("workspaceUpdate", (data) => {
   }
   workspace.clearUndo();
   scheduleToolboxRefresh();
+  if (typeof teach !== "undefined") setTimeout(() => teach.render());
 });
 vm.on("SCRIPT_GLOW_ON", (d) => ScratchBlocks2.glowStack(d.id, true));
 vm.on("SCRIPT_GLOW_OFF", (d) => ScratchBlocks2.glowStack(d.id, false));
@@ -4812,6 +6267,7 @@ ext.device.onMotorsChange = (motors, desc) => {
   refreshMotorLabels();
   scheduleToolboxRefresh();
   if (typeof monitor !== "undefined") monitor.renderMotors();
+  if (typeof teach !== "undefined") teach.render();
   if (!motors.length) return;
   const counts = {};
   for (const m of motors) {
@@ -4827,17 +6283,119 @@ var monitor = new Monitor({
   isRunning: () => document.body.classList.contains("running"),
   log: (text2, kind) => log(text2, kind)
 });
+ext.onCreateList = (name, id) => {
+  const map = workspace.getVariableMap ? workspace.getVariableMap() : null;
+  if (map && map.createVariable) map.createVariable(name, "list", id);
+  else workspace.createVariable(name, "list", id);
+};
+var addPoseScript = (numbers, seconds) => {
+  const n = (v) => `<shadow type="math_number"><field name="NUM">${v}</field></shadow>`;
+  let inner = "";
+  for (let i = numbers.length - 1; i >= 0; i--) {
+    inner = `<block type="cm550_posePlay"><value name="N">${n(numbers[i])}</value><value name="SECS">${n(seconds)}</value>${inner ? `<next>${inner}</next>` : ""}</block>`;
+  }
+  let x = 40;
+  let y = 40;
+  try {
+    const view = workspace.getMetricsManager().getViewMetrics(true);
+    x = view.left + 40;
+    y = view.top + 40;
+    if (workspace.getTopBlocks(false).length) {
+      const box = workspace.getBlocksBoundingBox();
+      x = box.left;
+      y = box.bottom + 48;
+    }
+  } catch (e) {
+  }
+  const xml = `<xml><block type="event_whenflagclicked" x="${Math.round(x)}" y="${Math.round(y)}"><next>${inner}</next></block></xml>`;
+  const dom = ScratchBlocks2.utils.xml.textToDom(xml);
+  const ids = ScratchBlocks2.Xml.domToWorkspace(dom, workspace);
+  if (ids && ids[0]) {
+    const top = workspace.getBlockById(ids[0]);
+    if (top && top.select) top.select();
+    if (top && workspace.centerOnBlock) workspace.centerOnBlock(top.id);
+  }
+};
+var teach = new TeachPanel({
+  host: $("teach"),
+  ext,
+  log: (text2, kind) => log(text2, kind),
+  isRunning: () => document.body.classList.contains("running"),
+  addScript: addPoseScript
+});
+ext.onPosesChange = () => teach.render();
+var addAIScript = (kinds) => {
+  const hat = robotXML.aiWhen || "";
+  const shadow = /<shadow type="([^"]+)"><field name="([^"]+)">/.exec(hat);
+  if (!shadow) return;
+  const esc = (t) => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  let x = 40;
+  let y = 40;
+  try {
+    if (workspace.getTopBlocks(false).length) {
+      const box = workspace.getBlocksBoundingBox();
+      x = box.left;
+      y = box.bottom + 48;
+    }
+  } catch (e) {
+  }
+  const stacks = kinds.map((k, i) => `<block type="dmai_aiWhen" x="${Math.round(x + i * 330)}" y="${Math.round(y)}"><value name="CLASS"><shadow type="${shadow[1]}"><field name="${shadow[2]}">${esc(k)}</field></shadow></value><next><block type="looks_say"><value name="MESSAGE"><shadow type="text"><field name="TEXT">${esc(k)}</field></shadow></value></block></next></block>`).join("");
+  ScratchBlocks2.Xml.domToWorkspace(ScratchBlocks2.utils.xml.textToDom(`<xml>${stacks}</xml>`), workspace);
+  log('종류마다 "알아봤을 때 → 말하기" 블록을 넣었습니다. ▶ 실행을 누르고 AI에게 보여 주세요.', "ok");
+};
+var kindsTimer = null;
+var refreshAIKinds = () => {
+  clearTimeout(kindsTimer);
+  kindsTimer = setTimeout(() => {
+    try {
+      vm.extensionManager.refreshBlocks();
+    } catch (e) {
+    }
+    scheduleToolboxRefresh();
+    scheduleAutosave();
+  }, 200);
+};
+var aiPanel = new AIPanel({
+  host: $("ai"),
+  engine: aiEngine,
+  log: (text2, kind) => log(text2, kind),
+  onKindsChange: refreshAIKinds,
+  addScript: addAIScript
+});
+{
+  let wasCollecting = -1;
+  aiEngine.onUpdate((e) => {
+    if (wasCollecting >= 0 && e.collecting < 0) {
+      dirty = true;
+      scheduleAutosave();
+    }
+    wasCollecting = e.collecting;
+  });
+}
+vm.on("PROJECT_RUN_START", () => {
+  const t = vm.editingTarget;
+  const usesAI = t && Object.values(t.blocks._blocks).some((b) => b.opcode.startsWith("dmai_"));
+  if (usesAI && aiEngine.ready && !aiEngine.running) {
+    aiEngine.start().catch((e) => log(`⚠ AI 인식을 시작할 수 없습니다: ${e.message}`, "err"));
+  }
+});
+var VIEWS = ["python", "monitor", "teach", "ai"];
 var showView = (view) => {
-  const mon = view === "monitor";
-  $("python").hidden = mon;
-  $("monitor").hidden = !mon;
-  $("view-python").classList.toggle("active", !mon);
-  $("view-monitor").classList.toggle("active", mon);
-  monitor.setVisible(mon);
+  for (const v of VIEWS) {
+    const panel = $(v);
+    if (panel) panel.hidden = v !== view;
+    const btn = $(`view-${v}`);
+    if (btn) btn.classList.toggle("active", v === view);
+  }
+  monitor.setVisible(view === "monitor");
+  teach.setVisible(view === "teach");
+  if (typeof aiPanel !== "undefined") aiPanel.setVisible(view === "ai");
   setTimeout(resizeBlocks);
 };
-$("view-python").addEventListener("click", () => showView("python"));
-$("view-monitor").addEventListener("click", () => showView("monitor"));
+for (const v of VIEWS) {
+  const btn = $(`view-${v}`);
+  if (btn) btn.addEventListener("click", () => showView(v));
+}
 var runBtn = $("run");
 var stopBtn = $("stop");
 runBtn.addEventListener("click", () => {
@@ -4850,10 +6408,10 @@ vm.on("PROJECT_RUN_STOP", () => document.body.classList.remove("running"));
 vm.runtime.on("SAY", (target, type, text2) => {
   if (text2 !== "" && text2 !== null && typeof text2 !== "undefined") log(text2);
 });
-var isTyping = (t) => t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable || t.closest && t.closest(".blocklyWidgetDiv, .blocklyDropDownDiv, .db-overlay"));
+var isTyping2 = (t) => t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable || t.closest && t.closest(".blocklyWidgetDiv, .blocklyDropDownDiv, .db-overlay"));
 for (const type of ["keydown", "keyup"]) {
   document.addEventListener(type, (e) => {
-    if (isTyping(e.target)) return;
+    if (isTyping2(e.target)) return;
     vm.postIOData("keyboard", { key: e.key, isDown: type === "keydown" });
     if (e.key === " " && e.target === document.body) e.preventDefault();
   });
@@ -4876,6 +6434,7 @@ var connect = async (kind) => {
     log(kind === "sim" ? "가상 로봇에 연결되었습니다. 로봇이 할 동작이 이 창에 표시됩니다." : `CM-550이 ${KIND_NAME[kind]}로 연결되었습니다.`, "ok");
     if (ext.device.lastError) log(ext.device.lastError, "warn");
     monitor.onConnectionChange(true, KIND_NAME[kind]);
+    teach.render();
   } else {
     setStatus("idle", "연결 안 됨");
     const msg = ext.lastError();
@@ -4890,6 +6449,8 @@ vm.runtime.on("PERIPHERAL_DISCONNECTED", () => {
   setStatus("idle", "연결 안 됨");
   ext.device.setMotors([]);
   monitor.onConnectionChange(false);
+  teach.relaxed.clear();
+  teach.render();
   log("CM-550 연결이 끊어졌습니다.", "warn");
 });
 var policyAllows = (feature) => {
@@ -4914,6 +6475,32 @@ for (const [id, api, feature] of [["connect-usb", "serial", "serial"], ["connect
 }
 var nameInput = $("project-name");
 var dirty = false;
+var projectJSON = () => {
+  const json = vm.toJSON();
+  const ai = aiEngine.serialize();
+  if (!ai) return json;
+  const obj = JSON.parse(json);
+  obj.dynamicmakers = { ai };
+  return JSON.stringify(obj);
+};
+var takeAIData = (data) => {
+  if (data instanceof ArrayBuffer) return { data, ai: null };
+  let obj = data;
+  if (typeof data === "string") {
+    try {
+      obj = JSON.parse(data);
+    } catch (e) {
+      return { data, ai: null };
+    }
+  }
+  if (!obj || typeof obj !== "object") return { data, ai: null };
+  const ai = obj.dynamicmakers && obj.dynamicmakers.ai;
+  if (obj.dynamicmakers) {
+    obj = Object.assign({}, obj);
+    delete obj.dynamicmakers;
+  }
+  return { data: obj, ai: ai || null };
+};
 var loadIntoVM = async (data) => {
   try {
     await vm.loadProject(data);
@@ -4929,7 +6516,10 @@ var loadIntoVM = async (data) => {
 };
 var loadProject = async (data, name) => {
   vm.stopAll();
-  await loadIntoVM(data);
+  const parts = takeAIData(data);
+  await loadIntoVM(parts.data);
+  aiEngine.load(parts.ai);
+  refreshAIKinds();
   const robot = vm.runtime.targets.find((t) => !t.isStage) || vm.runtime.getTargetForStage();
   vm.setEditingTarget(robot.id);
   if (name !== void 0) nameInput.value = name;
@@ -4969,7 +6559,7 @@ var saveFile = async (base, ext2, sandboxExt, content, type) => {
 };
 $("save").addEventListener("click", async () => {
   try {
-    const ext2 = await saveFile(safeFileName(nameInput.value), "dmk", "json", vm.toJSON(), "application/json");
+    const ext2 = await saveFile(safeFileName(nameInput.value), "dmk", "json", projectJSON(), "application/json");
     if (!ext2) return;
     dirty = false;
     log(`프로그램을 저장했습니다 (${ext2}).`, "ok");
@@ -4989,11 +6579,11 @@ var autosaveTimer = null;
 var scheduleAutosave = () => {
   dirty = true;
   clearTimeout(autosaveTimer);
-  autosaveTimer = setTimeout(() => saveAutosave(nameInput.value, vm.toJSON()), 800);
+  autosaveTimer = setTimeout(() => saveAutosave(nameInput.value, projectJSON()), 800);
 };
 vm.on("PROJECT_CHANGED", scheduleAutosave);
 nameInput.addEventListener("input", scheduleAutosave);
-window.addEventListener("beforeunload", () => saveAutosave(nameInput.value, vm.toJSON()));
+window.addEventListener("beforeunload", () => saveAutosave(nameInput.value, projectJSON()));
 $("console-clear").addEventListener("click", () => {
   $("console-lines").textContent = "";
 });
@@ -5070,8 +6660,8 @@ var dragResize = (handle, { onMove, onEnd }) => {
     }
   });
 }
-{
-  const mon = $("monitor");
+for (const panelId of ["monitor", "teach", "ai"]) {
+  const mon = $(panelId);
   let monW = STORE.get("dm.monitorW", 0);
   const applyW = () => {
     if (monW) mon.style.width = `${monW}px`;
@@ -5079,7 +6669,7 @@ var dragResize = (handle, { onMove, onEnd }) => {
   applyW();
   const handle = document.createElement("div");
   handle.className = "dm-vresizer";
-  handle.title = "끌어서 모니터 폭 조절";
+  handle.title = "끌어서 패널 폭 조절";
   mon.prepend(handle);
   let startW = 0;
   handle.addEventListener("pointerdown", () => {

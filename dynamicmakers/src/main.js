@@ -16,6 +16,10 @@ import {createExtension} from '../../scratch-cm550/src/extension';
 import {SimTransport} from './sim-robot';
 import {installMediaRewriter, MEDIA_PREFIX} from './media';
 import {Monitor} from './monitor';
+import {TeachPanel} from './teach';
+import {AIEngine} from './ai/engine';
+import {AIPanel} from './ai/ai-panel';
+import {createAIExtension, AI_EXTENSION_ID} from './ai/ai-extension';
 
 const $ = id => document.getElementById(id);
 
@@ -85,13 +89,16 @@ const restyleMenuToParent = type => {
     def.__dbWrapped = true;
 };
 
-let robotBlocksDefined = false;
+const definedExtensions = new Set();
 const defineRobotBlocks = categoryInfo => {
-    if (!categoryInfo || categoryInfo.id !== 'cm550') return;
-    // EXTENSION_ADDED and BLOCKSINFO_UPDATE both deliver the same static
-    // definitions; define once (the block set never changes at runtime).
-    if (robotBlocksDefined) return;
-    robotBlocksDefined = true;
+    if (!categoryInfo || (categoryInfo.id !== 'cm550' && categoryInfo.id !== 'dmai')) return;
+    // EXTENSION_ADDED and BLOCKSINFO_UPDATE both deliver the same definitions;
+    // define once. Later updates (AI kind names) only refresh the palette XML.
+    if (definedExtensions.has(categoryInfo.id)) {
+        for (const b of categoryInfo.blocks || []) if (b.info && b.info.opcode) robotXML[b.info.opcode] = b.xml;
+        return;
+    }
+    definedExtensions.add(categoryInfo.id);
     const json = [];
     for (const menu of categoryInfo.menus || []) {
         if (menu.json) json.push(menu.json);
@@ -104,7 +111,7 @@ const defineRobotBlocks = categoryInfo => {
     }
     ScratchBlocks.defineBlocksWithJsonArray(json);
     for (const menu of categoryInfo.menus || []) if (menu.json) restyleMenuToParent(menu.json.type);
-    const styles = Object.assign({cm550: ROBOT_STYLES.db_dxl}, ROBOT_STYLES);
+    const styles = Object.assign({cm550: ROBOT_STYLES.db_dxl, dmai: ROBOT_STYLES.db_ai}, ROBOT_STYLES);
     for (const [name, s] of Object.entries(styles)) {
         theme.setBlockStyle(name, s);
         theme.setBlockStyle(`${name}_selected`, {
@@ -141,6 +148,21 @@ const ext = new CM550Extension(vm.runtime);
     const em = vm.extensionManager;
     const serviceName = em._registerInternalExtension(ext);
     em._loadedExtensions.set('cm550', serviceName); // projects listing 'cm550' load without fetching
+}
+
+// ---- AI 학습 engine + blocks ------------------------------------------------------
+const aiEngine = new AIEngine({device: ext.device, log: (t, k) => log(t, k)});
+{
+    const AIExt = createAIExtension({
+        ArgumentType: window.VirtualMachine.ArgumentType || VMClass.ArgumentType,
+        BlockType: window.VirtualMachine.BlockType || VMClass.BlockType
+    }, aiEngine, {
+        log: (t, k) => log(t, k),
+        isRunning: () => document.body.classList.contains('running')
+    });
+    const em = vm.extensionManager;
+    const serviceName = em._registerInternalExtension(new AIExt(vm.runtime));
+    em._loadedExtensions.set(AI_EXTENSION_ID, serviceName);
 }
 
 // ---- workspace -----------------------------------------------------------------
@@ -250,6 +272,7 @@ vm.on('workspaceUpdate', data => {
     }
     workspace.clearUndo();
     scheduleToolboxRefresh();
+    if (typeof teach !== 'undefined') setTimeout(() => teach.render()); // eslint-disable-line no-use-before-define
 });
 
 vm.on('SCRIPT_GLOW_ON', d => ScratchBlocks.glowStack(d.id, true));
@@ -269,6 +292,7 @@ ext.device.onMotorsChange = (motors, desc) => {
     refreshMotorLabels();
     scheduleToolboxRefresh();
     if (typeof monitor !== 'undefined') monitor.renderMotors(); // eslint-disable-line no-use-before-define
+    if (typeof teach !== 'undefined') teach.render(); // eslint-disable-line no-use-before-define
     if (!motors.length) return;
     const counts = {};
     for (const m of motors) {
@@ -287,17 +311,132 @@ const monitor = new Monitor({
     isRunning: () => document.body.classList.contains('running'),
     log: (text, kind) => log(text, kind)
 });
+
+// ---- 자세 가르치기 (teach poses by hand) -------------------------------------
+// the pose list is created through the editor so it appears in the 변수 palette
+ext.onCreateList = (name, id) => {
+    const map = workspace.getVariableMap ? workspace.getVariableMap() : null;
+    if (map && map.createVariable) map.createVariable(name, 'list', id);
+    else workspace.createVariable(name, 'list', id);
+};
+/** Put "when flag clicked → pose 1 → pose 2 …" into the workspace. */
+const addPoseScript = (numbers, seconds) => {
+    const n = v => `<shadow type="math_number"><field name="NUM">${v}</field></shadow>`;
+    let inner = '';
+    for (let i = numbers.length - 1; i >= 0; i--) {
+        inner = `<block type="cm550_posePlay"><value name="N">${n(numbers[i])}</value>` +
+            `<value name="SECS">${n(seconds)}</value>${inner ? `<next>${inner}</next>` : ''}</block>`;
+    }
+    let x = 40;
+    let y = 40;
+    try {
+        const view = workspace.getMetricsManager().getViewMetrics(true);
+        x = view.left + 40;
+        y = view.top + 40;
+        // below everything already in the workspace, so nothing overlaps
+        if (workspace.getTopBlocks(false).length) {
+            const box = workspace.getBlocksBoundingBox();
+            x = box.left;
+            y = box.bottom + 48;
+        }
+    } catch (e) { /* default position */ }
+    const xml = `<xml><block type="event_whenflagclicked" x="${Math.round(x)}" y="${Math.round(y)}">` +
+        `<next>${inner}</next></block></xml>`;
+    const dom = ScratchBlocks.utils.xml.textToDom(xml);
+    const ids = ScratchBlocks.Xml.domToWorkspace(dom, workspace);
+    if (ids && ids[0]) {
+        const top = workspace.getBlockById(ids[0]);
+        if (top && top.select) top.select();
+        if (top && workspace.centerOnBlock) workspace.centerOnBlock(top.id);
+    }
+};
+const teach = new TeachPanel({
+    host: $('teach'),
+    ext,
+    log: (text, kind) => log(text, kind),
+    isRunning: () => document.body.classList.contains('running'),
+    addScript: addPoseScript
+});
+ext.onPosesChange = () => teach.render();
+
+// ---- AI 학습 panel ---------------------------------------------------------------
+/** "AI가 [종류] 을(를) 알아봤을 때 → [종류] 말하기" for every kind. */
+const addAIScript = kinds => {
+    const hat = robotXML.aiWhen || '';
+    const shadow = /<shadow type="([^"]+)"><field name="([^"]+)">/.exec(hat);
+    if (!shadow) return;
+    const esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    let x = 40;
+    let y = 40;
+    try {
+        if (workspace.getTopBlocks(false).length) {
+            const box = workspace.getBlocksBoundingBox();
+            x = box.left;
+            y = box.bottom + 48;
+        }
+    } catch (e) { /* default position */ }
+    const stacks = kinds.map((k, i) => `<block type="dmai_aiWhen" x="${Math.round(x + (i * 330))}" y="${Math.round(y)}">` +
+        `<value name="CLASS"><shadow type="${shadow[1]}"><field name="${shadow[2]}">${esc(k)}</field></shadow></value>` +
+        `<next><block type="looks_say"><value name="MESSAGE"><shadow type="text"><field name="TEXT">${esc(k)}</field>` +
+        '</shadow></value></block></next></block>').join('');
+    ScratchBlocks.Xml.domToWorkspace(ScratchBlocks.utils.xml.textToDom(`<xml>${stacks}</xml>`), workspace);
+    log('종류마다 "알아봤을 때 → 말하기" 블록을 넣었습니다. ▶ 실행을 누르고 AI에게 보여 주세요.', 'ok');
+};
+let kindsTimer = null;
+const refreshAIKinds = () => {
+    clearTimeout(kindsTimer);
+    kindsTimer = setTimeout(() => {
+        try {
+            vm.extensionManager.refreshBlocks();
+        } catch (e) { /* palette defaults only */ }
+        scheduleToolboxRefresh();
+        scheduleAutosave(); // eslint-disable-line no-use-before-define
+    }, 200);
+};
+const aiPanel = new AIPanel({
+    host: $('ai'),
+    engine: aiEngine,
+    log: (text, kind) => log(text, kind),
+    onKindsChange: refreshAIKinds,
+    addScript: addAIScript
+});
+{
+    // save examples with the program when collecting stops
+    let wasCollecting = -1;
+    aiEngine.onUpdate(e => {
+        if (wasCollecting >= 0 && e.collecting < 0) {
+            dirty = true; // eslint-disable-line no-use-before-define
+            scheduleAutosave(); // eslint-disable-line no-use-before-define
+        }
+        wasCollecting = e.collecting;
+    });
+}
+// ▶ 실행 with AI blocks in the program: start recognition automatically
+vm.on('PROJECT_RUN_START', () => {
+    const t = vm.editingTarget;
+    const usesAI = t && Object.values(t.blocks._blocks).some(b => b.opcode.startsWith('dmai_'));
+    if (usesAI && aiEngine.ready && !aiEngine.running) {
+        aiEngine.start().catch(e => log(`⚠ AI 인식을 시작할 수 없습니다: ${e.message}`, 'err'));
+    }
+});
+
+const VIEWS = ['python', 'monitor', 'teach', 'ai'];
 const showView = view => {
-    const mon = view === 'monitor';
-    $('python').hidden = mon;
-    $('monitor').hidden = !mon;
-    $('view-python').classList.toggle('active', !mon);
-    $('view-monitor').classList.toggle('active', mon);
-    monitor.setVisible(mon);
+    for (const v of VIEWS) {
+        const panel = $(v);
+        if (panel) panel.hidden = v !== view;
+        const btn = $(`view-${v}`);
+        if (btn) btn.classList.toggle('active', v === view);
+    }
+    monitor.setVisible(view === 'monitor');
+    teach.setVisible(view === 'teach');
+    if (typeof aiPanel !== 'undefined') aiPanel.setVisible(view === 'ai'); // eslint-disable-line no-use-before-define
     setTimeout(resizeBlocks);
 };
-$('view-python').addEventListener('click', () => showView('python'));
-$('view-monitor').addEventListener('click', () => showView('monitor'));
+for (const v of VIEWS) {
+    const btn = $(`view-${v}`);
+    if (btn) btn.addEventListener('click', () => showView(v));
+}
 
 // ---------------------------------------------------------------------------
 // run / stop
@@ -351,6 +490,7 @@ const connect = async kind => {
             `CM-550이 ${KIND_NAME[kind]}로 연결되었습니다.`, 'ok');
         if (ext.device.lastError) log(ext.device.lastError, 'warn');
         monitor.onConnectionChange(true, KIND_NAME[kind]);
+        teach.render();
     } else {
         setStatus('idle', '연결 안 됨');
         const msg = ext.lastError();
@@ -365,6 +505,8 @@ vm.runtime.on('PERIPHERAL_DISCONNECTED', () => {
     setStatus('idle', '연결 안 됨');
     ext.device.setMotors([]);
     monitor.onConnectionChange(false);
+    teach.relaxed.clear();
+    teach.render();
     log('CM-550 연결이 끊어졌습니다.', 'warn');
 });
 // USB/BLE need browser support AND permission for this frame (a sandboxed
@@ -399,6 +541,35 @@ let dirty = false;
 // vm.loadProject validates with a JSON-schema library that compiles code at
 // runtime; under a strict content-security policy (no eval) that fails, so
 // fall back to the engine's own deserializer for JSON projects.
+/** Project JSON with the AI examples (the engine ignores the extra key). */
+const projectJSON = () => {
+    const json = vm.toJSON();
+    const ai = aiEngine.serialize();
+    if (!ai) return json;
+    const obj = JSON.parse(json);
+    obj.dynamicmakers = {ai};
+    return JSON.stringify(obj);
+};
+/** Take the AI part out of a project before the engine sees it. */
+const takeAIData = data => {
+    if (data instanceof ArrayBuffer) return {data, ai: null};
+    let obj = data;
+    if (typeof data === 'string') {
+        try {
+            obj = JSON.parse(data);
+        } catch (e) {
+            return {data, ai: null};
+        }
+    }
+    if (!obj || typeof obj !== 'object') return {data, ai: null};
+    const ai = obj.dynamicmakers && obj.dynamicmakers.ai;
+    if (obj.dynamicmakers) {
+        obj = Object.assign({}, obj);
+        delete obj.dynamicmakers;
+    }
+    return {data: obj, ai: ai || null};
+};
+
 const loadIntoVM = async data => {
     try {
         await vm.loadProject(data);
@@ -415,7 +586,10 @@ const loadIntoVM = async data => {
 
 const loadProject = async (data, name) => {
     vm.stopAll();
-    await loadIntoVM(data);
+    const parts = takeAIData(data);
+    await loadIntoVM(parts.data);
+    aiEngine.load(parts.ai);
+    refreshAIKinds();
     const robot = vm.runtime.targets.find(t => !t.isStage) || vm.runtime.getTargetForStage();
     vm.setEditingTarget(robot.id);
     if (name !== undefined) nameInput.value = name;
@@ -460,7 +634,7 @@ const saveFile = async (base, ext, sandboxExt, content, type) => {
 };
 $('save').addEventListener('click', async () => {
     try {
-        const ext = await saveFile(safeFileName(nameInput.value), 'dmk', 'json', vm.toJSON(), 'application/json');
+        const ext = await saveFile(safeFileName(nameInput.value), 'dmk', 'json', projectJSON(), 'application/json');
         if (!ext) return;
         dirty = false;
         log(`프로그램을 저장했습니다 (${ext}).`, 'ok');
@@ -481,11 +655,11 @@ let autosaveTimer = null;
 const scheduleAutosave = () => {
     dirty = true;
     clearTimeout(autosaveTimer);
-    autosaveTimer = setTimeout(() => saveAutosave(nameInput.value, vm.toJSON()), 800);
+    autosaveTimer = setTimeout(() => saveAutosave(nameInput.value, projectJSON()), 800);
 };
 vm.on('PROJECT_CHANGED', scheduleAutosave);
 nameInput.addEventListener('input', scheduleAutosave);
-window.addEventListener('beforeunload', () => saveAutosave(nameInput.value, vm.toJSON()));
+window.addEventListener('beforeunload', () => saveAutosave(nameInput.value, projectJSON()));
 
 $('console-clear').addEventListener('click', () => {
     $('console-lines').textContent = '';
@@ -543,14 +717,14 @@ const dragResize = (handle, {onMove, onEnd}) => {
         if (consoleH > maxH()) { consoleH = maxH(); applyH(); }
     });
 }
-{
-    const mon = $('monitor');
+for (const panelId of ['monitor', 'teach', 'ai']) {
+    const mon = $(panelId);
     let monW = STORE.get('dm.monitorW', 0);
     const applyW = () => { if (monW) mon.style.width = `${monW}px`; };
     applyW();
     const handle = document.createElement('div');
     handle.className = 'dm-vresizer';
-    handle.title = '끌어서 모니터 폭 조절';
+    handle.title = '끌어서 패널 폭 조절';
     mon.prepend(handle);
     let startW = 0;
     handle.addEventListener('pointerdown', () => { startW = mon.getBoundingClientRect().width; });

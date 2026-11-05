@@ -27,7 +27,7 @@ mkdir -p "$EXT_DIR/lib"
 cp "$HERE/scratch-vm/index.js" "$EXT_DIR/index.js"
 cp "$HERE/src/protocol2.js" "$HERE/src/transport.js" "$HERE/src/cm550.js" \
    "$HERE/src/extension.js" "$HERE/src/icons.js" "$HERE/src/translations.js" \
-   "$HERE/src/python-generator.js" "$HERE/src/models.js" "$EXT_DIR/lib/"
+   "$HERE/src/python-generator.js" "$HERE/src/models.js" "$HERE/src/poses.js" "$EXT_DIR/lib/"
 echo "[1/5] extension copied to $EXT_DIR"
 
 # 2. builtinExtensions -------------------------------------------------------

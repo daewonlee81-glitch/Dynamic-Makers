@@ -1,4 +1,4 @@
-// CM-550 + DYNAMIXEL Scratch extension (TurboWarp unsandboxed). Built 2026-11-02T13:12Z
+// CM-550 + DYNAMIXEL Scratch extension (TurboWarp unsandboxed). Built 2026-11-05T03:42Z
 (() => {
   var __getOwnPropNames = Object.getOwnPropertyNames;
   var __commonJS = (cb, mod) => function __require() {
@@ -1044,6 +1044,68 @@
             await delay(30);
           }
         }
+        // ---- poses (teach by hand / play back) --------------------------------
+        /** IDs a pose uses: the last scan's motors (or the given list). */
+        poseIds(ids) {
+          const list = ids && ids.length ? ids : this.motors.map((m) => m.id);
+          return list.map(Number).filter((n) => n >= 0 && n <= 252);
+        }
+        /**
+         * Read the present angle of every joint.
+         * @returns {Promise<Object<number, number>>} {id: degrees (0.1° steps)}
+         */
+        async readPose(ids) {
+          const pose = {};
+          for (const id of this.poseIds(ids)) {
+            const tick = await this.readDXL(id, DXL.PRESENT_POSITION);
+            pose[id] = Math.round(tickToDeg(tick) * 10) / 10;
+          }
+          return pose;
+        }
+        /**
+         * Let joints go limp so a student can pose them by hand (torque off), or
+         * stiffen them again. Before torque comes back on each goal is set to the
+         * joint's present angle, so the robot holds the hand-made pose instead of
+         * jumping back to an old goal.
+         */
+        async setJointsTorque(ids, on) {
+          for (const id of this.poseIds(ids)) {
+            if (!on) {
+              await this.writeDXL(id, DXL.TORQUE_ENABLE, 0);
+              continue;
+            }
+            const hold = await this.readDXL(id, DXL.PRESENT_POSITION);
+            await this.writeDXL(id, DXL.GOAL_POSITION, hold);
+            await this.ensureMode(id, [OP_MODE.POSITION, OP_MODE.EXTENDED_POSITION]);
+            const now = await this.readDXL(id, DXL.PRESENT_POSITION);
+            await this.writeDXL(id, DXL.GOAL_POSITION, now);
+          }
+        }
+        /**
+         * Move every joint of `pose` so that all of them arrive together after
+         * `seconds` (each joint's profile velocity is set from its own distance).
+         * @param {Object<number, number>} pose {id: degrees}
+         * @param {number} seconds
+         * @returns {Promise<number[]>} IDs that were moved
+         */
+        async movePose(pose, seconds) {
+          const secs = clamp(Number(seconds) || 0, 0.1, 30);
+          const ids = Object.keys(pose).map(Number);
+          const plan = [];
+          for (const id of ids) {
+            await this.ensureMode(id, [OP_MODE.POSITION, OP_MODE.EXTENDED_POSITION]);
+            const cur = tickToDeg(await this.readDXL(id, DXL.PRESENT_POSITION));
+            const target = Number(pose[id]);
+            const degPerSec = Math.abs(target - cur) / secs;
+            let pv = Math.max(1, Math.ceil(degPerSec / 6 / 0.229));
+            const limit = await this.getVelocityLimit(id);
+            if (limit) pv = Math.min(pv, limit);
+            plan.push({ id, pv, goal: degToTick(target) });
+          }
+          for (const p of plan) await this.writeDXL(p.id, DXL.PROFILE_VELOCITY, p.pv);
+          for (const p of plan) await this.writeDXL(p.id, DXL.GOAL_POSITION, p.goal);
+          return ids;
+        }
         // ---- motion ----------------------------------------------------------
         playMotion(page) {
           return this.writeCM(CM.MOTION_INDEX, clamp(Math.round(page), 1, 65532));
@@ -1106,6 +1168,25 @@
     }
   });
 
+  // src/poses.js
+  var require_poses = __commonJS({
+    "src/poses.js"(exports, module) {
+      var POSE_LIST_NAME = "로봇 자세";
+      var POSE_LIST_ID = "dm-robot-poses";
+      var encodePose = (pose) => Object.keys(pose).map(Number).sort((a, b) => a - b).map((id) => `${id}:${Math.round(Number(pose[id]) * 10) / 10}`).join(" ");
+      var decodePose = (text) => {
+        const pose = {};
+        String(text || "").split(/[\s,;]+/).forEach((part) => {
+          const m = /^(\d{1,3})[:=](-?\d+(?:\.\d+)?)$/.exec(part.trim());
+          if (m) pose[Number(m[1])] = Number(m[2]);
+        });
+        return pose;
+      };
+      var poseSize = (pose) => Object.keys(pose).length;
+      module.exports = { POSE_LIST_NAME, POSE_LIST_ID, encodePose, decodePose, poseSize };
+    }
+  });
+
   // src/extension.js
   var require_extension = __commonJS({
     "src/extension.js"(exports, module) {
@@ -1122,6 +1203,7 @@
       } = require_cm550();
       var icons = require_icons();
       var { modelName } = require_models();
+      var { POSE_LIST_NAME, POSE_LIST_ID, encodePose, decodePose, poseSize } = require_poses();
       var EXTENSION_ID = "cm550";
       var LED_MIX = {
         red: { name: "빨강", rgb: [1, 0, 0] },
@@ -1310,6 +1392,43 @@
                   arguments: { ID: ARG_NUM(1, "dxlId") }
                 },
                 "---",
+                // ---------------- poses taught by hand ----------------
+                {
+                  opcode: "poseRelax",
+                  blockType: BlockType.COMMAND,
+                  text: t("poseRelax", "모든 관절 [STATE]"),
+                  arguments: { STATE: ARG_STR("off", "relax") }
+                },
+                {
+                  opcode: "poseRecord",
+                  blockType: BlockType.COMMAND,
+                  text: t("poseRecord", "지금 자세를 [N] 번 자세로 기록하기"),
+                  arguments: { N: ARG_NUM(1) }
+                },
+                {
+                  opcode: "posePlay",
+                  blockType: BlockType.COMMAND,
+                  text: t("posePlay", "자세 [N] 번으로 [SECS] 초 동안 움직이기"),
+                  arguments: { N: ARG_NUM(1), SECS: ARG_NUM(1) }
+                },
+                {
+                  opcode: "posePlayAll",
+                  blockType: BlockType.COMMAND,
+                  text: t("posePlayAll", "기록한 자세 모두 차례로 움직이기 (자세마다 [SECS] 초)"),
+                  arguments: { SECS: ARG_NUM(1) }
+                },
+                {
+                  opcode: "poseCount",
+                  blockType: BlockType.REPORTER,
+                  text: t("poseCount", "기록한 자세 개수"),
+                  disableMonitor: true
+                },
+                {
+                  opcode: "poseClear",
+                  blockType: BlockType.COMMAND,
+                  text: t("poseClear", "기록한 자세 모두 지우기")
+                },
+                "---",
                 // ---------------- CM-550 built-ins ----------------
                 {
                   // the auxiliary LED has red/green/blue elements (addr 91-93);
@@ -1473,6 +1592,13 @@
                   items: [
                     { text: t("menu.usb", "USB"), value: "usb" },
                     { text: t("menu.ble", "블루투스"), value: "ble" }
+                  ]
+                },
+                relax: {
+                  acceptReporters: false,
+                  items: [
+                    { text: t("menu.relaxOff", "힘 빼기 (손으로 움직이기)"), value: "off" },
+                    { text: t("menu.relaxOn", "힘 주기 (지금 자세 유지)"), value: "on" }
                   ]
                 },
                 onOff: {
@@ -1828,6 +1954,94 @@
             return this._guard(async () => modelName(await this.device.requireModel(num(args.ID)).catch(() => this.device._modelCache[num(args.ID)])), "");
           }
           // ------------------------------------------------------------------
+          // Poses (teach by hand). Kept in the project list "로봇 자세".
+          // ------------------------------------------------------------------
+          /** The pose list on the stage (created on first use when `create`). */
+          _poseList(create) {
+            const rt = this.runtime;
+            const stage = rt && rt.getTargetForStage && rt.getTargetForStage();
+            if (!stage) return null;
+            let list = stage.lookupVariableById(POSE_LIST_ID) || stage.lookupVariableByNameAndType && stage.lookupVariableByNameAndType(POSE_LIST_NAME, "list");
+            if (!list && create) {
+              if (typeof this.onCreateList === "function") {
+                try {
+                  this.onCreateList(POSE_LIST_NAME, POSE_LIST_ID);
+                } catch (e) {
+                }
+                list = stage.lookupVariableById(POSE_LIST_ID);
+              }
+              if (!list) list = stage.lookupOrCreateList(POSE_LIST_ID, POSE_LIST_NAME);
+            }
+            return list;
+          }
+          /** @returns {Array<Object<number, number>>} poses 1..n (empty {} for gaps) */
+          getPoses() {
+            const list = this._poseList(false);
+            return list ? list.value.map(decodePose) : [];
+          }
+          _savePoses(poses) {
+            const list = this._poseList(true);
+            list.value = poses.map((p) => p && poseSize(p) ? encodePose(p) : "");
+            list._monitorUpToDate = false;
+            if (this.runtime.emitProjectChanged) this.runtime.emitProjectChanged();
+            if (typeof this.onPosesChange === "function") this.onPosesChange(this.getPoses());
+          }
+          async _ensureMotors() {
+            if (!this.device.motors.length) await this.device.scanMotors();
+            if (!this.device.motors.length) throw new Error("다이나믹셀을 찾지 못했습니다. 전원과 케이블을 확인하세요.");
+          }
+          /** Record the present pose as pose `n` (1-based; 0/empty = append). */
+          async recordPose(n) {
+            await this._ensureMotors();
+            const pose = await this.device.readPose();
+            const poses = this.getPoses();
+            const index = n >= 1 ? Math.floor(n) - 1 : poses.length;
+            if (index > 200) throw new Error("자세 번호는 200번까지 쓸 수 있습니다.");
+            while (poses.length < index) poses.push({});
+            poses[index] = pose;
+            this._savePoses(poses);
+            return index + 1;
+          }
+          async playPose(n, seconds, wait = true) {
+            const pose = this.getPoses()[Math.floor(n) - 1];
+            if (!pose || !poseSize(pose)) throw new Error(`${Math.floor(n)}번 자세가 기록되어 있지 않습니다.`);
+            const secs = clamp(Number(seconds) || 1, 0.1, 30);
+            await this.device.movePose(pose, secs);
+            if (wait) await delay(secs * 1e3 + 100);
+          }
+          async relaxJoints(ids, on) {
+            await this._ensureMotors();
+            await this.device.setJointsTorque(ids, on);
+          }
+          deletePose(n) {
+            const poses = this.getPoses();
+            poses.splice(Math.floor(n) - 1, 1);
+            this._savePoses(poses);
+          }
+          poseRelax(args) {
+            return this._guard(() => this.relaxJoints(null, args.STATE === "on"));
+          }
+          poseRecord(args) {
+            return this._guard(() => this.recordPose(num(args.N)));
+          }
+          posePlay(args) {
+            return this._guard(() => this.playPose(num(args.N), num(args.SECS)));
+          }
+          posePlayAll(args) {
+            return this._guard(async () => {
+              const poses = this.getPoses();
+              for (let i = 0; i < poses.length; i++) {
+                if (poseSize(poses[i])) await this.playPose(i + 1, num(args.SECS));
+              }
+            });
+          }
+          poseCount() {
+            return this.getPoses().filter((p) => poseSize(p)).length;
+          }
+          poseClear() {
+            if (this._poseList(false)) this._savePoses([]);
+          }
+          // ------------------------------------------------------------------
           // CM-550 built-ins
           // ------------------------------------------------------------------
           cmLedColor(args) {
@@ -1999,6 +2213,14 @@
         "cm550.dxlModuleWheels": "dual-axis module [MODULE] wheels A [SPA] % , B [SPB] %",
         "cm550.dxlGrip": "grip with DYNAMIXEL [ID] at [FORCE] % force toward [DEG]°",
         "cm550.dxlModelName": "model name of DYNAMIXEL [ID]",
+        "cm550.poseRelax": "all joints [STATE]",
+        "cm550.poseRecord": "record the current pose as pose [N]",
+        "cm550.posePlay": "move to pose [N] in [SECS] seconds",
+        "cm550.posePlayAll": "play all recorded poses ( [SECS] s each)",
+        "cm550.poseCount": "number of recorded poses",
+        "cm550.poseClear": "delete all recorded poses",
+        "cm550.menu.relaxOff": "relax (move by hand)",
+        "cm550.menu.relaxOn": "stiffen (hold pose)",
         "cm550.cmLedColor": "set CM-550 LED colour to [COLOR]",
         "cm550.menu.mix.red": "red",
         "cm550.menu.mix.green": "green",
@@ -2403,6 +2625,16 @@
           const op = block.opcode;
           if (op.startsWith("cm550_")) return this.cm550Expr(block, op.slice(6));
           switch (op) {
+            // AI 학습 (Dynamic Makers)
+            case "dmai_aiLabel":
+              this.uses.add("ai");
+              return "ai.label()";
+            case "dmai_aiIs":
+              this.uses.add("ai");
+              return `(ai.label() == ${this.choice(block, "CLASS")})`;
+            case "dmai_aiConfidence":
+              this.uses.add("ai");
+              return `ai.confidence(${this.choice(block, "CLASS")})`;
             // operators
             case "operator_add":
               return `(${this.num(block, "NUM1")} + ${this.num(block, "NUM2")})`;
@@ -2508,6 +2740,8 @@
               return `dxl.is_moving(${id()})`;
             case "dxlModelName":
               return `dxl.model_name(${id()})`;
+            case "poseCount":
+              return "pose.count()";
             case "dxlScan":
               return "dxl.scan()";
             case "cmButton":
@@ -2563,6 +2797,11 @@
           const op = block.opcode;
           if (op.startsWith("cm550_")) {
             this.cm550Statement(block, op.slice(6));
+            return;
+          }
+          if (op === "dmai_aiSwitch") {
+            this.uses.add("ai");
+            this.line(this.choice(block, "STATE") === '"off"' ? "ai.stop()" : "ai.start()");
             return;
           }
           const a = (n) => stripOuter(this.num(block, n));
@@ -2737,6 +2976,21 @@
             case "dxlLed":
               this.line(`dxl.led(${id()}, ${this.onOff(block, "ONOFF")})`);
               break;
+            case "poseRelax":
+              this.line(`pose.torque(${this.onOff(block, "STATE")})  # False = 힘 빼기, True = 힘 주기`);
+              break;
+            case "poseRecord":
+              this.line(`pose.record(${this.num(block, "N")})`);
+              break;
+            case "posePlay":
+              this.line(`pose.play(${this.num(block, "N")}, ${this.num(block, "SECS")})`);
+              break;
+            case "posePlayAll":
+              this.line(`pose.play_all(${this.num(block, "SECS")})`);
+              break;
+            case "poseClear":
+              this.line("pose.clear()");
+              break;
             case "dxlAllTorque":
               this.line(`dxl.torque_all(${this.onOff(block, "ONOFF")})`);
               break;
@@ -2878,6 +3132,11 @@
             case "event_whenthisspriteclicked":
             case "event_whenstageclicked":
               return "@when_clicked";
+            case "dmai_aiWhen": {
+              const c = hat.inputs && hat.inputs.CLASS && this.blocks[hat.inputs.CLASS.block];
+              const name = c && c.fields ? Object.values(c.fields)[0].value : "";
+              return `@ai.when_recognized(${pyString(name)})`;
+            }
             default:
               return null;
           }
@@ -2906,7 +3165,8 @@
                 event_whenkeypressed: "on_key",
                 event_whenbroadcastreceived: "on_message",
                 event_whenthisspriteclicked: "on_click",
-                event_whenstageclicked: "on_click"
+                event_whenstageclicked: "on_click",
+                dmai_aiWhen: "on_ai"
               }[hat.opcode];
               counters[base] = (counters[base] || 0) + 1;
               const fname = this._uniqueName(counters[base] === 1 ? base : `${base}_${counters[base]}`);

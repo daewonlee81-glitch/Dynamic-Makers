@@ -10,6 +10,7 @@ const {
 } = require('./cm550');
 const icons = require('./icons');
 const {modelName} = require('./models');
+const {POSE_LIST_NAME, POSE_LIST_ID, encodePose, decodePose, poseSize} = require('./poses');
 
 const EXTENSION_ID = 'cm550';
 
@@ -203,6 +204,43 @@ const createExtension = ({ArgumentType, BlockType, formatMessage, cast}) => {
                         arguments: {ID: ARG_NUM(1, 'dxlId')}
                     },
                     '---',
+                    // ---------------- poses taught by hand ----------------
+                    {
+                        opcode: 'poseRelax',
+                        blockType: BlockType.COMMAND,
+                        text: t('poseRelax', '모든 관절 [STATE]'),
+                        arguments: {STATE: ARG_STR('off', 'relax')}
+                    },
+                    {
+                        opcode: 'poseRecord',
+                        blockType: BlockType.COMMAND,
+                        text: t('poseRecord', '지금 자세를 [N] 번 자세로 기록하기'),
+                        arguments: {N: ARG_NUM(1)}
+                    },
+                    {
+                        opcode: 'posePlay',
+                        blockType: BlockType.COMMAND,
+                        text: t('posePlay', '자세 [N] 번으로 [SECS] 초 동안 움직이기'),
+                        arguments: {N: ARG_NUM(1), SECS: ARG_NUM(1)}
+                    },
+                    {
+                        opcode: 'posePlayAll',
+                        blockType: BlockType.COMMAND,
+                        text: t('posePlayAll', '기록한 자세 모두 차례로 움직이기 (자세마다 [SECS] 초)'),
+                        arguments: {SECS: ARG_NUM(1)}
+                    },
+                    {
+                        opcode: 'poseCount',
+                        blockType: BlockType.REPORTER,
+                        text: t('poseCount', '기록한 자세 개수'),
+                        disableMonitor: true
+                    },
+                    {
+                        opcode: 'poseClear',
+                        blockType: BlockType.COMMAND,
+                        text: t('poseClear', '기록한 자세 모두 지우기')
+                    },
+                    '---',
                     // ---------------- CM-550 built-ins ----------------
                     {
                         // the auxiliary LED has red/green/blue elements (addr 91-93);
@@ -362,6 +400,11 @@ const createExtension = ({ArgumentType, BlockType, formatMessage, cast}) => {
                         items: [
                             {text: t('menu.usb', 'USB'), value: 'usb'},
                             {text: t('menu.ble', '블루투스'), value: 'ble'}
+                        ]},
+                    relax: {acceptReporters: false,
+                        items: [
+                            {text: t('menu.relaxOff', '힘 빼기 (손으로 움직이기)'), value: 'off'},
+                            {text: t('menu.relaxOn', '힘 주기 (지금 자세 유지)'), value: 'on'}
                         ]},
                     onOff: {acceptReporters: true,
                         items: [
@@ -727,6 +770,110 @@ const createExtension = ({ArgumentType, BlockType, formatMessage, cast}) => {
         dxlModelName (args) {
             return this._guard(async () => modelName(await this.device.requireModel(num(args.ID))
                 .catch(() => this.device._modelCache[num(args.ID)])), '');
+        }
+
+        // ------------------------------------------------------------------
+        // Poses (teach by hand). Kept in the project list "로봇 자세".
+        // ------------------------------------------------------------------
+
+        /** The pose list on the stage (created on first use when `create`). */
+        _poseList (create) {
+            const rt = this.runtime;
+            const stage = rt && rt.getTargetForStage && rt.getTargetForStage();
+            if (!stage) return null;
+            let list = stage.lookupVariableById(POSE_LIST_ID) ||
+                (stage.lookupVariableByNameAndType && stage.lookupVariableByNameAndType(POSE_LIST_NAME, 'list'));
+            if (!list && create) {
+                // the host app creates it in the editor so it shows in the palette
+                if (typeof this.onCreateList === 'function') {
+                    try {
+                        this.onCreateList(POSE_LIST_NAME, POSE_LIST_ID);
+                    } catch (e) { /* fall back below */ }
+                    list = stage.lookupVariableById(POSE_LIST_ID);
+                }
+                if (!list) list = stage.lookupOrCreateList(POSE_LIST_ID, POSE_LIST_NAME);
+            }
+            return list;
+        }
+
+        /** @returns {Array<Object<number, number>>} poses 1..n (empty {} for gaps) */
+        getPoses () {
+            const list = this._poseList(false);
+            return list ? list.value.map(decodePose) : [];
+        }
+
+        _savePoses (poses) {
+            const list = this._poseList(true);
+            list.value = poses.map(p => (p && poseSize(p) ? encodePose(p) : ''));
+            list._monitorUpToDate = false;
+            if (this.runtime.emitProjectChanged) this.runtime.emitProjectChanged();
+            if (typeof this.onPosesChange === 'function') this.onPosesChange(this.getPoses());
+        }
+
+        async _ensureMotors () {
+            if (!this.device.motors.length) await this.device.scanMotors();
+            if (!this.device.motors.length) throw new Error('다이나믹셀을 찾지 못했습니다. 전원과 케이블을 확인하세요.');
+        }
+
+        /** Record the present pose as pose `n` (1-based; 0/empty = append). */
+        async recordPose (n) {
+            await this._ensureMotors();
+            const pose = await this.device.readPose();
+            const poses = this.getPoses();
+            const index = n >= 1 ? Math.floor(n) - 1 : poses.length;
+            if (index > 200) throw new Error('자세 번호는 200번까지 쓸 수 있습니다.');
+            while (poses.length < index) poses.push({});
+            poses[index] = pose;
+            this._savePoses(poses);
+            return index + 1;
+        }
+
+        async playPose (n, seconds, wait = true) {
+            const pose = this.getPoses()[Math.floor(n) - 1];
+            if (!pose || !poseSize(pose)) throw new Error(`${Math.floor(n)}번 자세가 기록되어 있지 않습니다.`);
+            const secs = clamp(Number(seconds) || 1, 0.1, 30);
+            await this.device.movePose(pose, secs);
+            if (wait) await delay((secs * 1000) + 100);
+        }
+
+        async relaxJoints (ids, on) {
+            await this._ensureMotors();
+            await this.device.setJointsTorque(ids, on);
+        }
+
+        deletePose (n) {
+            const poses = this.getPoses();
+            poses.splice(Math.floor(n) - 1, 1);
+            this._savePoses(poses);
+        }
+
+        poseRelax (args) {
+            return this._guard(() => this.relaxJoints(null, args.STATE === 'on'));
+        }
+
+        poseRecord (args) {
+            return this._guard(() => this.recordPose(num(args.N)));
+        }
+
+        posePlay (args) {
+            return this._guard(() => this.playPose(num(args.N), num(args.SECS)));
+        }
+
+        posePlayAll (args) {
+            return this._guard(async () => {
+                const poses = this.getPoses();
+                for (let i = 0; i < poses.length; i++) {
+                    if (poseSize(poses[i])) await this.playPose(i + 1, num(args.SECS));
+                }
+            });
+        }
+
+        poseCount () {
+            return this.getPoses().filter(p => poseSize(p)).length;
+        }
+
+        poseClear () {
+            if (this._poseList(false)) this._savePoses([]);
         }
 
         // ------------------------------------------------------------------

@@ -306,6 +306,10 @@ class PythonGenerator {
         const op = block.opcode;
         if (op.startsWith('cm550_')) return this.cm550Expr(block, op.slice(6));
         switch (op) {
+        // AI 학습 (Dynamic Makers)
+        case 'dmai_aiLabel': this.uses.add('ai'); return 'ai.label()';
+        case 'dmai_aiIs': this.uses.add('ai'); return `(ai.label() == ${this.choice(block, 'CLASS')})`;
+        case 'dmai_aiConfidence': this.uses.add('ai'); return `ai.confidence(${this.choice(block, 'CLASS')})`;
         // operators
         case 'operator_add': return `(${this.num(block, 'NUM1')} + ${this.num(block, 'NUM2')})`;
         case 'operator_subtract': return `(${this.num(block, 'NUM1')} - ${this.num(block, 'NUM2')})`;
@@ -392,6 +396,7 @@ class PythonGenerator {
         }
         case 'dxlIsMoving': return `dxl.is_moving(${id()})`;
         case 'dxlModelName': return `dxl.model_name(${id()})`;
+        case 'poseCount': return 'pose.count()';
         case 'dxlScan': return 'dxl.scan()';
         case 'cmButton': return `cm.button_pressed(${this.choice(block, 'BUTTON')})`;
         case 'cmTilt': {
@@ -438,6 +443,11 @@ class PythonGenerator {
         const op = block.opcode;
         if (op.startsWith('cm550_')) {
             this.cm550Statement(block, op.slice(6));
+            return;
+        }
+        if (op === 'dmai_aiSwitch') {
+            this.uses.add('ai');
+            this.line(this.choice(block, 'STATE') === '"off"' ? 'ai.stop()' : 'ai.start()');
             return;
         }
         const a = n => stripOuter(this.num(block, n));
@@ -594,6 +604,11 @@ class PythonGenerator {
             this.line(`dxl.set_mode(${id()}, ${this.choice(block, 'MODE', {velocity: 'wheel'})})`);
             break;
         case 'dxlLed': this.line(`dxl.led(${id()}, ${this.onOff(block, 'ONOFF')})`); break;
+        case 'poseRelax': this.line(`pose.torque(${this.onOff(block, 'STATE')})  # False = 힘 빼기, True = 힘 주기`); break;
+        case 'poseRecord': this.line(`pose.record(${this.num(block, 'N')})`); break;
+        case 'posePlay': this.line(`pose.play(${this.num(block, 'N')}, ${this.num(block, 'SECS')})`); break;
+        case 'posePlayAll': this.line(`pose.play_all(${this.num(block, 'SECS')})`); break;
+        case 'poseClear': this.line('pose.clear()'); break;
         case 'dxlAllTorque': this.line(`dxl.torque_all(${this.onOff(block, 'ONOFF')})`); break;
         case 'cmLedColor': this.line(`cm.led_color(${this.choice(block, 'COLOR')})`); break;
         case 'cmLed': this.line(`cm.led(${this.choice(block, 'COLOR')}, ${this.onOff(block, 'ONOFF')})`); break;
@@ -717,6 +732,11 @@ class PythonGenerator {
         case 'event_whenthisspriteclicked':
         case 'event_whenstageclicked':
             return '@when_clicked';
+        case 'dmai_aiWhen': {
+            const c = hat.inputs && hat.inputs.CLASS && this.blocks[hat.inputs.CLASS.block];
+            const name = c && c.fields ? Object.values(c.fields)[0].value : '';
+            return `@ai.when_recognized(${pyString(name)})`;
+        }
         default: return null;
         }
     }
@@ -753,7 +773,8 @@ class PythonGenerator {
                     event_whenkeypressed: 'on_key',
                     event_whenbroadcastreceived: 'on_message',
                     event_whenthisspriteclicked: 'on_click',
-                    event_whenstageclicked: 'on_click'
+                    event_whenstageclicked: 'on_click',
+                    dmai_aiWhen: 'on_ai'
                 }[hat.opcode];
                 counters[base] = (counters[base] || 0) + 1;
                 const fname = this._uniqueName(counters[base] === 1 ? base : `${base}_${counters[base]}`);

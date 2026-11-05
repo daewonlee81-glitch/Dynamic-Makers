@@ -38,6 +38,14 @@ export const ROBOT_GROUPS = [
             'motionIsPlaying', 'motionCount']
     },
     {
+        id: 'db_pose', name: '자세',
+        opcodes: ['poseRelax', 'poseRecord', '---', 'posePlay', 'posePlayAll', '---', 'poseCount', 'poseClear']
+    },
+    {
+        id: 'db_ai', name: 'AI 학습',
+        opcodes: ['aiWhen', '---', 'aiLabel', 'aiIs', 'aiConfidence', '---', 'aiSwitch']
+    },
+    {
         id: 'db_mymotors', name: '연결된 모터', dynamic: true,
         opcodes: ['dxlModuleMove', 'dxlModuleWheels', 'dxlGrip', 'dxlModelName']
     },
@@ -166,7 +174,7 @@ export const makeToolbox = (robotBlockXML, scan) => {
     return [
         '<xml style="display: none">',
         events(), control(),
-        robot.db_dxl, robot.db_mymotors, robot.db_controller, robot.db_port, robot.db_motion,
+        robot.db_dxl, robot.db_mymotors, robot.db_pose, robot.db_ai, robot.db_controller, robot.db_port, robot.db_motion,
         operators(), variables(), myBlocks(), output(),
         robot.db_advanced,
         '</xml>'

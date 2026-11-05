@@ -593,6 +593,74 @@ class CM550Device {
         }
     }
 
+    // ---- poses (teach by hand / play back) --------------------------------
+
+    /** IDs a pose uses: the last scan's motors (or the given list). */
+    poseIds (ids) {
+        const list = ids && ids.length ? ids : this.motors.map(m => m.id);
+        return list.map(Number).filter(n => n >= 0 && n <= 252);
+    }
+
+    /**
+     * Read the present angle of every joint.
+     * @returns {Promise<Object<number, number>>} {id: degrees (0.1° steps)}
+     */
+    async readPose (ids) {
+        const pose = {};
+        for (const id of this.poseIds(ids)) {
+            const tick = await this.readDXL(id, DXL.PRESENT_POSITION);
+            pose[id] = Math.round(tickToDeg(tick) * 10) / 10;
+        }
+        return pose;
+    }
+
+    /**
+     * Let joints go limp so a student can pose them by hand (torque off), or
+     * stiffen them again. Before torque comes back on each goal is set to the
+     * joint's present angle, so the robot holds the hand-made pose instead of
+     * jumping back to an old goal.
+     */
+    async setJointsTorque (ids, on) {
+        for (const id of this.poseIds(ids)) {
+            if (!on) {
+                await this.writeDXL(id, DXL.TORQUE_ENABLE, 0);
+                continue;
+            }
+            const hold = await this.readDXL(id, DXL.PRESENT_POSITION);
+            await this.writeDXL(id, DXL.GOAL_POSITION, hold);
+            await this.ensureMode(id, [OP_MODE.POSITION, OP_MODE.EXTENDED_POSITION]);
+            const now = await this.readDXL(id, DXL.PRESENT_POSITION);
+            await this.writeDXL(id, DXL.GOAL_POSITION, now);
+        }
+    }
+
+    /**
+     * Move every joint of `pose` so that all of them arrive together after
+     * `seconds` (each joint's profile velocity is set from its own distance).
+     * @param {Object<number, number>} pose {id: degrees}
+     * @param {number} seconds
+     * @returns {Promise<number[]>} IDs that were moved
+     */
+    async movePose (pose, seconds) {
+        const secs = clamp(Number(seconds) || 0, 0.1, 30);
+        const ids = Object.keys(pose).map(Number);
+        const plan = [];
+        for (const id of ids) {
+            await this.ensureMode(id, [OP_MODE.POSITION, OP_MODE.EXTENDED_POSITION]);
+            const cur = tickToDeg(await this.readDXL(id, DXL.PRESENT_POSITION));
+            const target = Number(pose[id]);
+            const degPerSec = Math.abs(target - cur) / secs;
+            // Profile Velocity unit 0.229 rpm; 1 rpm = 6 deg/s; 0 would mean "no limit"
+            let pv = Math.max(1, Math.ceil(degPerSec / 6 / 0.229));
+            const limit = await this.getVelocityLimit(id);
+            if (limit) pv = Math.min(pv, limit);
+            plan.push({id, pv, goal: degToTick(target)});
+        }
+        for (const p of plan) await this.writeDXL(p.id, DXL.PROFILE_VELOCITY, p.pv);
+        for (const p of plan) await this.writeDXL(p.id, DXL.GOAL_POSITION, p.goal); // start together
+        return ids;
+    }
+
     // ---- motion ----------------------------------------------------------
 
     playMotion (page) {

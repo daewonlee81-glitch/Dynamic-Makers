@@ -26,8 +26,9 @@ if [ "$MODE" = "file" ]; then
     [ -f "$VM_JS" ] || { echo "scratch-vm web build not found: $VM_JS"; exit 1; }
     rm -rf dist-file && mkdir -p dist-file
     NODE_PATH="$SCRATCH_EDITOR/node_modules" FORMAT=iife OUTFILE=dist-file/.app.js EXTERNAL="" node scripts/bundle.js
-    python3 scripts/make-single-file.py "$VM_JS" dist-file/.app.js dist-file/DynamicMakers.html
-    rm dist-file/.app.js
+    OUTFILE=dist-file/.ai.js node scripts/bundle-ai.js
+    python3 scripts/make-single-file.py "$VM_JS" dist-file/.app.js dist-file/DynamicMakers.html dist-file/.ai.js
+    rm dist-file/.app.js dist-file/.ai.js
     cp launchers/* dist-file/
     chmod +x dist-file/*.command 2>/dev/null || true
     ls -la dist-file
@@ -54,4 +55,5 @@ s = open('public/index.html', encoding='utf-8').read().replace('{{LOGO}}', logo)
 open('dist/index.html', 'w', encoding='utf-8').write(s)
 PY
 NODE_PATH="$SCRATCH_EDITOR/node_modules" EXTERNAL="$EXTERNAL" node scripts/bundle.js
+OUTFILE=dist/dm-ai.js node scripts/bundle-ai.js   # TensorFlow.js + MobileNet, loaded on demand
 ls -la dist
