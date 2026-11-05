@@ -3,6 +3,7 @@
 import base64, sys, pathlib
 vm_js, app_js, out = sys.argv[1:4]
 ai_js = sys.argv[4] if len(sys.argv) > 4 else None
+pose_js = sys.argv[5] if len(sys.argv) > 5 else None
 root = pathlib.Path(__file__).resolve().parent.parent
 html = (root / 'public/index.html').read_text(encoding='utf-8')
 css = (root / 'public/dynamicmakers.css').read_text(encoding='utf-8')
@@ -16,6 +17,8 @@ html = html.replace('{{LOGO}}', logo)
 html = html.replace('<link rel="stylesheet" href="dynamicmakers.css">', '<style>\n' + css + '\n</style>')
 html = html.replace('<script src="{{VM_SRC}}"></script>', '<script>\n' + inline_js(vm_js) + '\n</script>')
 ai_tag = ('<script>\n' + inline_js(ai_js) + '\n</script>\n') if ai_js else ''
+if pose_js:
+    ai_tag = '<script>\n' + inline_js(pose_js) + '\n</script>\n' + ai_tag
 html = html.replace('<script type="module" src="dynamicmakers.js"></script>', ai_tag + '<script>\n' + inline_js(app_js) + '\n</script>')
 for marker in ('{{LOGO}}', '{{VM_SRC}}', 'src="dynamicmakers.js"', 'href="dynamicmakers.css"'):
     assert marker not in html, marker

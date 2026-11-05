@@ -27,7 +27,7 @@ if [ "$MODE" = "file" ]; then
     rm -rf dist-file && mkdir -p dist-file
     NODE_PATH="$SCRATCH_EDITOR/node_modules" FORMAT=iife OUTFILE=dist-file/.app.js EXTERNAL="" node scripts/bundle.js
     OUTFILE=dist-file/.ai.js node scripts/bundle-ai.js
-    python3 scripts/make-single-file.py "$VM_JS" dist-file/.app.js dist-file/DynamicMakers.html dist-file/.ai.js
+    python3 scripts/make-single-file.py "$VM_JS" dist-file/.app.js dist-file/DynamicMakers.html dist-file/.ai.js src/ai/movenet-data.js
     rm dist-file/.app.js dist-file/.ai.js
     cp launchers/* dist-file/
     chmod +x dist-file/*.command 2>/dev/null || true
@@ -56,4 +56,5 @@ open('dist/index.html', 'w', encoding='utf-8').write(s)
 PY
 NODE_PATH="$SCRATCH_EDITOR/node_modules" EXTERNAL="$EXTERNAL" node scripts/bundle.js
 OUTFILE=dist/dm-ai.js node scripts/bundle-ai.js   # TensorFlow.js + MobileNet, loaded on demand
+cp src/ai/movenet-data.js dist/dm-pose.js          # skeleton model (6 MB), loaded on demand
 ls -la dist

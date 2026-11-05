@@ -6,6 +6,7 @@
  * now with the examples you showed it and picks the most similar kind".
  */
 import {makeSource} from './sources';
+import {BodySource} from './pose';
 
 const MAX_EXAMPLES = 300;
 const THRESHOLD = 0.6; // below this the robot is "not sure" → no kind recognised
@@ -70,11 +71,12 @@ const b64ToF32 = (b64, dim) => {
     return out;
 };
 
-export const SOURCE_NAMES = {camera: '카메라', sound: '소리', sensor: '로봇 센서'};
+export const SOURCE_NAMES = {camera: '카메라', body: '몸 동작', sound: '소리', sensor: '로봇 센서'};
 
 export class AIEngine {
-    constructor ({device, log}) {
+    constructor ({device, log, tracker}) {
         this.device = device;
+        this.tracker = tracker;
         this.log = log || (() => {});
         this.listeners = new Set();
         this.reset();
@@ -185,7 +187,7 @@ export class AIEngine {
     async start () {
         if (this.running || this._starting) return this._starting;
         this._starting = (async () => {
-            const src = makeSource(this.sourceKind, this.device);
+            const src = makeSource(this.sourceKind, this.device, this.tracker, BodySource);
             this.source = src;
             this.error = '';
             this._emit();

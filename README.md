@@ -23,6 +23,7 @@ RoboMakers의 ROBOTIS **CM-550 + DYNAMIXEL**용 워드블럭(블록 코딩) 앱�
 - 다이나믹셀 모델 자동 인식: XL430, 2XL430(A/B축 자동 짝), XL330, XC430/2XC430, XC330, XH430, XM430
 - 모니터(ID·모델·각도·온도·전압·토크), 연결 문제 [진단]
 - **자세 가르치기:** 관절 힘을 빼고 손으로 자세를 만들어 기록 → 재생·블록으로 만들기 (MAX-E1 휴머노이드 등)
+- **몸 동작(스켈레톤):** PC 카메라로 사람의 관절을 찾아 팔 각도를 로봇 모터가 따라 하게 하거나, 몸 자세를 학습
 - **AI 학습:** 카메라·소리·로봇 센서로 종류별 예시를 모아 브라우저 안에서 학습(인터넷 불필요) → "AI가 [종류]를 알아봤을 때" 블록
 - 저장 형식 `.dmk`(Scratch 3 project.json), `.py` 내보내기
 
@@ -43,6 +44,6 @@ GitHub 설정: Settings → Pages → Source **Deploy from a branch**, Branch **
 ## 라이선스 안내
 
 - 블록 그래픽: scratch-blocks (Apache-2.0)
-- AI: TensorFlow.js, MobileNet v1 가중치 (Apache-2.0)
+- AI: TensorFlow.js, MobileNet v1 가중치, MoveNet (Apache-2.0)
 - 실행 엔진: @scratch/scratch-vm 15.x (**AGPL-3.0**) — 이 엔진을 포함해 배포하면 AGPL 조건이 적용됩니다.
 - 이 저장소 코드의 라이선스는 아직 정하지 않았습니다.

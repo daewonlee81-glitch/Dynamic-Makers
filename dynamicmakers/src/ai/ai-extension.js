@@ -4,7 +4,11 @@
  */
 export const AI_EXTENSION_ID = 'dmai';
 
-export const createAIExtension = ({ArgumentType, BlockType}, engine, {log, isRunning} = {}) => {
+import {JOINTS, PART_NAMES} from './pose';
+
+export const SKELETON_OPCODES = ['skelVisible', 'skelAngle', 'skelPos', 'skelFollow', 'skelSwitch'];
+
+export const createAIExtension = ({ArgumentType, BlockType}, engine, {log, isRunning, tracker, device} = {}) => {
     class DMAIBlocks {
         constructor (runtime) {
             this.runtime = runtime;
@@ -52,10 +56,62 @@ export const createAIExtension = ({ArgumentType, BlockType}, engine, {log, isRun
                         blockType: BlockType.COMMAND,
                         text: 'AI 인식 [STATE]',
                         arguments: {STATE: {type: ArgumentType.STRING, menu: 'aiState', defaultValue: 'on'}}
+                    },
+                    // ---- 몸 동작 (skeleton from the PC camera) ----
+                    {
+                        opcode: 'skelVisible',
+                        blockType: BlockType.BOOLEAN,
+                        text: '카메라에 사람이 보이는가?'
+                    },
+                    {
+                        opcode: 'skelAngle',
+                        blockType: BlockType.REPORTER,
+                        text: '사람의 [JOINT] 각도',
+                        arguments: {JOINT: {type: ArgumentType.STRING, menu: 'joints', defaultValue: 'rightShoulder'}},
+                        disableMonitor: true
+                    },
+                    {
+                        opcode: 'skelPos',
+                        blockType: BlockType.REPORTER,
+                        text: '사람의 [PART] [AXIS] 위치',
+                        arguments: {
+                            PART: {type: ArgumentType.STRING, menu: 'parts', defaultValue: 'rightHand'},
+                            AXIS: {type: ArgumentType.STRING, menu: 'axis', defaultValue: 'y'}
+                        },
+                        disableMonitor: true
+                    },
+                    {
+                        opcode: 'skelFollow',
+                        blockType: BlockType.COMMAND,
+                        text: '다이나믹셀 [ID] 이(가) 사람의 [JOINT] 따라 하기 (가운데 [CENTER]° , [DIR])',
+                        arguments: {
+                            ID: {type: ArgumentType.NUMBER, defaultValue: 1},
+                            JOINT: {type: ArgumentType.STRING, menu: 'joints', defaultValue: 'rightShoulder'},
+                            CENTER: {type: ArgumentType.NUMBER, defaultValue: 180},
+                            DIR: {type: ArgumentType.STRING, menu: 'dir', defaultValue: '1'}
+                        }
+                    },
+                    {
+                        opcode: 'skelSwitch',
+                        blockType: BlockType.COMMAND,
+                        text: '몸 동작 추적 [STATE]',
+                        arguments: {STATE: {type: ArgumentType.STRING, menu: 'aiState', defaultValue: 'on'}}
                     }
                 ],
                 menus: {
                     kinds: {acceptReporters: true, items: '_kindMenu'},
+                    joints: {acceptReporters: false,
+                        items: Object.entries(JOINTS).map(([value, text]) => ({text, value}))},
+                    parts: {acceptReporters: false,
+                        items: Object.entries(PART_NAMES).map(([value, text]) => ({text, value}))},
+                    axis: {acceptReporters: false, items: [
+                        {text: 'x (좌우)', value: 'x'},
+                        {text: 'y (위아래)', value: 'y'}
+                    ]},
+                    dir: {acceptReporters: false, items: [
+                        {text: '같은 방향', value: '1'},
+                        {text: '반대 방향', value: '-1'}
+                    ]},
                     aiState: {acceptReporters: false, items: [
                         {text: '켜기', value: 'on'},
                         {text: '끄기', value: 'off'}
@@ -74,6 +130,68 @@ export const createAIExtension = ({ArgumentType, BlockType}, engine, {log, isRun
             if (engine.running || engine._starting || !engine.ready) return;
             if (isRunning && !isRunning()) return; // only while a program runs
             engine.start().catch(e => log && log(`⚠ AI 인식을 시작할 수 없습니다: ${e.message}`, 'err'));
+        }
+
+        // ---- 몸 동작 -----------------------------------------------------------
+        /** Skeleton blocks start the camera by themselves while a program runs. */
+        _body () {
+            if (!tracker) return false;
+            if (!tracker.running && !tracker._starting && (!isRunning || isRunning())) {
+                tracker.acquire('blocks').catch(e => log && log(`⚠ 몸 동작을 추적할 수 없습니다: ${e.message}`, 'err'));
+            }
+            return tracker.running;
+        }
+
+        skelVisible () {
+            return this._body() && tracker.data.visible;
+        }
+
+        skelAngle (args) {
+            return this._body() ? tracker.angle(String(args.JOINT)) : 0;
+        }
+
+        skelPos (args) {
+            return this._body() ? tracker.position(String(args.PART), String(args.AXIS)) : 0;
+        }
+
+        async skelFollow (args) {
+            if (!this._body()) return;
+            if (!device || !device.connected) {
+                if (log && !this._warnedConn) log('⚠ 로봇이 연결되어 있지 않아 따라 하기를 할 수 없습니다.', 'err');
+                this._warnedConn = true;
+                return;
+            }
+            const joint = String(args.JOINT);
+            const v = tracker.data.angles[joint];
+            if (v === null || v === undefined || !tracker.data.visible) return; // keep the last pose
+            const id = Math.round(Number(args.ID) || 0);
+            const target = Math.max(0, Math.min(360, Number(args.CENTER) + (Number(args.DIR) < 0 ? -v : v)));
+            this._last = this._last || {};
+            if (this._last[id] !== undefined && Math.abs(this._last[id] - target) < 2) {
+                await new Promise(r => setTimeout(r, 15)); // nothing to do: let other scripts run
+                return;
+            }
+            try {
+                const first = this._last[id] === undefined;
+                await device.moveTo(id, target, first ? 70 : NaN); // speed set once, then only goals
+                this._last[id] = target;
+            } catch (e) {
+                if (log) log(`⚠ 다이나믹셀 ${id}: ${e.message}`, 'err');
+                await new Promise(r => setTimeout(r, 300));
+            }
+        }
+
+        async skelSwitch (args) {
+            if (!tracker) return;
+            if (args.STATE === 'off') {
+                tracker.release('blocks');
+                return;
+            }
+            try {
+                await tracker.acquire('blocks');
+            } catch (e) {
+                if (log) log(`⚠ 몸 동작을 추적할 수 없습니다: ${e.message}`, 'err');
+            }
         }
 
         aiWhen (args) {

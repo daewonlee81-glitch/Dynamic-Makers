@@ -242,7 +242,8 @@ export class SensorSource {
     }
 }
 
-export const makeSource = (kind, device) => {
+export const makeSource = (kind, device, tracker, BodySource) => {
+    if (kind === 'body') return new BodySource(tracker);
     if (kind === 'sound') return new SoundSource();
     if (kind === 'sensor') return new SensorSource(device);
     return new CameraSource();

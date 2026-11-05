@@ -310,6 +310,9 @@ class PythonGenerator {
         case 'dmai_aiLabel': this.uses.add('ai'); return 'ai.label()';
         case 'dmai_aiIs': this.uses.add('ai'); return `(ai.label() == ${this.choice(block, 'CLASS')})`;
         case 'dmai_aiConfidence': this.uses.add('ai'); return `ai.confidence(${this.choice(block, 'CLASS')})`;
+        case 'dmai_skelVisible': return 'body.visible()';
+        case 'dmai_skelAngle': return `body.angle(${this.choice(block, 'JOINT')})`;
+        case 'dmai_skelPos': return `body.position(${this.choice(block, 'PART')}, ${this.choice(block, 'AXIS')})`;
         // operators
         case 'operator_add': return `(${this.num(block, 'NUM1')} + ${this.num(block, 'NUM2')})`;
         case 'operator_subtract': return `(${this.num(block, 'NUM1')} - ${this.num(block, 'NUM2')})`;
@@ -443,6 +446,16 @@ class PythonGenerator {
         const op = block.opcode;
         if (op.startsWith('cm550_')) {
             this.cm550Statement(block, op.slice(6));
+            return;
+        }
+        if (op === 'dmai_skelFollow') {
+            const dir = this.choice(block, 'DIR') === '"-1"' ? -1 : 1;
+            this.line(`dxl.follow(${this.num(block, 'ID')}, body.angle(${this.choice(block, 'JOINT')}), ` +
+                `center=${this.num(block, 'CENTER')}, direction=${dir})`);
+            return;
+        }
+        if (op === 'dmai_skelSwitch') {
+            this.line(this.choice(block, 'STATE') === '"off"' ? 'body.stop()' : 'body.start()');
             return;
         }
         if (op === 'dmai_aiSwitch') {

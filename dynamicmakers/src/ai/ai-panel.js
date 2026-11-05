@@ -5,6 +5,7 @@
  */
 import {SOURCE_NAMES} from './engine';
 import {SENSOR_CHANNELS} from './sources';
+import {JOINTS} from './pose';
 
 const el = (tag, cls, text) => {
     const e = document.createElement(tag);
@@ -22,6 +23,8 @@ const button = (cls, text, onClick, title) => {
 const COLORS = ['#2E6ABF', '#E07B39', '#1FB36B', '#C0392B', '#8E44AD', '#16A2B8', '#B7950B', '#5D6D7E'];
 
 const NOTES = {
+    body: 'PC 카메라로 사람의 관절 17곳(스켈레톤)을 찾습니다. 만세·팔 벌리기·앉기 같은 자세를 학습시키거나, ' +
+        '[몸 동작] 블록으로 사람의 팔 각도를 그대로 로봇 모터에 보내 따라 하게 할 수 있습니다.',
     camera: '노트북 카메라로 손 모양, 표정, 물건, 색 카드 등을 알아봅니다. 사진은 저장되지 않고, 각 장면에서 뽑은 숫자 256개만 저장됩니다.',
     sound: '마이크로 박수, 휘파람, 목소리, 조용함 등을 알아봅니다. 높고 낮은 소리 32칸의 크기를 비교합니다.',
     sensor: 'CM-550의 기울기·회전·가속 센서로 로봇이 흔들림, 기울어짐, 밀림, 넘어짐 같은 상태를 알아봅니다.'
@@ -36,8 +39,10 @@ export class AIPanel {
      * @param {Function} o.onKindsChange  called when kind names change (refresh block menus)
      * @param {Function} o.addScript      (kinds) -> void, example blocks into the workspace
      */
-    constructor ({host, engine, log, onKindsChange, addScript}) {
+    constructor ({host, engine, log, onKindsChange, addScript, addFollowScript, tracker}) {
         this.host = host;
+        this.addFollowScript = addFollowScript;
+        this.tracker = tracker;
         this.engine = engine;
         this.log = log;
         this.onKindsChange = onKindsChange;
@@ -45,6 +50,7 @@ export class AIPanel {
         this.visible = false;
         this._build();
         engine.onUpdate(() => this._onEngine());
+        if (tracker) tracker.onUpdate(() => this._onPose());
         // releasing the mouse anywhere ends collecting
         window.addEventListener('pointerup', () => engine.stopCollecting());
         window.addEventListener('blur', () => engine.stopCollecting());
@@ -68,8 +74,8 @@ export class AIPanel {
         const c1 = el('section', 'mon-card');
         c1.append(el('h3', '', '1. 무엇으로 알아볼까요?'));
         this.srcRow = el('div', 'ai-sources');
-        for (const kind of ['camera', 'sound', 'sensor']) {
-            const b = button('ai-src', {camera: '📷 카메라', sound: '🎤 소리', sensor: '🤖 로봇 센서'}[kind],
+        for (const kind of ['body', 'camera', 'sound', 'sensor']) {
+            const b = button('ai-src', {body: '🧍 몸 동작', camera: '📷 카메라', sound: '🎤 소리', sensor: '🤖 로봇 센서'}[kind],
                 () => this.chooseSource(kind));
             b.dataset.kind = kind;
             this.srcRow.append(b);
@@ -82,7 +88,14 @@ export class AIPanel {
         this.canvas.width = 320;
         this.canvas.height = 120;
         this.previewMsg = el('div', 'ai-preview-msg', '');
-        c1.append(this.preview);
+        this.overlay = el('canvas', 'ai-overlay');
+        this.stage = el('div', 'ai-stage'); // video + skeleton overlay
+        this.anglesEl = el('div', 'ai-angles');
+        this.followRow = el('div', 'tp-row');
+        this.followBtn = button('tp-btn tp-primary', '따라 하기 예시 블록', () => this.addFollowScript(),
+            '사람의 양팔 어깨 각도를 로봇 모터 두 개가 따라 하는 블록을 넣습니다');
+        this.followRow.append(this.followBtn, el('span', 'tp-label', '사람 팔 각도 → 로봇 모터'));
+        c1.append(this.preview, this.anglesEl, this.followRow);
         body.append(c1);
 
         // 2. kinds
@@ -177,9 +190,16 @@ export class AIPanel {
 
         // preview
         this.preview.textContent = '';
-        if (e.sourceKind === 'camera' && e.source && e.source.video) this.preview.append(e.source.video);
+        const body = e.sourceKind === 'body';
+        if (body && this.tracker) {
+            this.stage.textContent = '';
+            this.stage.append(this.tracker.video, this.overlay);
+            this.preview.append(this.stage);
+        } else if (e.sourceKind === 'camera' && e.source && e.source.video) this.preview.append(e.source.video);
         else this.preview.append(this.canvas);
         this.preview.append(this.previewMsg);
+        this.anglesEl.hidden = !body;
+        this.followRow.hidden = !body;
 
         // kinds
         this.kindsEl.textContent = '';
@@ -234,7 +254,8 @@ export class AIPanel {
             const k = e.classes[Number(c.dataset.i)];
             if (k) c.textContent = `${k.examples.length}개`;
         }
-        this.previewMsg.textContent = e.running ? '' :
+        const poseOn = e.sourceKind === 'body' && this.tracker && this.tracker.running;
+        this.previewMsg.textContent = e.running || poseOn ? '' :
             (e.sourceKind === 'sensor' && !e.device.connected ? '로봇을 연결한 뒤 [인식 시작]을 누르세요' : '[인식 시작]을 누르면 여기에 보입니다');
 
         // result
@@ -257,6 +278,31 @@ export class AIPanel {
         });
         this.scriptBtn.disabled = !e.ready;
         if (this.visible) this._draw();
+    }
+
+    /** Skeleton overlay + joint angles (also while only the program uses the camera). */
+    _onPose () {
+        const t = this.tracker;
+        if (!this.visible || this.engine.sourceKind !== 'body') return;
+        if (this.preview.querySelector('.ai-preview-msg').textContent && t.running) this._update();
+        const v = t.video;
+        if (v.videoWidth && (this.overlay.width !== v.videoWidth || this.overlay.height !== v.videoHeight)) {
+            this.overlay.width = v.videoWidth;
+            this.overlay.height = v.videoHeight;
+        }
+        t.draw(this.overlay);
+        const a = t.data.angles;
+        this.anglesEl.textContent = '';
+        const head = el('div', 'ai-angle-head', t.running ?
+            (t.data.visible ? `사람 보임 · ${t.fps} fps` : '사람이 보이지 않아요 — 상반신이 화면에 들어오게 서 주세요') :
+            '몸 동작 추적이 꺼져 있습니다');
+        this.anglesEl.append(head);
+        for (const [key, label] of Object.entries(JOINTS)) {
+            const cell = el('div', 'ai-angle');
+            cell.append(el('span', '', label.replace(/ \(.*\)$/, '')),
+                el('b', '', a[key] === null || a[key] === undefined ? '–' : `${Math.round(a[key])}°`));
+            this.anglesEl.append(cell);
+        }
     }
 
     /** Sound: 32 band levels. Sensor: 8 channels. */

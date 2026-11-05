@@ -103,6 +103,21 @@ AI 학습 패널에서 카메라·소리·로봇 센서 중 하나로 종류별 
 | AI가 [종류] (이)라고 생각하는 정도 (%) | `ai.confidence("종류")` |
 | AI 인식 [켜기/끄기] | `ai.start()` / `ai.stop()` |
 
+## 몸 동작 — 스켈레톤 (`body`)
+
+PC 카메라로 사람의 관절 17곳을 찾습니다(MoveNet). 왼쪽·오른쪽은 **사람 기준**, 위치는 미리보기(거울) 기준 -100~100.
+
+| 블록 | Python |
+|---|---|
+| 카메라에 사람이 보이는가? | `body.visible()` |
+| 사람의 [왼쪽 어깨 (팔 올림)] 각도 | `body.angle("leftShoulder")` — 어깨: 팔 내림 0° · 옆으로 90° · 위로 180°, 팔꿈치·무릎: 펴면 0° (굽힐수록 커짐), 몸·머리 기울기: 사람의 왼쪽으로 + |
+| 사람의 [오른손] [x/y] 위치 | `body.position("rightHand", "x")` |
+| 다이나믹셀 [ID] 이(가) 사람의 [관절] 따라 하기 (가운데 [180]°, [같은/반대 방향]) | `dxl.follow(ID, body.angle("rightShoulder"), center=180, direction=1)` — 목표 = 가운데 ± 관절 각도 |
+| 몸 동작 추적 [켜기/끄기] | `body.start()` / `body.stop()` |
+
+관절 값: `leftShoulder` `rightShoulder` `leftElbow` `rightElbow` `leftKnee` `rightKnee` `body` `head`,
+위치: `nose` `leftHand` `rightHand` `leftFoot` `rightFoot` `leftShoulder` `rightShoulder`.
+
 ## Scratch 기본 블록
 
 | 블록 | Python |

@@ -19,7 +19,8 @@ import {Monitor} from './monitor';
 import {TeachPanel} from './teach';
 import {AIEngine} from './ai/engine';
 import {AIPanel} from './ai/ai-panel';
-import {createAIExtension, AI_EXTENSION_ID} from './ai/ai-extension';
+import {createAIExtension, AI_EXTENSION_ID, SKELETON_OPCODES} from './ai/ai-extension';
+import {PoseTracker} from './ai/pose';
 
 const $ = id => document.getElementById(id);
 
@@ -151,14 +152,17 @@ const ext = new CM550Extension(vm.runtime);
 }
 
 // ---- AI 학습 engine + blocks ------------------------------------------------------
-const aiEngine = new AIEngine({device: ext.device, log: (t, k) => log(t, k)});
+const poseTracker = new PoseTracker();
+const aiEngine = new AIEngine({device: ext.device, log: (t, k) => log(t, k), tracker: poseTracker});
 {
     const AIExt = createAIExtension({
         ArgumentType: window.VirtualMachine.ArgumentType || VMClass.ArgumentType,
         BlockType: window.VirtualMachine.BlockType || VMClass.BlockType
     }, aiEngine, {
         log: (t, k) => log(t, k),
-        isRunning: () => document.body.classList.contains('running')
+        isRunning: () => document.body.classList.contains('running'),
+        tracker: poseTracker,
+        device: ext.device
     });
     const em = vm.extensionManager;
     const serviceName = em._registerInternalExtension(new AIExt(vm.runtime));
@@ -398,7 +402,9 @@ const aiPanel = new AIPanel({
     engine: aiEngine,
     log: (text, kind) => log(text, kind),
     onKindsChange: refreshAIKinds,
-    addScript: addAIScript
+    addScript: addAIScript,
+    addFollowScript: () => addFollowScript(), // eslint-disable-line no-use-before-define
+    tracker: poseTracker
 });
 {
     // save examples with the program when collecting stops
@@ -411,14 +417,51 @@ const aiPanel = new AIPanel({
         wasCollecting = e.collecting;
     });
 }
-// ▶ 실행 with AI blocks in the program: start recognition automatically
+// ▶ 실행 with AI / skeleton blocks in the program: start them automatically
+const SKELETON = new Set(SKELETON_OPCODES.map(op => `dmai_${op}`));
 vm.on('PROJECT_RUN_START', () => {
     const t = vm.editingTarget;
-    const usesAI = t && Object.values(t.blocks._blocks).some(b => b.opcode.startsWith('dmai_'));
+    const ops = t ? Object.values(t.blocks._blocks).map(b => b.opcode) : [];
+    const usesAI = ops.some(op => op.startsWith('dmai_ai'));
     if (usesAI && aiEngine.ready && !aiEngine.running) {
         aiEngine.start().catch(e => log(`⚠ AI 인식을 시작할 수 없습니다: ${e.message}`, 'err'));
     }
+    if (ops.some(op => SKELETON.has(op)) && !ops.includes('dmai_skelSwitch')) {
+        log('몸 동작 추적을 시작합니다. 카메라 앞에 서 주세요. (처음에는 모델 준비에 몇 초 걸립니다)');
+        poseTracker.acquire('blocks').catch(e => log(`⚠ 몸 동작을 추적할 수 없습니다: ${e.message}`, 'err'));
+    }
 });
+vm.on('PROJECT_RUN_STOP', () => {
+    poseTracker.release('blocks');
+    if (vm.runtime.ext_dmai) vm.runtime.ext_dmai._last = {};
+});
+/** "깃발 → 무한 반복 { 모터 a 가 오른쪽 어깨 따라 하기, 모터 b 가 왼쪽 어깨 따라 하기 }" */
+const addFollowScript = () => {
+    const ids = ext.device.motors.map(m => m.id);
+    const a = ids[0] || 1;
+    const b = ids[1] || 2;
+    // JOINT / DIR menus are plain fields (no reporter slot)
+    const n = v => `<shadow type="math_number"><field name="NUM">${v}</field></shadow>`;
+    const follow = (id, joint, dir, next) => `<block type="dmai_skelFollow"><value name="ID">${n(id)}</value>` +
+        `<field name="JOINT">${joint}</field><value name="CENTER">${n(180)}</value><field name="DIR">${dir}</field>` +
+        `${next ? `<next>${next}</next>` : ''}</block>`;
+    let x = 40;
+    let y = 40;
+    try {
+        if (workspace.getTopBlocks(false).length) {
+            const box = workspace.getBlocksBoundingBox();
+            x = box.left;
+            y = box.bottom + 48;
+        }
+    } catch (e) { /* default position */ }
+    const xml = `<xml><block type="event_whenflagclicked" x="${Math.round(x)}" y="${Math.round(y)}"><next>` +
+        '<block type="control_forever"><statement name="SUBSTACK">' +
+        follow(a, 'rightShoulder', '1', follow(b, 'leftShoulder', '-1')) +
+        '</statement></block></next></block></xml>';
+    ScratchBlocks.Xml.domToWorkspace(ScratchBlocks.utils.xml.textToDom(xml), workspace);
+    log(`따라 하기 예시를 넣었습니다: 다이나믹셀 ${a} ← 오른쪽 어깨, ${b} ← 왼쪽 어깨. ` +
+        '로봇 어깨 모터의 ID·가운데 각도·방향을 맞게 바꾼 뒤 ▶ 실행하세요.', 'ok');
+};
 
 const VIEWS = ['python', 'monitor', 'teach', 'ai'];
 const showView = view => {

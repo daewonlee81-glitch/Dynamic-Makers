@@ -424,6 +424,12 @@ var require_python_generator = __commonJS({
           case "dmai_aiConfidence":
             this.uses.add("ai");
             return `ai.confidence(${this.choice(block, "CLASS")})`;
+          case "dmai_skelVisible":
+            return "body.visible()";
+          case "dmai_skelAngle":
+            return `body.angle(${this.choice(block, "JOINT")})`;
+          case "dmai_skelPos":
+            return `body.position(${this.choice(block, "PART")}, ${this.choice(block, "AXIS")})`;
           // operators
           case "operator_add":
             return `(${this.num(block, "NUM1")} + ${this.num(block, "NUM2")})`;
@@ -586,6 +592,15 @@ var require_python_generator = __commonJS({
         const op = block.opcode;
         if (op.startsWith("cm550_")) {
           this.cm550Statement(block, op.slice(6));
+          return;
+        }
+        if (op === "dmai_skelFollow") {
+          const dir = this.choice(block, "DIR") === '"-1"' ? -1 : 1;
+          this.line(`dxl.follow(${this.num(block, "ID")}, body.angle(${this.choice(block, "JOINT")}), center=${this.num(block, "CENTER")}, direction=${dir})`);
+          return;
+        }
+        if (op === "dmai_skelSwitch") {
+          this.line(this.choice(block, "STATE") === '"off"' ? "body.stop()" : "body.start()");
           return;
         }
         if (op === "dmai_aiSwitch") {
@@ -1838,7 +1853,7 @@ var require_cm550 = __commonJS({
     var DUAL_AXIS_MODELS = /* @__PURE__ */ new Set([1090, 1160]);
     var MOTION_STOP = { NOW: 65533, KEYFRAME: 65534, UNIT: 65535 };
     var clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
-    var degToTick = (deg) => Math.round(deg / 360 * 4096);
+    var degToTick = (deg2) => Math.round(deg2 / 360 * 4096);
     var tickToDeg = (tick) => tick / 4096 * 360;
     var delay3 = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     var CM550Device = class {
@@ -3343,8 +3358,8 @@ var require_extension = __commonJS({
           return this._guard(() => this.device.writePort(PORT2.LED, num2(args.PORT), typeof v === "number" ? v : 3));
         }
         portServo(args) {
-          const deg = clamp(num2(args.DEG), 0, 300);
-          const value = Math.round(deg / 300 * 1023);
+          const deg2 = clamp(num2(args.DEG), 0, 300);
+          const value = Math.round(deg2 / 300 * 1023);
           return this._guard(() => this.device.writePort(PORT2.SERVO_POSITION, num2(args.PORT), value));
         }
         portMotor(args) {
@@ -3806,8 +3821,10 @@ var ROBOT_STYLES = {
   // 연결된 모터 (model-specific)
   db_pose: style("#E07B39", "#CC6A2C", "#B25B22"),
   // 자세 가르치기
-  db_ai: style("#8E44AD", "#7D3C98", "#6C3483")
+  db_ai: style("#8E44AD", "#7D3C98", "#6C3483"),
   // AI 학습
+  db_body: style("#13A89E", "#10958C", "#0D7F77")
+  // 몸 동작 (skeleton)
 };
 var blockColors = {
   motion: style("#4C97FF", "#4280D7", "#3373CC"),
@@ -3938,6 +3955,11 @@ var ROBOT_GROUPS = [
     opcodes: ["aiWhen", "---", "aiLabel", "aiIs", "aiConfidence", "---", "aiSwitch"]
   },
   {
+    id: "db_body",
+    name: "몸 동작",
+    opcodes: ["skelVisible", "skelAngle", "skelPos", "---", "skelFollow", "---", "skelSwitch"]
+  },
+  {
     id: "db_mymotors",
     name: "연결된 모터",
     dynamic: true,
@@ -4053,6 +4075,7 @@ var makeToolbox = (robotBlockXML, scan) => {
     robot.db_mymotors,
     robot.db_pose,
     robot.db_ai,
+    robot.db_body,
     robot.db_controller,
     robot.db_port,
     robot.db_motion,
@@ -5400,10 +5423,321 @@ var SensorSource = class {
     return f;
   }
 };
-var makeSource = (kind, device) => {
+var makeSource = (kind, device, tracker, BodySource2) => {
+  if (kind === "body") return new BodySource2(tracker);
   if (kind === "sound") return new SoundSource();
   if (kind === "sensor") return new SensorSource(device);
   return new CameraSource();
+};
+
+// src/ai/pose.js
+var K = {
+  nose: 0,
+  lEye: 1,
+  rEye: 2,
+  lSh: 5,
+  rSh: 6,
+  lEl: 7,
+  rEl: 8,
+  lWr: 9,
+  rWr: 10,
+  lHip: 11,
+  rHip: 12,
+  lKn: 13,
+  rKn: 14,
+  lAn: 15,
+  rAn: 16
+};
+var BONES = [
+  [5, 6],
+  [5, 7],
+  [7, 9],
+  [6, 8],
+  [8, 10],
+  [5, 11],
+  [6, 12],
+  [11, 12],
+  [11, 13],
+  [13, 15],
+  [12, 14],
+  [14, 16],
+  [0, 1],
+  [0, 2],
+  [1, 3],
+  [2, 4]
+];
+var JOINTS = {
+  leftShoulder: "왼쪽 어깨 (팔 올림)",
+  rightShoulder: "오른쪽 어깨 (팔 올림)",
+  leftElbow: "왼쪽 팔꿈치 (굽힘)",
+  rightElbow: "오른쪽 팔꿈치 (굽힘)",
+  leftKnee: "왼쪽 무릎 (굽힘)",
+  rightKnee: "오른쪽 무릎 (굽힘)",
+  body: "몸 기울기 (좌우)",
+  head: "머리 기울기 (좌우)"
+};
+var PARTS = { nose: 0, leftHand: 9, rightHand: 10, leftFoot: 15, rightFoot: 16, leftShoulder: 5, rightShoulder: 6 };
+var PART_NAMES = {
+  nose: "코(얼굴)",
+  leftHand: "왼손",
+  rightHand: "오른손",
+  leftFoot: "왼발",
+  rightFoot: "오른발",
+  leftShoulder: "왼쪽 어깨",
+  rightShoulder: "오른쪽 어깨"
+};
+var MIN_SCORE = 0.3;
+var deg = (r) => r * 180 / Math.PI;
+var angleAt = (a, b, c) => {
+  const v1 = [a.x - b.x, a.y - b.y];
+  const v2 = [c.x - b.x, c.y - b.y];
+  const n = Math.hypot(...v1) * Math.hypot(...v2);
+  if (!n) return 0;
+  return deg(Math.acos(Math.max(-1, Math.min(1, (v1[0] * v2[0] + v1[1] * v2[1]) / n))));
+};
+var measure = (kps) => {
+  const ok = (...ids) => ids.every((i) => kps[i] && kps[i].score >= MIN_SCORE);
+  const a = {};
+  const shoulder = (sh, el5, hip) => ok(sh, el5, hip) ? angleAt(kps[el5], kps[sh], kps[hip]) : null;
+  const bend = (p, m, q) => ok(p, m, q) ? 180 - angleAt(kps[p], kps[m], kps[q]) : null;
+  a.leftShoulder = shoulder(K.lSh, K.lEl, K.lHip);
+  a.rightShoulder = shoulder(K.rSh, K.rEl, K.rHip);
+  a.leftElbow = bend(K.lSh, K.lEl, K.lWr);
+  a.rightElbow = bend(K.rSh, K.rEl, K.rWr);
+  a.leftKnee = bend(K.lHip, K.lKn, K.lAn);
+  a.rightKnee = bend(K.rHip, K.rKn, K.rAn);
+  if (ok(K.lSh, K.rSh, K.lHip, K.rHip)) {
+    const top = { x: (kps[K.lSh].x + kps[K.rSh].x) / 2, y: (kps[K.lSh].y + kps[K.rSh].y) / 2 };
+    const bot = { x: (kps[K.lHip].x + kps[K.rHip].x) / 2, y: (kps[K.lHip].y + kps[K.rHip].y) / 2 };
+    a.body = deg(Math.atan2(top.x - bot.x, bot.y - top.y));
+  } else a.body = null;
+  a.head = ok(K.lEye, K.rEye) ? deg(Math.atan2(kps[K.lEye].y - kps[K.rEye].y, kps[K.lEye].x - kps[K.rEye].x)) : null;
+  const visible = ok(K.lSh, K.rSh) && (ok(K.lHip) || ok(K.rHip) || ok(K.nose));
+  const pos = {};
+  for (const [name, i] of Object.entries(PARTS)) {
+    pos[name] = ok(i) ? { x: (0.5 - kps[i].x) * 200, y: (0.5 - kps[i].y) * 200 } : null;
+  }
+  return { angles: a, pos, visible };
+};
+var PoseTracker = class {
+  constructor() {
+    this.video = document.createElement("video");
+    this.video.muted = true;
+    this.video.playsInline = true;
+    this.video.className = "ai-video";
+    this.users = /* @__PURE__ */ new Set();
+    this.listeners = /* @__PURE__ */ new Set();
+    this.keypoints = null;
+    this.data = measure([]);
+    this.fps = 0;
+  }
+  get running() {
+    return Boolean(this._loopOn);
+  }
+  onUpdate(fn) {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
+  /** Start (shared): each user (AI panel, program blocks) holds a token. */
+  async acquire(who) {
+    this.users.add(who);
+    if (this._starting) return this._starting;
+    if (this._loopOn) return void 0;
+    this._starting = this._start().finally(() => {
+      this._starting = null;
+    });
+    return this._starting;
+  }
+  release(who) {
+    this.users.delete(who);
+    if (!this.users.size) this._stop();
+  }
+  async _start() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error("이 브라우저에서는 카메라를 쓸 수 없습니다. Chrome이나 Edge를 사용하세요.");
+    }
+    const { tf, loadMoveNet } = await loadTF();
+    this.tf = tf;
+    if (!this.model) this.model = await loadMoveNet();
+    try {
+      this.stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "user" },
+        audio: false
+      });
+    } catch (e) {
+      const n = e && e.name;
+      throw new Error(n === "NotAllowedError" || n === "SecurityError" ? "카메라 사용이 허용되지 않았습니다. 주소창 옆의 권한 설정에서 카메라를 허용해 주세요." : `카메라를 켤 수 없습니다: ${e && e.message || e}`);
+    }
+    this.video.srcObject = this.stream;
+    await this.video.play().catch(() => {
+    });
+    if (!this.users.size) {
+      this._stop();
+      return;
+    }
+    this._loopOn = true;
+    this._emit();
+    this._loop();
+  }
+  _stop() {
+    this._loopOn = false;
+    if (this.stream) this.stream.getTracks().forEach((t) => t.stop());
+    this.stream = null;
+    this.video.srcObject = null;
+    this.keypoints = null;
+    this.data = measure([]);
+    this._emit();
+  }
+  _emit() {
+    for (const fn of this.listeners) {
+      try {
+        fn(this);
+      } catch (e) {
+      }
+    }
+  }
+  async _loop() {
+    let frames = 0;
+    let since = Date.now();
+    while (this._loopOn) {
+      const t0 = Date.now();
+      try {
+        const kps = await this._estimate();
+        if (kps) {
+          this._smooth(kps);
+          this.data = measure(this.keypoints);
+          frames++;
+          if (Date.now() - since > 1e3) {
+            this.fps = frames;
+            frames = 0;
+            since = Date.now();
+          }
+          this._emit();
+        }
+      } catch (e) {
+        this.error = e.message || String(e);
+      }
+      await new Promise((r) => setTimeout(r, Math.max(5, 40 - (Date.now() - t0))));
+    }
+  }
+  /** MoveNet on a letterboxed (square) frame; returns 17 {x, y, score} in image fractions. */
+  async _estimate() {
+    const v = this.video;
+    if (!this.model || v.readyState < 2 || !v.videoWidth) return null;
+    const tf = this.tf;
+    const W = v.videoWidth;
+    const H = v.videoHeight;
+    const side = Math.max(W, H);
+    const out = tf.tidy(() => {
+      const img = tf.browser.fromPixels(v);
+      const padded = tf.pad(img, [
+        [Math.floor((side - H) / 2), Math.ceil((side - H) / 2)],
+        [Math.floor((side - W) / 2), Math.ceil((side - W) / 2)],
+        [0, 0]
+      ]);
+      const x = tf.cast(tf.image.resizeBilinear(padded, [192, 192]), "int32");
+      return this.model.execute(tf.expandDims(x, 0));
+    });
+    const raw = await out.data();
+    out.dispose();
+    const kps = [];
+    for (let i = 0; i < 17; i++) {
+      const yy = raw[i * 3] * side - (side - H) / 2;
+      const xx = raw[i * 3 + 1] * side - (side - W) / 2;
+      kps.push({ x: xx / W, y: yy / H, score: raw[i * 3 + 2] });
+    }
+    return kps;
+  }
+  _smooth(kps) {
+    if (!this.keypoints) {
+      this.keypoints = kps;
+      return;
+    }
+    this.keypoints = kps.map((k, i) => {
+      const p = this.keypoints[i];
+      const a = k.score >= MIN_SCORE && p.score >= MIN_SCORE ? 0.55 : 1;
+      return { x: p.x + (k.x - p.x) * a, y: p.y + (k.y - p.y) * a, score: k.score };
+    });
+  }
+  /** Joint angle in whole degrees, 0 when not visible. */
+  angle(joint) {
+    const v = this.data.angles[joint];
+    return v === null || v === void 0 ? 0 : Math.round(v);
+  }
+  position(part, axis) {
+    const p = this.data.pos[part];
+    return p ? Math.round(axis === "y" ? p.y : p.x) : 0;
+  }
+  /** Draw the mirrored skeleton over a canvas the size of the preview. */
+  draw(canvas) {
+    const ctx = canvas.getContext("2d");
+    const W = canvas.width;
+    const H = canvas.height;
+    ctx.clearRect(0, 0, W, H);
+    const k = this.keypoints;
+    if (!k) return;
+    const P = (i) => ({ x: (1 - k[i].x) * W, y: k[i].y * H, ok: k[i].score >= MIN_SCORE });
+    ctx.lineWidth = Math.max(3, W / 120);
+    ctx.lineCap = "round";
+    for (const [a, b] of BONES) {
+      const p = P(a);
+      const q = P(b);
+      if (!p.ok || !q.ok) continue;
+      ctx.strokeStyle = a % 2 === 1 || b % 2 === 1 ? "#ffb347" : "#5ec8ff";
+      if (a <= 4 && b <= 4) ctx.strokeStyle = "#ffffff";
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(q.x, q.y);
+      ctx.stroke();
+    }
+    for (let i = 0; i < 17; i++) {
+      const p = P(i);
+      if (!p.ok) continue;
+      ctx.fillStyle = "#8E44AD";
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, Math.max(4, W / 90), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#fff";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+  }
+};
+var BodySource = class {
+  constructor(tracker) {
+    this.kind = "body";
+    this.metric = "euclid";
+    this.interval = 120;
+    this.tracker = tracker;
+  }
+  async start() {
+    await this.tracker.acquire("ai-engine");
+  }
+  stop() {
+    this.tracker.release("ai-engine");
+  }
+  get video() {
+    return this.tracker.video;
+  }
+  async features() {
+    const k = this.tracker.keypoints;
+    const d = this.tracker.data;
+    if (!k || !d.visible) return null;
+    const cx = (k[5].x + k[6].x) / 2;
+    const cy = (k[5].y + k[6].y) / 2;
+    const scale = Math.hypot(k[5].x - k[6].x, k[5].y - k[6].y) || 0.1;
+    const f = [];
+    for (let i = 0; i < 17; i++) {
+      if (i >= 1 && i <= 4) continue;
+      const okp = k[i].score >= MIN_SCORE;
+      f.push(okp ? (k[i].x - cx) / scale : 0, okp ? (k[i].y - cy) / scale : 0);
+    }
+    for (const j of Object.keys(JOINTS)) {
+      const v = d.angles[j];
+      f.push(v === null ? 0 : v / 45);
+    }
+    return Float32Array.from(f);
+  }
 };
 
 // src/ai/engine.js
@@ -5463,10 +5797,11 @@ var b64ToF32 = (b64, dim) => {
   for (let i = 0; i + dim <= all.length; i += dim) out.push(all.slice(i, i + dim));
   return out;
 };
-var SOURCE_NAMES = { camera: "카메라", sound: "소리", sensor: "로봇 센서" };
+var SOURCE_NAMES = { camera: "카메라", body: "몸 동작", sound: "소리", sensor: "로봇 센서" };
 var AIEngine = class {
-  constructor({ device, log: log2 }) {
+  constructor({ device, log: log2, tracker }) {
     this.device = device;
+    this.tracker = tracker;
     this.log = log2 || (() => {
     });
     this.listeners = /* @__PURE__ */ new Set();
@@ -5563,7 +5898,7 @@ var AIEngine = class {
   async start() {
     if (this.running || this._starting) return this._starting;
     this._starting = (async () => {
-      const src = makeSource(this.sourceKind, this.device);
+      const src = makeSource(this.sourceKind, this.device, this.tracker, BodySource);
       this.source = src;
       this.error = "";
       this._emit();
@@ -5675,6 +6010,7 @@ var button2 = (cls, text2, onClick, title) => {
 };
 var COLORS = ["#2E6ABF", "#E07B39", "#1FB36B", "#C0392B", "#8E44AD", "#16A2B8", "#B7950B", "#5D6D7E"];
 var NOTES = {
+  body: "PC 카메라로 사람의 관절 17곳(스켈레톤)을 찾습니다. 만세·팔 벌리기·앉기 같은 자세를 학습시키거나, [몸 동작] 블록으로 사람의 팔 각도를 그대로 로봇 모터에 보내 따라 하게 할 수 있습니다.",
   camera: "노트북 카메라로 손 모양, 표정, 물건, 색 카드 등을 알아봅니다. 사진은 저장되지 않고, 각 장면에서 뽑은 숫자 256개만 저장됩니다.",
   sound: "마이크로 박수, 휘파람, 목소리, 조용함 등을 알아봅니다. 높고 낮은 소리 32칸의 크기를 비교합니다.",
   sensor: "CM-550의 기울기·회전·가속 센서로 로봇이 흔들림, 기울어짐, 밀림, 넘어짐 같은 상태를 알아봅니다."
@@ -5688,8 +6024,10 @@ var AIPanel = class {
    * @param {Function} o.onKindsChange  called when kind names change (refresh block menus)
    * @param {Function} o.addScript      (kinds) -> void, example blocks into the workspace
    */
-  constructor({ host, engine, log: log2, onKindsChange, addScript }) {
+  constructor({ host, engine, log: log2, onKindsChange, addScript, addFollowScript: addFollowScript2, tracker }) {
     this.host = host;
+    this.addFollowScript = addFollowScript2;
+    this.tracker = tracker;
     this.engine = engine;
     this.log = log2;
     this.onKindsChange = onKindsChange;
@@ -5697,6 +6035,7 @@ var AIPanel = class {
     this.visible = false;
     this._build();
     engine.onUpdate(() => this._onEngine());
+    if (tracker) tracker.onUpdate(() => this._onPose());
     window.addEventListener("pointerup", () => engine.stopCollecting());
     window.addEventListener("blur", () => engine.stopCollecting());
     this.render();
@@ -5715,10 +6054,10 @@ var AIPanel = class {
     const c1 = el4("section", "mon-card");
     c1.append(el4("h3", "", "1. 무엇으로 알아볼까요?"));
     this.srcRow = el4("div", "ai-sources");
-    for (const kind of ["camera", "sound", "sensor"]) {
+    for (const kind of ["body", "camera", "sound", "sensor"]) {
       const b = button2(
         "ai-src",
-        { camera: "📷 카메라", sound: "🎤 소리", sensor: "🤖 로봇 센서" }[kind],
+        { body: "🧍 몸 동작", camera: "📷 카메라", sound: "🎤 소리", sensor: "🤖 로봇 센서" }[kind],
         () => this.chooseSource(kind)
       );
       b.dataset.kind = kind;
@@ -5732,7 +6071,18 @@ var AIPanel = class {
     this.canvas.width = 320;
     this.canvas.height = 120;
     this.previewMsg = el4("div", "ai-preview-msg", "");
-    c1.append(this.preview);
+    this.overlay = el4("canvas", "ai-overlay");
+    this.stage = el4("div", "ai-stage");
+    this.anglesEl = el4("div", "ai-angles");
+    this.followRow = el4("div", "tp-row");
+    this.followBtn = button2(
+      "tp-btn tp-primary",
+      "따라 하기 예시 블록",
+      () => this.addFollowScript(),
+      "사람의 양팔 어깨 각도를 로봇 모터 두 개가 따라 하는 블록을 넣습니다"
+    );
+    this.followRow.append(this.followBtn, el4("span", "tp-label", "사람 팔 각도 → 로봇 모터"));
+    c1.append(this.preview, this.anglesEl, this.followRow);
     body.append(c1);
     const c2 = el4("section", "mon-card");
     c2.append(el4("h3", "", "2. 종류별로 예시 모으기"));
@@ -5823,9 +6173,16 @@ var AIPanel = class {
     this.noteEl.textContent = NOTES[e.sourceKind];
     this.runBtn.textContent = e.running ? "인식 멈추기" : "인식 시작";
     this.preview.textContent = "";
-    if (e.sourceKind === "camera" && e.source && e.source.video) this.preview.append(e.source.video);
+    const body = e.sourceKind === "body";
+    if (body && this.tracker) {
+      this.stage.textContent = "";
+      this.stage.append(this.tracker.video, this.overlay);
+      this.preview.append(this.stage);
+    } else if (e.sourceKind === "camera" && e.source && e.source.video) this.preview.append(e.source.video);
     else this.preview.append(this.canvas);
     this.preview.append(this.previewMsg);
+    this.anglesEl.hidden = !body;
+    this.followRow.hidden = !body;
     this.kindsEl.textContent = "";
     e.classes.forEach((c, i) => {
       const row = el4("div", "ai-kind");
@@ -5873,7 +6230,8 @@ var AIPanel = class {
       const k = e.classes[Number(c.dataset.i)];
       if (k) c.textContent = `${k.examples.length}개`;
     }
-    this.previewMsg.textContent = e.running ? "" : e.sourceKind === "sensor" && !e.device.connected ? "로봇을 연결한 뒤 [인식 시작]을 누르세요" : "[인식 시작]을 누르면 여기에 보입니다";
+    const poseOn = e.sourceKind === "body" && this.tracker && this.tracker.running;
+    this.previewMsg.textContent = e.running || poseOn ? "" : e.sourceKind === "sensor" && !e.device.connected ? "로봇을 연결한 뒤 [인식 시작]을 누르세요" : "[인식 시작]을 누르면 여기에 보입니다";
     if (!e.running) this.resultEl.textContent = "인식이 꺼져 있습니다";
     else if (!e.ready) this.resultEl.textContent = "두 가지 이상의 종류에 예시를 모아 주세요";
     else this.resultEl.textContent = e.active ? `지금: ${e.active}` : "잘 모르겠어요 (확신 60% 미만)";
@@ -5893,6 +6251,30 @@ var AIPanel = class {
     });
     this.scriptBtn.disabled = !e.ready;
     if (this.visible) this._draw();
+  }
+  /** Skeleton overlay + joint angles (also while only the program uses the camera). */
+  _onPose() {
+    const t = this.tracker;
+    if (!this.visible || this.engine.sourceKind !== "body") return;
+    if (this.preview.querySelector(".ai-preview-msg").textContent && t.running) this._update();
+    const v = t.video;
+    if (v.videoWidth && (this.overlay.width !== v.videoWidth || this.overlay.height !== v.videoHeight)) {
+      this.overlay.width = v.videoWidth;
+      this.overlay.height = v.videoHeight;
+    }
+    t.draw(this.overlay);
+    const a = t.data.angles;
+    this.anglesEl.textContent = "";
+    const head = el4("div", "ai-angle-head", t.running ? t.data.visible ? `사람 보임 · ${t.fps} fps` : "사람이 보이지 않아요 — 상반신이 화면에 들어오게 서 주세요" : "몸 동작 추적이 꺼져 있습니다");
+    this.anglesEl.append(head);
+    for (const [key, label2] of Object.entries(JOINTS)) {
+      const cell = el4("div", "ai-angle");
+      cell.append(
+        el4("span", "", label2.replace(/ \(.*\)$/, "")),
+        el4("b", "", a[key] === null || a[key] === void 0 ? "–" : `${Math.round(a[key])}°`)
+      );
+      this.anglesEl.append(cell);
+    }
   }
   /** Sound: 32 band levels. Sensor: 8 channels. */
   _draw() {
@@ -5939,7 +6321,8 @@ var AIPanel = class {
 
 // src/ai/ai-extension.js
 var AI_EXTENSION_ID = "dmai";
-var createAIExtension = ({ ArgumentType, BlockType }, engine, { log: log2, isRunning } = {}) => {
+var SKELETON_OPCODES = ["skelVisible", "skelAngle", "skelPos", "skelFollow", "skelSwitch"];
+var createAIExtension = ({ ArgumentType, BlockType }, engine, { log: log2, isRunning, tracker, device } = {}) => {
   class DMAIBlocks {
     constructor(runtime) {
       this.runtime = runtime;
@@ -5986,10 +6369,66 @@ var createAIExtension = ({ ArgumentType, BlockType }, engine, { log: log2, isRun
             blockType: BlockType.COMMAND,
             text: "AI 인식 [STATE]",
             arguments: { STATE: { type: ArgumentType.STRING, menu: "aiState", defaultValue: "on" } }
+          },
+          // ---- 몸 동작 (skeleton from the PC camera) ----
+          {
+            opcode: "skelVisible",
+            blockType: BlockType.BOOLEAN,
+            text: "카메라에 사람이 보이는가?"
+          },
+          {
+            opcode: "skelAngle",
+            blockType: BlockType.REPORTER,
+            text: "사람의 [JOINT] 각도",
+            arguments: { JOINT: { type: ArgumentType.STRING, menu: "joints", defaultValue: "rightShoulder" } },
+            disableMonitor: true
+          },
+          {
+            opcode: "skelPos",
+            blockType: BlockType.REPORTER,
+            text: "사람의 [PART] [AXIS] 위치",
+            arguments: {
+              PART: { type: ArgumentType.STRING, menu: "parts", defaultValue: "rightHand" },
+              AXIS: { type: ArgumentType.STRING, menu: "axis", defaultValue: "y" }
+            },
+            disableMonitor: true
+          },
+          {
+            opcode: "skelFollow",
+            blockType: BlockType.COMMAND,
+            text: "다이나믹셀 [ID] 이(가) 사람의 [JOINT] 따라 하기 (가운데 [CENTER]° , [DIR])",
+            arguments: {
+              ID: { type: ArgumentType.NUMBER, defaultValue: 1 },
+              JOINT: { type: ArgumentType.STRING, menu: "joints", defaultValue: "rightShoulder" },
+              CENTER: { type: ArgumentType.NUMBER, defaultValue: 180 },
+              DIR: { type: ArgumentType.STRING, menu: "dir", defaultValue: "1" }
+            }
+          },
+          {
+            opcode: "skelSwitch",
+            blockType: BlockType.COMMAND,
+            text: "몸 동작 추적 [STATE]",
+            arguments: { STATE: { type: ArgumentType.STRING, menu: "aiState", defaultValue: "on" } }
           }
         ],
         menus: {
           kinds: { acceptReporters: true, items: "_kindMenu" },
+          joints: {
+            acceptReporters: false,
+            items: Object.entries(JOINTS).map(([value, text2]) => ({ text: text2, value }))
+          },
+          parts: {
+            acceptReporters: false,
+            items: Object.entries(PART_NAMES).map(([value, text2]) => ({ text: text2, value }))
+          },
+          axis: { acceptReporters: false, items: [
+            { text: "x (좌우)", value: "x" },
+            { text: "y (위아래)", value: "y" }
+          ] },
+          dir: { acceptReporters: false, items: [
+            { text: "같은 방향", value: "1" },
+            { text: "반대 방향", value: "-1" }
+          ] },
           aiState: { acceptReporters: false, items: [
             { text: "켜기", value: "on" },
             { text: "끄기", value: "off" }
@@ -6006,6 +6445,62 @@ var createAIExtension = ({ ArgumentType, BlockType }, engine, { log: log2, isRun
       if (engine.running || engine._starting || !engine.ready) return;
       if (isRunning && !isRunning()) return;
       engine.start().catch((e) => log2 && log2(`⚠ AI 인식을 시작할 수 없습니다: ${e.message}`, "err"));
+    }
+    // ---- 몸 동작 -----------------------------------------------------------
+    /** Skeleton blocks start the camera by themselves while a program runs. */
+    _body() {
+      if (!tracker) return false;
+      if (!tracker.running && !tracker._starting && (!isRunning || isRunning())) {
+        tracker.acquire("blocks").catch((e) => log2 && log2(`⚠ 몸 동작을 추적할 수 없습니다: ${e.message}`, "err"));
+      }
+      return tracker.running;
+    }
+    skelVisible() {
+      return this._body() && tracker.data.visible;
+    }
+    skelAngle(args) {
+      return this._body() ? tracker.angle(String(args.JOINT)) : 0;
+    }
+    skelPos(args) {
+      return this._body() ? tracker.position(String(args.PART), String(args.AXIS)) : 0;
+    }
+    async skelFollow(args) {
+      if (!this._body()) return;
+      if (!device || !device.connected) {
+        if (log2 && !this._warnedConn) log2("⚠ 로봇이 연결되어 있지 않아 따라 하기를 할 수 없습니다.", "err");
+        this._warnedConn = true;
+        return;
+      }
+      const joint = String(args.JOINT);
+      const v = tracker.data.angles[joint];
+      if (v === null || v === void 0 || !tracker.data.visible) return;
+      const id = Math.round(Number(args.ID) || 0);
+      const target = Math.max(0, Math.min(360, Number(args.CENTER) + (Number(args.DIR) < 0 ? -v : v)));
+      this._last = this._last || {};
+      if (this._last[id] !== void 0 && Math.abs(this._last[id] - target) < 2) {
+        await new Promise((r) => setTimeout(r, 15));
+        return;
+      }
+      try {
+        const first = this._last[id] === void 0;
+        await device.moveTo(id, target, first ? 70 : NaN);
+        this._last[id] = target;
+      } catch (e) {
+        if (log2) log2(`⚠ 다이나믹셀 ${id}: ${e.message}`, "err");
+        await new Promise((r) => setTimeout(r, 300));
+      }
+    }
+    async skelSwitch(args) {
+      if (!tracker) return;
+      if (args.STATE === "off") {
+        tracker.release("blocks");
+        return;
+      }
+      try {
+        await tracker.acquire("blocks");
+      } catch (e) {
+        if (log2) log2(`⚠ 몸 동작을 추적할 수 없습니다: ${e.message}`, "err");
+      }
     }
     aiWhen(args) {
       return engine.running && engine.active === String(args.CLASS);
@@ -6151,14 +6646,17 @@ var ext = new CM550Extension(vm.runtime);
   const serviceName = em._registerInternalExtension(ext);
   em._loadedExtensions.set("cm550", serviceName);
 }
-var aiEngine = new AIEngine({ device: ext.device, log: (t, k) => log(t, k) });
+var poseTracker = new PoseTracker();
+var aiEngine = new AIEngine({ device: ext.device, log: (t, k) => log(t, k), tracker: poseTracker });
 {
   const AIExt = createAIExtension({
     ArgumentType: window.VirtualMachine.ArgumentType || VMClass.ArgumentType,
     BlockType: window.VirtualMachine.BlockType || VMClass.BlockType
   }, aiEngine, {
     log: (t, k) => log(t, k),
-    isRunning: () => document.body.classList.contains("running")
+    isRunning: () => document.body.classList.contains("running"),
+    tracker: poseTracker,
+    device: ext.device
   });
   const em = vm.extensionManager;
   const serviceName = em._registerInternalExtension(new AIExt(vm.runtime));
@@ -6360,7 +6858,10 @@ var aiPanel = new AIPanel({
   engine: aiEngine,
   log: (text2, kind) => log(text2, kind),
   onKindsChange: refreshAIKinds,
-  addScript: addAIScript
+  addScript: addAIScript,
+  addFollowScript: () => addFollowScript(),
+  // eslint-disable-line no-use-before-define
+  tracker: poseTracker
 });
 {
   let wasCollecting = -1;
@@ -6372,13 +6873,43 @@ var aiPanel = new AIPanel({
     wasCollecting = e.collecting;
   });
 }
+var SKELETON = new Set(SKELETON_OPCODES.map((op) => `dmai_${op}`));
 vm.on("PROJECT_RUN_START", () => {
   const t = vm.editingTarget;
-  const usesAI = t && Object.values(t.blocks._blocks).some((b) => b.opcode.startsWith("dmai_"));
+  const ops = t ? Object.values(t.blocks._blocks).map((b) => b.opcode) : [];
+  const usesAI = ops.some((op) => op.startsWith("dmai_ai"));
   if (usesAI && aiEngine.ready && !aiEngine.running) {
     aiEngine.start().catch((e) => log(`⚠ AI 인식을 시작할 수 없습니다: ${e.message}`, "err"));
   }
+  if (ops.some((op) => SKELETON.has(op)) && !ops.includes("dmai_skelSwitch")) {
+    log("몸 동작 추적을 시작합니다. 카메라 앞에 서 주세요. (처음에는 모델 준비에 몇 초 걸립니다)");
+    poseTracker.acquire("blocks").catch((e) => log(`⚠ 몸 동작을 추적할 수 없습니다: ${e.message}`, "err"));
+  }
 });
+vm.on("PROJECT_RUN_STOP", () => {
+  poseTracker.release("blocks");
+  if (vm.runtime.ext_dmai) vm.runtime.ext_dmai._last = {};
+});
+var addFollowScript = () => {
+  const ids = ext.device.motors.map((m) => m.id);
+  const a = ids[0] || 1;
+  const b = ids[1] || 2;
+  const n = (v) => `<shadow type="math_number"><field name="NUM">${v}</field></shadow>`;
+  const follow = (id, joint, dir, next) => `<block type="dmai_skelFollow"><value name="ID">${n(id)}</value><field name="JOINT">${joint}</field><value name="CENTER">${n(180)}</value><field name="DIR">${dir}</field>${next ? `<next>${next}</next>` : ""}</block>`;
+  let x = 40;
+  let y = 40;
+  try {
+    if (workspace.getTopBlocks(false).length) {
+      const box = workspace.getBlocksBoundingBox();
+      x = box.left;
+      y = box.bottom + 48;
+    }
+  } catch (e) {
+  }
+  const xml = `<xml><block type="event_whenflagclicked" x="${Math.round(x)}" y="${Math.round(y)}"><next><block type="control_forever"><statement name="SUBSTACK">` + follow(a, "rightShoulder", "1", follow(b, "leftShoulder", "-1")) + "</statement></block></next></block></xml>";
+  ScratchBlocks2.Xml.domToWorkspace(ScratchBlocks2.utils.xml.textToDom(xml), workspace);
+  log(`따라 하기 예시를 넣었습니다: 다이나믹셀 ${a} ← 오른쪽 어깨, ${b} ← 왼쪽 어깨. 로봇 어깨 모터의 ID·가운데 각도·방향을 맞게 바꾼 뒤 ▶ 실행하세요.`, "ok");
+};
 var VIEWS = ["python", "monitor", "teach", "ai"];
 var showView = (view) => {
   for (const v of VIEWS) {
