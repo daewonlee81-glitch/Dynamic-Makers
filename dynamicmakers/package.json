@@ -1,0 +1,23 @@
+{
+  "name": "dynamicmakers",
+  "version": "0.1.0",
+  "description": "Dynamic Makers (다이나믹 메이커스) — RoboMakers word-block editor for ROBOTIS CM-550 + DYNAMIXEL",
+  "scripts": {
+    "build": "bash build.sh",
+    "serve": "cd dist && python3 -m http.server 8700",
+    "test": "node test/e2e.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@mujoco/mujoco": "^4.0.0",
+    "@tensorflow/tfjs-backend-cpu": "^4.22.0",
+    "@tensorflow/tfjs-backend-webgl": "^4.22.0",
+    "@tensorflow/tfjs-converter": "^4.22.0",
+    "@tensorflow/tfjs-core": "^4.22.0",
+    "@tensorflow/tfjs-layers": "^4.22.0",
+    "esbuild": "^0.28.2",
+    "three": "^0.187.0"
+  },
+  "private": true
+}

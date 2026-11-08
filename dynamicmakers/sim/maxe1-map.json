@@ -1,0 +1,116 @@
+{
+  "params": {
+    "footLength": 0.102,
+    "footWidth": 0.064,
+    "footThick": 0.008,
+    "ankleHeight": 0.03,
+    "shin": 0.06,
+    "thigh": 0.06,
+    "hipOffset": 0.025,
+    "legSpacing": 0.07,
+    "torsoWidth": 0.108,
+    "torsoDepth": 0.06,
+    "torsoHeight": 0.14,
+    "shoulderWidth": 0.15,
+    "arm": 0.14,
+    "headRadius": 0.03,
+    "torsoMass": 0.53,
+    "headMass": 0.03,
+    "armMass": 0.03,
+    "hipMass": 0.12,
+    "thighMass": 0.02,
+    "shinMass": 0.02,
+    "footMass": 0.14,
+    "kp": 6,
+    "maxTorque": 1.4,
+    "damping": 0.06,
+    "armature": 0.006,
+    "friction": 1
+  },
+  "joints": [
+    {
+      "id": 1,
+      "joint": "R_shoulder_pitch",
+      "name": "오른팔 앞뒤",
+      "sign": 1,
+      "center": 180
+    },
+    {
+      "id": 2,
+      "joint": "R_shoulder_roll",
+      "name": "오른팔 옆",
+      "sign": 1,
+      "center": 180
+    },
+    {
+      "id": 3,
+      "joint": "L_shoulder_pitch",
+      "name": "왼팔 앞뒤",
+      "sign": -1,
+      "center": 180
+    },
+    {
+      "id": 4,
+      "joint": "L_shoulder_roll",
+      "name": "왼팔 옆",
+      "sign": -1,
+      "center": 180
+    },
+    {
+      "id": 5,
+      "joint": "R_hip_roll",
+      "name": "오른쪽 엉덩이 옆",
+      "sign": 1,
+      "center": 180
+    },
+    {
+      "id": 6,
+      "joint": "R_hip_pitch",
+      "name": "오른쪽 엉덩이 앞뒤",
+      "sign": 1,
+      "center": 180
+    },
+    {
+      "id": 7,
+      "joint": "L_hip_roll",
+      "name": "왼쪽 엉덩이 옆",
+      "sign": -1,
+      "center": 180
+    },
+    {
+      "id": 8,
+      "joint": "L_hip_pitch",
+      "name": "왼쪽 엉덩이 앞뒤",
+      "sign": -1,
+      "center": 180
+    },
+    {
+      "id": 9,
+      "joint": "R_knee",
+      "name": "오른쪽 발목 앞뒤 (무릎 굽힘)",
+      "sign": 1,
+      "center": 180
+    },
+    {
+      "id": 10,
+      "joint": "R_ankle_roll",
+      "name": "오른쪽 발목 옆",
+      "sign": 1,
+      "center": 180
+    },
+    {
+      "id": 11,
+      "joint": "L_knee",
+      "name": "왼쪽 발목 앞뒤 (무릎 굽힘)",
+      "sign": -1,
+      "center": 180
+    },
+    {
+      "id": 12,
+      "joint": "L_ankle_roll",
+      "name": "왼쪽 발목 옆",
+      "sign": -1,
+      "center": 180
+    }
+  ]
+}

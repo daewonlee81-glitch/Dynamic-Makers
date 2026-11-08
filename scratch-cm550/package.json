@@ -1,0 +1,21 @@
+{
+  "name": "scratch-cm550",
+  "version": "0.1.0",
+  "description": "Scratch 3.0 extension for ROBOTIS CM-550 + DYNAMIXEL",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "test"
+  },
+  "scripts": {
+    "test": "node --test test/protocol.test.js test/python-generator.test.js test/browser-bundle.test.js",
+    "build": "bash scripts/build-turbowarp.sh",
+    "install:scratch-editor": "bash scripts/install-into-scratch-editor.sh"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
+}
