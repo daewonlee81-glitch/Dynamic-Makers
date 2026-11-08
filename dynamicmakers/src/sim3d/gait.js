@@ -7,13 +7,13 @@
  */
 
 export const GAIT_PARAMS = [
-    {key: 'period', name: '한 걸음 주기 (초)', min: 0.35, max: 1.2, step: 0.01, def: 0.381},
-    {key: 'height', name: '무릎 굽힘 (낮게 서기)', min: 0.05, max: 0.6, step: 0.01, def: 0.154},
-    {key: 'sway', name: '옆으로 흔들기', min: 0.06, max: 0.35, step: 0.01, def: 0.084},
-    {key: 'lift', name: '발 들기', min: 0.12, max: 0.5, step: 0.01, def: 0.12},
-    {key: 'stride', name: '보폭', min: 0, max: 0.4, step: 0.01, def: 0.248},
-    {key: 'liftPhase', name: '발 드는 때 (위상)', min: -3.14, max: 3.14, step: 0.01, def: -2.664},
-    {key: 'arm', name: '팔 흔들기', min: 0, max: 0.6, step: 0.01, def: 0.328}
+    {key: 'period', name: '한 걸음 주기 (초)', min: 0.35, max: 1.2, step: 0.01, def: 0.35},
+    {key: 'height', name: '무릎 굽힘 (낮게 서기)', min: 0.05, max: 0.6, step: 0.01, def: 0.086},
+    {key: 'sway', name: '옆으로 흔들기', min: 0.06, max: 0.35, step: 0.01, def: 0.061},
+    {key: 'lift', name: '발 들기', min: 0.12, max: 0.5, step: 0.01, def: 0.121},
+    {key: 'stride', name: '보폭', min: 0, max: 0.4, step: 0.01, def: 0.224},
+    {key: 'liftPhase', name: '발 드는 때 (위상)', min: -3.14, max: 3.14, step: 0.01, def: -2.591},
+    {key: 'arm', name: '팔 흔들기', min: 0, max: 0.6, step: 0.01, def: 0.51}
 ];
 
 export const defaultGait = () => Object.fromEntries(GAIT_PARAMS.map(p => [p.key, p.def]));

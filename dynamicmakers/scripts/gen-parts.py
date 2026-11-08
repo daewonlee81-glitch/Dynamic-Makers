@@ -16,10 +16,10 @@ import numpy as np, trimesh, fast_simplification
 
 PARTS = {  # name: target triangle count
     '2XL-430': 3800, 'XL-320': 1400,
-    'EF25-F2': 3800, 'EF25-F3': 1400, 'EF25-F4': 3200, 'EF25-F5': 2200, 'EF25-F6': 2200,
-    'EF25-F7': 1600, 'EF25-F8': 1600, 'EF25-F9': 1600, 'EF25-F10': 1600, 'EF25-F11': 900,
+    'EF25-F2': 3800, 'EF25-F3': 1400, 'EF25-F4': 3200, 'EF25-F5': 2200,
+    'EF25-F7': 1600, 'EF25-F9': 1600, 'EF25-F10': 1600, 'EF25-F11': 900,
     'EF25-F12': 1900, 'EF25-F14': 1400, 'EF25-F15': 2500, 'EF25-F26': 2200, 'EF25-F27': 1600,
-    'EF25-F28': 1600
+    'EF25-F28': 1600, 'CM-550': 2500, 'EF25-F1': 1600
 }
 src, out = sys.argv[1], sys.argv[2]
 meta, blobs, off = {}, [], 0

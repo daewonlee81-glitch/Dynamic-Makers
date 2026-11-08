@@ -24,8 +24,7 @@ JOINTS = ['R_shoulder_pitch', 'R_shoulder_roll', 'L_shoulder_pitch', 'L_shoulder
 OBS_DIM = 6 + len(JOINTS)
 OBS_SCALE = [1.0, 1.0, 0.2, 0.2, 1.0, 1.0] + [1.0] * len(JOINTS)
 
-DEFAULT_GAIT = {'period': 0.381, 'height': 0.154, 'sway': 0.084, 'lift': 0.12,
-                'stride': 0.248, 'liftPhase': -2.664, 'arm': 0.328}
+DEFAULT_GAIT = {'period': 0.35, 'height': 0.086, 'sway': 0.061, 'lift': 0.121, 'stride': 0.224, 'liftPhase': -2.591, 'arm': 0.51}
 
 
 def gait_targets(g, t, k=1.0):
@@ -105,7 +104,7 @@ class MaxE1Walk:
 
     def fallen(self):
         d = self.data
-        return d.qpos[2] < 0.15 or d.xmat[self.torso][8] < 0.6
+        return d.qpos[2] < 0.2 or d.xmat[self.torso][8] < 0.6
 
     def rollout(self, policy=None, seed=None):
         """Run one episode. policy: dict (dm-policy-1) or None (gait only). Returns (reward, info).

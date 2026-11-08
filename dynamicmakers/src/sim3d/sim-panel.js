@@ -1,7 +1,7 @@
 /**
  * 3D 탭 — MuJoCo 3D 가상 로봇 (1단계), 걸음 학습 (2단계), 강화학습 정책 (3단계).
  */
-import {MAXE1_DEFAULT, MAXE1_JOINT_MAP, buildMJCF} from './maxe1-model';
+import {MAXE1_DEFAULT, MAXE1_JOINT_MAP, MODEL_VERSION, buildMJCF} from './maxe1-model';
 import {GAIT_PARAMS, defaultGait, gaitTargets} from './gait';
 import {GaitLearner, REWARDS, defaultRewards, score} from './learn';
 import {checkPolicy} from './policy';
@@ -61,10 +61,10 @@ const loadSimBundle = () => {
     return simScript;
 };
 
+// lengths and masses come from the STEP part assembly (maxe1-cad.json); these can still be tuned
 const DIMS = [
-    ['thigh', '허벅지 길이 (m)', 0.005], ['shin', '정강이 길이 (m)', 0.005], ['ankleHeight', '발목 높이 (m)', 0.005],
-    ['legSpacing', '두 다리 간격 (m)', 0.005], ['footLength', '발 길이 (m)', 0.005], ['footWidth', '발 폭 (m)', 0.005],
-    ['torsoMass', '몸통 무게 (kg)', 0.01], ['shinMass', '정강이 무게 (kg)', 0.01], ['kp', '모터 단단함 (kp)', 0.5]
+    ['kp', '모터 단단함 (kp)', 0.5], ['maxTorque', '모터 최대 힘 (N·m)', 0.1], ['friction', '발바닥 마찰', 0.1],
+    ['extraMass', '몸통에 더한 무게 (kg)', 0.01]
 ];
 
 export class SimPanel {
@@ -82,7 +82,9 @@ export class SimPanel {
     constructor (o) {
         Object.assign(this, o);
         const saved = load();
-        this.params = Object.assign({}, MAXE1_DEFAULT, saved.params || {});
+        // settings saved for an older robot model (other lengths) are not reused
+        const sameModel = saved.modelVersion === MODEL_VERSION;
+        this.params = Object.assign({}, MAXE1_DEFAULT, sameModel ? saved.params || {} : {});
         this.jointMap = (saved.joints && saved.joints.length === MAXE1_JOINT_MAP.length ? saved.joints : MAXE1_JOINT_MAP)
             .map(j => Object.assign({}, j));
         this.weights = Object.assign(defaultRewards(), saved.weights || {});
@@ -95,7 +97,8 @@ export class SimPanel {
     }
 
     _persist () {
-        save({params: this.params, joints: this.jointMap, weights: this.weights, ranges: this.ranges, search: this.search});
+        save({modelVersion: MODEL_VERSION, params: this.params, joints: this.jointMap, weights: this.weights,
+            ranges: this.ranges, search: this.search});
     }
 
     get gait () {

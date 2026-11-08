@@ -1,4 +1,4 @@
-<mujoco model="MAX-E1 (approx)">
+<mujoco model="MAX-E1 (ROBOTIS STEP parts)">
   <compiler angle="radian" autolimits="true"/>
   <option timestep="0.002" integrator="implicitfast"/>
   <default>
@@ -8,85 +8,92 @@
   <worldbody>
     <light pos="0 0 2" dir="0 0 -1" directional="true"/>
     <geom name="floor" type="plane" size="3 3 0.05" contype="0" conaffinity="1" rgba="0.9 0.92 0.95 1"/>
-    <body name="torso" pos="0 0 0.25">
+    <body name="torso" pos="0 0 0.3072">
       <freejoint name="root"/>
-      <inertial pos="0 0 0" mass="0.53" diaginertia="0.001381 0.001025 0.0006742"/>
-      <geom name="torso" type="box" size="0.03 0.054 0.07" rgba="0.18 0.42 0.75 1"/>
-      <geom name="head" type="sphere" size="0.03" pos="0 0 0.105"
-            mass="0.03" rgba="0.95 0.95 0.97 1"/>
+      <inertial pos="-0.01995 0.00001 -0.03002" mass="0.3789" fullinertia="0.0009964 0.0009644 0.000428 -7.692e-8 -0.0001714 -6.629e-8"/>
+      <geom name="torso" type="box" size="0.0252 0.05385 0.0253" rgba="0.18 0.42 0.75 1"/>
+      <geom name="pelvis" type="box" size="0.022 0.047 0.022" pos="0 0 -0.0436" rgba="0.3 0.32 0.36 1"/>
+      <geom name="battery" type="box" size="0.0163 0.045 0.024" pos="-0.0433 0 -0.082" rgba="0.15 0.15 0.17 1"/>
+      <geom name="head" type="box" size="0.021 0.017 0.023" pos="0 0 0.0483" rgba="0.95 0.95 0.97 1"/>
       <site name="imu" pos="0 0 0" size="0.005"/>
-      <body name="R_shoulder" pos="0 -0.075 0.05">
-        <joint name="R_shoulder_pitch" axis="0 1 0" range="-3.1 3.1" damping="0.06" armature="0.006"/>
-        <inertial pos="0 0 0" mass="0.01" diaginertia="1e-6 1e-6 1e-6"/>
-        <body name="R_arm">
+      <body name="R_shoulder" pos="0 -0.07058 0.01874">
+        <joint name="R_shoulder_pitch" axis="0 0.96593 0.25882" range="-3.1 3.1" damping="0.06" armature="0.006"/>
+        <inertial pos="-0.00044 -0.00264 -0.01172" mass="0.098" fullinertia="0.00003169 0.00003147 0.00002781 0 0 -0.000001059"/>
+        <geom type="box" size="0.0205 0.0205 0.0235" rgba="0.15 0.15 0.17 1"/>
+        <body name="R_arm" pos="0 -0.00622 -0.02319">
           <joint name="R_shoulder_roll" axis="1 0 0" range="-1.7 1.7" damping="0.06" armature="0.006"/>
-          <inertial pos="0 -0.01 -0.07" mass="0.03" diaginertia="8e-5 8e-5 1e-5"/>
-          <geom type="capsule" fromto="0 -0.01 0 0 -0.01 -0.14" size="0.013" rgba="0.2 0.2 0.22 1"/>
+          <inertial pos="0.01407 -0.01889 -0.06668" mass="0.0342" fullinertia="0.00005275 0.00005966 0.00001744 0.000003126 0.00001176 -0.00001236"/>
+          <geom type="capsule" fromto="0 0 0 0 -0.03662 -0.13668" size="0.013" rgba="0.3 0.32 0.36 1"/>
         </body>
       </body>
-      <body name="L_shoulder" pos="0 0.075 0.05">
-        <joint name="L_shoulder_pitch" axis="0 1 0" range="-3.1 3.1" damping="0.06" armature="0.006"/>
-        <inertial pos="0 0 0" mass="0.01" diaginertia="1e-6 1e-6 1e-6"/>
-        <body name="L_arm">
+      <body name="L_shoulder" pos="0 0.07058 0.01874">
+        <joint name="L_shoulder_pitch" axis="0 0.96593 -0.25882" range="-3.1 3.1" damping="0.06" armature="0.006"/>
+        <inertial pos="-0.00044 0.00264 -0.01172" mass="0.098" fullinertia="0.00003169 0.00003147 0.00002781 0 0 0.000001059"/>
+        <geom type="box" size="0.0205 0.0205 0.0235" rgba="0.15 0.15 0.17 1"/>
+        <body name="L_arm" pos="0 0.00622 -0.02319">
           <joint name="L_shoulder_roll" axis="1 0 0" range="-1.7 1.7" damping="0.06" armature="0.006"/>
-          <inertial pos="0 0.01 -0.07" mass="0.03" diaginertia="8e-5 8e-5 1e-5"/>
-          <geom type="capsule" fromto="0 0.01 0 0 0.01 -0.14" size="0.013" rgba="0.2 0.2 0.22 1"/>
+          <inertial pos="0.01407 0.01889 -0.06668" mass="0.0342" fullinertia="0.00005275 0.00005966 0.00001744 -0.000003126 0.00001176 0.00001236"/>
+          <geom type="capsule" fromto="0 0 0 0 0.03662 -0.13668" size="0.013" rgba="0.3 0.32 0.36 1"/>
         </body>
       </body>
-      <body name="R_hip" pos="0 -0.035 -0.075">
+      <body name="R_hip" pos="0 -0.0352 -0.09">
         <joint name="R_hip_roll" axis="1 0 0" range="-0.6 0.6" damping="0.06" armature="0.006"/>
-        <inertial pos="0 0 -0.012" mass="0.12" diaginertia="2e-5 2e-5 2e-5"/>
-        <geom type="box" size="0.018 0.018 0.015" pos="0 0 -0.012" rgba="0.15 0.15 0.17 1"/>
-        <body name="R_thigh" pos="0 0 -0.025">
+        <inertial pos="0.00108 0.00041 -0.01294" mass="0.1051" fullinertia="0.00003424 0.00003525 0.00003015 2.529e-8 8.153e-7 -3.961e-8"/>
+        <geom type="box" size="0.0205 0.0205 0.0235" pos="0 0 -0.012" rgba="0.15 0.15 0.17 1"/>
+        <body name="R_thigh" pos="0 0 -0.024">
           <joint name="R_hip_pitch" axis="0 1 0" range="-1.6 1.6" damping="0.06" armature="0.006"/>
-          <inertial pos="0 0 -0.03" mass="0.02" diaginertia="2e-5 2e-5 5e-6"/>
-          <geom type="capsule" fromto="0 0 0 0 0 -0.06" size="0.012" rgba="0.2 0.2 0.22 1"/>
+          <inertial pos="0.00831 0 -0.02937" mass="0.0161" fullinertia="0.000008737 0.000009575 0.000004653 -8.714e-10 -5.742e-7 -2.419e-10"/>
+          <geom type="capsule" fromto="0 0 0 0 0 -0.06" size="0.011" rgba="0.3 0.32 0.36 1"/>
           <body name="R_knee_frame" pos="0 0 -0.06">
             <joint name="R_knee_comp" axis="0 1 0" range="-1.7 1.7" damping="0.005"/>
-            <inertial pos="0 0 0" mass="0.001" diaginertia="1e-7 1e-7 1e-7"/>
-            <body name="R_shin">
+            <inertial pos="0.01528 -0.00004 -0.00775" mass="0.01" fullinertia="0.000001938 0.00000248 0.000002265 0 0 0"/>
+            <geom type="box" size="0.016 0.018 0.016" pos="0.012 0 -0.008" rgba="0.3 0.32 0.36 1"/>
+            <body name="R_shin" pos="0 0 -0.0155">
               <joint name="R_knee" axis="0 1 0" range="-1.6 1.6" damping="0.06" armature="0.006"/>
-              <inertial pos="0 0 -0.03" mass="0.02" diaginertia="4e-5 4e-5 1e-5"/>
-              <geom type="box" size="0.018 0.02 0.03" pos="0 0 -0.03" rgba="0.12 0.12 0.14 1"/>
+              <inertial pos="0.00831 0 -0.03069" mass="0.0161" fullinertia="0.000008745 0.000009583 0.000004653 -8.714e-10 5.899e-7 2.485e-10"/>
+              <geom type="capsule" fromto="0 0 0 0 0 -0.06" size="0.011" rgba="0.3 0.32 0.36 1"/>
               <body name="R_ankle_frame" pos="0 0 -0.06">
                 <joint name="R_ankle_comp" axis="0 1 0" range="-1.7 1.7" damping="0.005"/>
-                <inertial pos="0 0 0" mass="0.001" diaginertia="1e-7 1e-7 1e-7"/>
-                <body name="R_foot">
+                <inertial pos="0.00104 -0.00045 -0.01106" mass="0.1051" fullinertia="0.00003418 0.00003532 0.00003016 -2.777e-8 -8.189e-7 -4.33e-8"/>
+                <geom type="box" size="0.0205 0.0205 0.0235" pos="0 0 -0.012" rgba="0.15 0.15 0.17 1"/>
+                <body name="R_foot" pos="0 0 -0.024">
                   <joint name="R_ankle_roll" axis="1 0 0" range="-0.6 0.6" damping="0.06" armature="0.006"/>
-                  <inertial pos="0.005 0 -0.026" mass="0.14" diaginertia="1e-5 3e-5 3e-5"/>
-                  <geom name="R_sole" type="box" size="0.051 0.032 0.004"
-                        pos="0.005 0 -0.026" rgba="0.18 0.42 0.75 1" friction="1 0.02 0.002"/>
-                  <site name="R_foot_site" pos="0.005 0 -0.03" size="0.004"/>
+                  <inertial pos="-0.00001 0 -0.02575" mass="0.0283" fullinertia="0.00001016 0.0000227 0.00002851 0 4.32e-9 0"/>
+                  <geom name="R_sole" type="box" size="0.051 0.032 0.0041"
+                        pos="0 0 -0.0296" rgba="0.18 0.42 0.75 1" friction="1 0.02 0.002"/>
+                  <site name="R_foot_site" pos="0 0 -0.0337" size="0.004"/>
                 </body>
               </body>
             </body>
           </body>
         </body>
       </body>
-      <body name="L_hip" pos="0 0.035 -0.075">
+      <body name="L_hip" pos="0 0.0352 -0.09">
         <joint name="L_hip_roll" axis="1 0 0" range="-0.6 0.6" damping="0.06" armature="0.006"/>
-        <inertial pos="0 0 -0.012" mass="0.12" diaginertia="2e-5 2e-5 2e-5"/>
-        <geom type="box" size="0.018 0.018 0.015" pos="0 0 -0.012" rgba="0.15 0.15 0.17 1"/>
-        <body name="L_thigh" pos="0 0 -0.025">
+        <inertial pos="0.00108 -0.00041 -0.01294" mass="0.1051" fullinertia="0.00003424 0.00003525 0.00003015 -2.529e-8 8.153e-7 3.961e-8"/>
+        <geom type="box" size="0.0205 0.0205 0.0235" pos="0 0 -0.012" rgba="0.15 0.15 0.17 1"/>
+        <body name="L_thigh" pos="0 0 -0.024">
           <joint name="L_hip_pitch" axis="0 1 0" range="-1.6 1.6" damping="0.06" armature="0.006"/>
-          <inertial pos="0 0 -0.03" mass="0.02" diaginertia="2e-5 2e-5 5e-6"/>
-          <geom type="capsule" fromto="0 0 0 0 0 -0.06" size="0.012" rgba="0.2 0.2 0.22 1"/>
+          <inertial pos="0.00831 0 -0.02937" mass="0.0161" fullinertia="0.000008737 0.000009575 0.000004653 8.714e-10 -5.742e-7 2.419e-10"/>
+          <geom type="capsule" fromto="0 0 0 0 0 -0.06" size="0.011" rgba="0.3 0.32 0.36 1"/>
           <body name="L_knee_frame" pos="0 0 -0.06">
             <joint name="L_knee_comp" axis="0 1 0" range="-1.7 1.7" damping="0.005"/>
-            <inertial pos="0 0 0" mass="0.001" diaginertia="1e-7 1e-7 1e-7"/>
-            <body name="L_shin">
+            <inertial pos="0.01528 0.00004 -0.00775" mass="0.01" fullinertia="0.000001938 0.00000248 0.000002265 0 0 0"/>
+            <geom type="box" size="0.016 0.018 0.016" pos="0.012 0 -0.008" rgba="0.3 0.32 0.36 1"/>
+            <body name="L_shin" pos="0 0 -0.0155">
               <joint name="L_knee" axis="0 1 0" range="-1.6 1.6" damping="0.06" armature="0.006"/>
-              <inertial pos="0 0 -0.03" mass="0.02" diaginertia="4e-5 4e-5 1e-5"/>
-              <geom type="box" size="0.018 0.02 0.03" pos="0 0 -0.03" rgba="0.12 0.12 0.14 1"/>
+              <inertial pos="0.00831 0 -0.03069" mass="0.0161" fullinertia="0.000008745 0.000009583 0.000004653 8.714e-10 5.899e-7 -2.485e-10"/>
+              <geom type="capsule" fromto="0 0 0 0 0 -0.06" size="0.011" rgba="0.3 0.32 0.36 1"/>
               <body name="L_ankle_frame" pos="0 0 -0.06">
                 <joint name="L_ankle_comp" axis="0 1 0" range="-1.7 1.7" damping="0.005"/>
-                <inertial pos="0 0 0" mass="0.001" diaginertia="1e-7 1e-7 1e-7"/>
-                <body name="L_foot">
+                <inertial pos="0.00104 0.00045 -0.01106" mass="0.1051" fullinertia="0.00003418 0.00003532 0.00003016 2.777e-8 -8.189e-7 4.33e-8"/>
+                <geom type="box" size="0.0205 0.0205 0.0235" pos="0 0 -0.012" rgba="0.15 0.15 0.17 1"/>
+                <body name="L_foot" pos="0 0 -0.024">
                   <joint name="L_ankle_roll" axis="1 0 0" range="-0.6 0.6" damping="0.06" armature="0.006"/>
-                  <inertial pos="0.005 0 -0.026" mass="0.14" diaginertia="1e-5 3e-5 3e-5"/>
-                  <geom name="L_sole" type="box" size="0.051 0.032 0.004"
-                        pos="0.005 0 -0.026" rgba="0.18 0.42 0.75 1" friction="1 0.02 0.002"/>
-                  <site name="L_foot_site" pos="0.005 0 -0.03" size="0.004"/>
+                  <inertial pos="-0.00001 0 -0.02575" mass="0.0283" fullinertia="0.00001016 0.0000227 0.00002851 0 4.32e-9 0"/>
+                  <geom name="L_sole" type="box" size="0.051 0.032 0.0041"
+                        pos="0 0 -0.0296" rgba="0.18 0.42 0.75 1" friction="1 0.02 0.002"/>
+                  <site name="L_foot_site" pos="0 0 -0.0337" size="0.004"/>
                 </body>
               </body>
             </body>

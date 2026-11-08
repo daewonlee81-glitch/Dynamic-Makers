@@ -5,7 +5,9 @@
  */
 import * as THREE from 'three';
 import {PARTS_META, PARTS_GZ} from './parts-data.js';
-import LAYOUT from './maxe1-visual.json';
+import CAD from './maxe1-cad.json';
+
+const COLORS = {frame: '#646b78', servo: '#2d3036', cover: '#8a92a0', sole: '#525a68'};
 
 /** Decode the low-poly STEP part meshes (int16 positions in 0.01 mm, uint16 indices, gzip + base64). */
 let partsPromise = null;
@@ -33,25 +35,6 @@ const loadParts = () => {
     return partsPromise;
 };
 
-const AXIS = {X: [1, 0, 0], Y: [0, 1, 0], Z: [0, 0, 1]};
-/** Matrix that places one layout entry in its body frame (mirrored for the left side). */
-const partMatrix = (e, info, mirror) => {
-    const cols = e.axes.map(a => AXIS[a.slice(-1)].map(v => (a[0] === '-' ? -v : v)));
-    const r = new THREE.Matrix4().set(
-        cols[0][0], cols[1][0], cols[2][0], 0,
-        cols[0][1], cols[1][1], cols[2][1], 0,
-        cols[0][2], cols[1][2], cols[2][2], 0,
-        0, 0, 0, 1);
-    const anchor = e.anchor ? e.anchor.map((v, k) => (v - info.c[k]) / 1000) : [0, 0, 0];
-    const m = new THREE.Matrix4().makeTranslation(e.pos[0], e.pos[1], e.pos[2]);
-    if (e.rot) {
-        const d = e.rot.map(v => v * Math.PI / 180);
-        m.multiply(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(d[0], d[1], d[2], 'XYZ')));
-    }
-    m.multiply(r).multiply(new THREE.Matrix4().makeTranslation(-anchor[0], -anchor[1], -anchor[2]));
-    if (mirror) m.premultiply(new THREE.Matrix4().makeScale(1, -1, 1));
-    return m;
-};
 
 export class SimView {
     constructor (host, sim) {
@@ -68,6 +51,7 @@ export class SimView {
         this.camera.up.set(0, 0, 1);
         this.orbit = {yaw: -0.9, pitch: 0.35, dist: 0.9};
         this.target = new THREE.Vector3(0, 0, 0.2);
+        this.targetZ = 0.2; // camera looks at this height above the robot
         this.scene.add(new THREE.HemisphereLight(0xffffff, 0x8899aa, 1.4));
         const sun = new THREE.DirectionalLight(0xffffff, 1.6);
         sun.position.set(0.8, -0.6, 1.6);
@@ -160,23 +144,22 @@ export class SimView {
         this.partItems = [];
         const mj = this.sim.mj;
         const mats = {};
-        for (const [k, c] of Object.entries(LAYOUT.colors)) {
+        for (const [k, c] of Object.entries(COLORS)) {
             mats[k] = new THREE.MeshStandardMaterial({color: new THREE.Color(c), roughness: 0.6, metalness: 0.15,
                 side: THREE.DoubleSide, flatShading: true});
         }
-        for (const e of LAYOUT.parts) {
+        const bodyId = name => mj.mj_name2id(model, mj.mjtObj.mjOBJ_BODY.value, name);
+        for (const e of CAD.visual) { // matrices from the part assembly (scripts/gen-maxe1-cad.py)
             const p = parts[e.part];
-            if (!p) continue;
-            for (const side of (e.side === 'R' ? ['R', 'L'] : [null])) {
-                const body = side === 'L' ? `L${e.body.slice(1)}` : e.body;
-                const id = mj.mj_name2id(model, mj.mjtObj.mjOBJ_BODY.value, body);
-                if (id < 0) continue;
-                const mesh = new THREE.Mesh(p.geo, mats[e.color] || mats.frame);
-                mesh.castShadow = true;
-                mesh.matrixAutoUpdate = false;
-                this.partGroup.add(mesh);
-                this.partItems.push({mesh, id, local: partMatrix(e, p.info, side === 'L')});
-            }
+            const id = bodyId(e.body);
+            if (!p || id < 0) continue;
+            const mesh = new THREE.Mesh(p.geo, mats[e.color] || mats.frame);
+            mesh.castShadow = true;
+            mesh.matrixAutoUpdate = false;
+            this.partGroup.add(mesh);
+            // parallel bars turn with the drive link (body) about a pin fixed in pivotBody
+            this.partItems.push({mesh, id, local: new THREE.Matrix4().fromArray(e.m).transpose(),
+                pivotId: e.pivotBody ? bodyId(e.pivotBody) : -1, pivot: e.pivot || null});
         }
         this.scene.add(this.partGroup);
         this._applyPartsVisible();
@@ -252,15 +235,26 @@ export class SimView {
             for (const it of this.partItems) {
                 const p = it.id * 3;
                 const r = it.id * 9;
-                mtx.set(bm[r], bm[r + 1], bm[r + 2], bx[p],
-                    bm[r + 3], bm[r + 4], bm[r + 5], bx[p + 1],
-                    bm[r + 6], bm[r + 7], bm[r + 8], bx[p + 2],
+                let px = bx[p];
+                let py = bx[p + 1];
+                let pz = bx[p + 2];
+                if (it.pivotId >= 0) { // pin position = pivot body position + its rotation × pivot
+                    const q = it.pivotId * 3;
+                    const k = it.pivotId * 9;
+                    const [a, b2, c] = it.pivot;
+                    px = bx[q] + (bm[k] * a) + (bm[k + 1] * b2) + (bm[k + 2] * c);
+                    py = bx[q + 1] + (bm[k + 3] * a) + (bm[k + 4] * b2) + (bm[k + 5] * c);
+                    pz = bx[q + 2] + (bm[k + 6] * a) + (bm[k + 7] * b2) + (bm[k + 8] * c);
+                }
+                mtx.set(bm[r], bm[r + 1], bm[r + 2], px,
+                    bm[r + 3], bm[r + 4], bm[r + 5], py,
+                    bm[r + 6], bm[r + 7], bm[r + 8], pz,
                     0, 0, 0, 1);
                 it.mesh.matrix.multiplyMatrices(mtx, it.local);
             }
         }
         const t = this.sim.torso;
-        this.target.lerp(new THREE.Vector3(t.x, t.y, 0.18), 0.1);
+        this.target.lerp(new THREE.Vector3(t.x, t.y, this.targetZ), 0.1);
         const o = this.orbit;
         this.camera.position.set(
             this.target.x + (o.dist * Math.cos(o.pitch) * Math.cos(o.yaw)),

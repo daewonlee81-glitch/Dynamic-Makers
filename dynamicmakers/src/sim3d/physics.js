@@ -197,7 +197,7 @@ export class PhysicsSim {
 
     get fallen () {
         const t = this.torso;
-        return t.z < 0.15 || t.up < 0.6;
+        return t.z < 0.2 || t.up < 0.6;
     }
 
     // ---- stepping -----------------------------------------------------------------
@@ -299,7 +299,7 @@ export class PhysicsSim {
             mj.mj_step(m, d);
             if ((i & 15) === 0) {
                 for (let a = 0; a < m.nu; a++) energy += Math.abs(d.actuator_force[a]) * dt * 16;
-                if (d.qpos[2] < 0.15 || d.xmat[9 + 8] < 0.6) {
+                if (d.qpos[2] < 0.2 || d.xmat[9 + 8] < 0.6) {
                     fell = true;
                     break;
                 }
