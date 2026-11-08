@@ -3,6 +3,7 @@
  * MAX-E1 world. Loaded only when the 3D tab is opened.
  */
 import {loadMujoco, PhysicsSim} from './physics';
+import {RaceSim} from './race';
 import {SimView} from './view';
 
-window.DMSIM = {loadMujoco, PhysicsSim, SimView};
+window.DMSIM = {loadMujoco, PhysicsSim, RaceSim, SimView};

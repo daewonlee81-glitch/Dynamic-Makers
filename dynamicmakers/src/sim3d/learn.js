@@ -42,9 +42,11 @@ export class GaitLearner {
      * @param {number} [o.generations]
      * @param {number} [o.seconds] length of each try
      * @param {number} [o.seed]
+     * @param {function} [o.evalBatch] async (gaits, seconds) → results (or null to stop): 동시 경주 —
+     *     a whole generation walks together instead of one try after another
      */
-    constructor ({sim, ranges, weights, population = 20, generations = 30, seconds = 5, seed = 1}) {
-        Object.assign(this, {sim, ranges, weights, population, generations, seconds});
+    constructor ({sim, ranges, weights, population = 20, generations = 30, seconds = 5, seed = 1, evalBatch = null}) {
+        Object.assign(this, {sim, ranges, weights, population, generations, seconds, evalBatch});
         this.normal = rng(seed);
         this.keys = GAIT_PARAMS.map(p => p.key);
         this.free = this.keys.filter(k => !ranges[k].fixed);
@@ -77,7 +79,21 @@ export class GaitLearner {
         const elite = Math.max(2, Math.round(this.population / 4));
         while (this.running && this.gen < this.generations) {
             const crowd = [];
-            for (let i = 0; i < this.population && this.running; i++) {
+            if (this.evalBatch) {
+                const gaits = Array.from({length: this.population}, () => this._sample());
+                this.genGaits = gaits;
+                const results = await this.evalBatch(gaits, this.seconds, this);
+                if (!results) break;
+                gaits.forEach((gait, i) => {
+                    const result = results[i];
+                    const s = score(result, this.weights);
+                    crowd.push({gait, score: s, result, lane: i});
+                    this.tries++;
+                    if (!this.best || s > this.best.score) this.best = {gait, score: s, result};
+                });
+                if (onProgress) onProgress(this);
+            }
+            for (let i = 0; !this.evalBatch && i < this.population && this.running; i++) {
                 const gait = this._sample();
                 const result = this.sim.evaluate(gait, this.seconds);
                 const s = score(result, this.weights);
@@ -99,6 +115,7 @@ export class GaitLearner {
                 this.sd[k] = Math.max(sd, 0.04 * (r.max - r.min)); // never stop exploring entirely
             }
             this.genBest = top[0]; // shown on the 3D robot while learning
+            this.genCrowd = crowd;
             this.history.push({gen: this.gen, best: top[0].score,
                 mean: crowd.reduce((a, c) => a + c.score, 0) / crowd.length, bestEver: this.best.score});
             this.gen++;

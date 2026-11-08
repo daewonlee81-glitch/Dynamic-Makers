@@ -26,6 +26,7 @@ const loadParts = () => {
                 const g = new THREE.BufferGeometry();
                 g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
                 g.setIndex(new THREE.BufferAttribute(idx, 1));
+                g.userData.shared = true; // cached for every view
                 g.computeVertexNormals();
                 out[name] = {geo: g, info};
             }
@@ -50,6 +51,8 @@ export class SimView {
         this.camera = new THREE.PerspectiveCamera(40, 1, 0.01, 20);
         this.camera.up.set(0, 0, 1);
         this.orbit = {yaw: -0.9, pitch: 0.35, dist: 0.9};
+        this.race = Boolean(sim.prefixes); // 동시 경주: many robots in lanes
+        if (this.race) this.orbit = {yaw: -0.3, pitch: 0.52, dist: Math.max(1.1, sim.n * sim.gap * 1.2)};
         this.target = new THREE.Vector3(0, 0, 0.2);
         this.targetZ = 0.2; // camera looks at this height above the robot
         this.scene.add(new THREE.HemisphereLight(0xffffff, 0x8899aa, 1.4));
@@ -58,7 +61,9 @@ export class SimView {
         sun.castShadow = true;
         sun.shadow.mapSize.set(1024, 1024);
         const c = sun.shadow.camera;
-        c.left = -0.6; c.right = 0.6; c.top = 0.6; c.bottom = -0.6; c.near = 0.1; c.far = 4;
+        const span = this.race ? (sim.n * sim.gap / 2) + 0.6 : 0.6;
+        c.left = -span; c.right = span; c.top = span; c.bottom = -span; c.near = 0.1; c.far = 4 + span;
+        if (this.race) sun.shadow.mapSize.set(2048, 2048);
         this.sun = sun;
         this.scene.add(sun, sun.target);
         this.showParts = true;
@@ -91,11 +96,14 @@ export class SimView {
             const rgba = [0, 1, 2, 3].map(k => m.geom_rgba[(i * 4) + k]);
             let geo = null;
             if (type === 0) { // plane: floor with a grid
-                const floor = new THREE.Mesh(new THREE.PlaneGeometry(6, 6),
+                const fw = Math.max(6, sz[0] * 2);
+                const fh = Math.max(6, sz[1] * 2);
+                const floor = new THREE.Mesh(new THREE.PlaneGeometry(fw, fh),
                     new THREE.MeshStandardMaterial({color: 0xf4f6fa, roughness: 1}));
                 floor.receiveShadow = true;
                 this.group.add(floor);
-                const grid = new THREE.GridHelper(6, 60, 0xc5cfdd, 0xdde3ec);
+                const gs = Math.max(fw, fh);
+                const grid = new THREE.GridHelper(gs, Math.round(gs * 10), 0xc5cfdd, 0xdde3ec);
                 grid.rotation.x = Math.PI / 2;
                 grid.position.z = 0.0005;
                 this.group.add(grid);
@@ -149,18 +157,37 @@ export class SimView {
                 side: THREE.DoubleSide, flatShading: true});
         }
         const bodyId = name => mj.mj_name2id(model, mj.mjtObj.mjOBJ_BODY.value, name);
-        for (const e of CAD.visual) { // matrices from the part assembly (scripts/gen-maxe1-cad.py)
-            const p = parts[e.part];
-            const id = bodyId(e.body);
-            if (!p || id < 0) continue;
-            const mesh = new THREE.Mesh(p.geo, mats[e.color] || mats.frame);
-            mesh.castShadow = true;
-            mesh.matrixAutoUpdate = false;
-            this.partGroup.add(mesh);
-            // parallel bars turn with the drive link (body) about a pin fixed in pivotBody
-            this.partItems.push({mesh, id, local: new THREE.Matrix4().fromArray(e.m).transpose(),
-                pivotId: e.pivotBody ? bodyId(e.pivotBody) : -1, pivot: e.pivot || null});
+        // a race draws each part once for all robots (instancing): ~40 draw calls instead of hundreds
+        const prefixes = this.sim.prefixes || [''];
+        const inst = {};
+        if (this.race) {
+            CAD.visual.forEach((e, k) => {
+                if (!parts[e.part]) return;
+                const im = new THREE.InstancedMesh(parts[e.part].geo, mats[e.color] || mats.frame, prefixes.length);
+                im.castShadow = prefixes.length <= 8; // big races: skip part shadows (lighter on school laptops)
+                im.frustumCulled = false;
+                this.partGroup.add(im);
+                inst[k] = im;
+            });
         }
+        prefixes.forEach((pre, r) => {
+            CAD.visual.forEach((e, k) => { // matrices from the part assembly (scripts/gen-maxe1-cad.py)
+                const p = parts[e.part];
+                const id = bodyId(pre + e.body);
+                if (!p || id < 0) return;
+                let mesh = null;
+                if (!this.race) {
+                    mesh = new THREE.Mesh(p.geo, mats[e.color] || mats.frame);
+                    mesh.castShadow = true;
+                    mesh.matrixAutoUpdate = false;
+                    this.partGroup.add(mesh);
+                }
+                // parallel bars turn with the drive link (body) about a pin fixed in pivotBody
+                this.partItems.push({mesh, im: inst[k] || null, k: r, id, local: new THREE.Matrix4().fromArray(e.m).transpose(),
+                    pivotId: e.pivotBody ? bodyId(pre + e.pivotBody) : -1, pivot: e.pivot || null});
+            });
+        });
+        this.instMeshes = Object.values(inst);
         this.scene.add(this.partGroup);
         this._applyPartsVisible();
     }
@@ -184,6 +211,65 @@ export class SimView {
             const mesh = this.meshes[i];
             if (mesh && m.geom_bodyid[i] > 0) mesh.visible = !parts; // robot geoms (not the floor)
         }
+    }
+
+    /** Lane labels over the race robots: number, distance, and red when fallen. */
+    _labels () {
+        if (!this.race) return;
+        const info = this.sim.info();
+        if (!this.labelSprites) {
+            this.labelSprites = info.map(() => {
+                const cv = document.createElement('canvas');
+                cv.width = 128;
+                cv.height = 64;
+                const tex = new THREE.CanvasTexture(cv);
+                // same size on screen near or far
+                const sp = new THREE.Sprite(new THREE.SpriteMaterial({map: tex, depthTest: false, sizeAttenuation: false}));
+                sp.renderOrder = 10;
+                this.scene.add(sp);
+                return {sp, cv, tex, text: ''};
+            });
+        }
+        const now = performance.now();
+        const redraw = !this._lastLabel || now - this._lastLabel > 200;
+        if (redraw) this._lastLabel = now;
+        info.forEach((r, i) => {
+            const L = this.labelSprites[i];
+            const h = info.length > 10 ? 0.045 : 0.065; // view units at distance 1 (fov 40° → ~1.4 × screen share)
+            L.sp.scale.set(h * 2, h, 1);
+            L.sp.position.set(r.x, r.y, Math.max(r.z, 0.05) + 0.16);
+            const rank = this.sim.ranks ? this.sim.ranks[i] : null;
+            const text = `${r.lane + 1}|${Math.round(r.dx * 100)}|${r.fell ? 1 : 0}|${rank}`;
+            if (!redraw || text === L.text) return;
+            L.text = text;
+            const c = L.cv.getContext('2d');
+            c.clearRect(0, 0, 128, 64);
+            c.fillStyle = r.fell ? 'rgba(200,60,60,0.9)' : (rank === 1 ? 'rgba(230,160,20,0.95)' : 'rgba(40,90,170,0.88)');
+            c.beginPath();
+            c.roundRect(4, 4, 120, 56, 12);
+            c.fill();
+            c.fillStyle = '#fff';
+            c.font = 'bold 26px sans-serif';
+            c.textAlign = 'center';
+            c.fillText(`${r.lane + 1}번`, 64, 30);
+            c.font = '20px sans-serif';
+            c.fillText(r.fell ? '넘어짐' : `${Math.round(r.dx * 100)} cm`, 64, 54);
+            L.tex.needsUpdate = true;
+        });
+    }
+
+    /** Remove the canvas and free the GPU memory (race views are made per learning run). */
+    dispose () {
+        this._ro.disconnect();
+        this.renderer.domElement.remove();
+        this.scene.traverse(o => {
+            if (o.geometry && !o.geometry.userData.shared) o.geometry.dispose();
+            if (o.material) {
+                if (o.material.map) o.material.map.dispose();
+                o.material.dispose();
+            }
+        });
+        this.renderer.dispose();
     }
 
     _controls () {
@@ -230,6 +316,7 @@ export class SimView {
             mesh.matrix.copy(mtx);
         }
         if (this.partGroup && this.partGroup.visible) {
+            const tmp = new THREE.Matrix4();
             const bx = d.xpos;
             const bm = d.xmat;
             for (const it of this.partItems) {
@@ -250,9 +337,14 @@ export class SimView {
                     bm[r + 3], bm[r + 4], bm[r + 5], py,
                     bm[r + 6], bm[r + 7], bm[r + 8], pz,
                     0, 0, 0, 1);
-                it.mesh.matrix.multiplyMatrices(mtx, it.local);
+                if (it.im) {
+                    tmp.multiplyMatrices(mtx, it.local);
+                    it.im.setMatrixAt(it.k, tmp);
+                } else it.mesh.matrix.multiplyMatrices(mtx, it.local);
             }
+            for (const im of this.instMeshes) im.instanceMatrix.needsUpdate = true;
         }
+        this._labels();
         const t = this.sim.torso;
         this.target.lerp(new THREE.Vector3(t.x, t.y, this.targetZ), 0.1);
         const o = this.orbit;
@@ -261,7 +353,7 @@ export class SimView {
             this.target.y + (o.dist * Math.cos(o.pitch) * Math.sin(o.yaw)),
             this.target.z + (o.dist * Math.sin(o.pitch)));
         this.camera.lookAt(this.target);
-        this.sun.position.set(this.target.x + 0.8, this.target.y - 0.6, 1.6);
+        this.sun.position.set(this.target.x + 0.8, this.target.y - 0.6, this.race ? 2.4 : 1.6);
         this.sun.target.position.copy(this.target);
         this.renderer.render(this.scene, this.camera);
     }

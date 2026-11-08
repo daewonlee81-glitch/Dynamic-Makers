@@ -51,6 +51,7 @@ const check = (c, m) => { console.log(`${c ? 'ok' : 'FAIL'} - ${m}`); if (!c) fa
         const s = window.dynamicmakers.simPanel;
         s.search.population = 8; s.search.generations = 3; s.search.seconds = 3;
     });
+    await p.selectOption('.sim-mode', 'watch');
     await p.click('text=▶ 학습 시작');
     await p.waitForFunction(() => document.getElementById('console-lines').textContent.includes('걸음 학습 끝'), null, {timeout: 120000});
     const learned = /걸음 학습 끝: (\d+)번 시험, 최고 점수 (-?[\d.]+)/.exec(await out());
@@ -61,6 +62,34 @@ const check = (c, m) => { console.log(`${c ? 'ok' : 'FAIL'} - ${m}`); if (!c) fa
     const replaced = (await out()).includes('새 걸음으로 바꿨습니다'); // (the console keeps only recent lines)
     const hist = await sp(() => window.dynamicmakers.simPanel.learner.history.length);
     check(hist === 3, 'score chart has 3 generations');
+
+    // stage 2c: 동시 경주 — a whole generation walks together in one world
+    await sp(() => {
+        const s = window.dynamicmakers.simPanel;
+        s._keepGait = s.store.gait;
+        s.search.population = 6; s.search.generations = 2; s.search.seconds = 2;
+    });
+    await p.selectOption('.sim-mode', 'race');
+    check(await p.isVisible('.sim-speed'), 'race mode offers a speed choice');
+    await p.selectOption('.sim-speed', '4');
+    await p.click('text=▶ 학습 시작');
+    await p.waitForFunction(() => { const s = window.dynamicmakers.simPanel; return s.raceView && s.raceView.partsReady && s.race.t > 0.5; }, null, {timeout: 60000});
+    const race = await sp(() => {
+        const s = window.dynamicmakers.simPanel;
+        const xs = s.race.info().map(r => r.y);
+        return {n: s.race.n, parts: s.raceView.partItems.length, labels: s.raceView.labelSprites.length,
+            lanes: Math.max(...xs) - Math.min(...xs), tag: document.querySelector('.sim-tag').textContent,
+            shown: !document.querySelector('.sim-learn-view').hidden && Boolean(document.querySelector('.sim-learn-view .sim-canvas'))};
+    });
+    check(race.n === 6 && race.labels === 6 && race.parts >= 6 * 25 && race.lanes > 1.2 && race.shown,
+        `race: 6 robots side by side with part shapes (${race.parts} parts, lanes ${race.lanes.toFixed(2)} m apart overall)`);
+    check(/[12]\/2세대 경주 .* 넘어짐 \d\/6|[12]세대 결과 · 1등 \d번/.test(race.tag), `race scoreboard ("${race.tag}")`);
+    await p.screenshot({path: process.env.RACESHOT || '/home/claude/work/sim3d-race.png'});
+    await p.waitForFunction(() => (document.getElementById('console-lines').textContent.match(/걸음 학습 끝/g) || []).length >= 2, null, {timeout: 120000});
+    const raced = /걸음 학습 끝: (\d+)번 시험/.exec([...(await out()).matchAll(/걸음 학습 끝: \d+번 시험/g)].pop()[0]);
+    const after = await sp(() => { const s = window.dynamicmakers.simPanel; return [s.race, s.learner.history.length, document.querySelector('.sim-learn-view').hidden]; });
+    check(raced && Number(raced[1]) === 12 && after[0] === null && after[1] === 2 && after[2], `race learning: 6 × 2 = ${raced && raced[1]} tries, race world closed`);
+    await sp(() => { const s = window.dynamicmakers.simPanel; s.store.gait = s._keepGait; });
 
     // stage 3: policy file
     await p.setInputFiles('.simp input[type=file]', POLICY);
