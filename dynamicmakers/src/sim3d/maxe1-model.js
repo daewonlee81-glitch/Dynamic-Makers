@@ -105,7 +105,7 @@ export const buildMJCF = (params = {}) => {
       </body>`;
     const arm = (s, out) => {
         const t = D.shoulderTilt * Math.PI / 180;
-        const axis = v3(0, Math.cos(t), -out * Math.sin(t)); // pitch axis, tilted 15° up toward the outside
+        const axis = v3(0, Math.cos(t), out * Math.sin(t)); // pitch axis (F2 end-face normal): tilted 15° up toward the outside, square to the hanging arm
         const dir = [0, out * Math.sin(t), -Math.cos(t)]; // hanging arm direction
         const L = D.armLength;
         return `

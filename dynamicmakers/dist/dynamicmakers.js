@@ -8512,7 +8512,7 @@ var buildMJCF = (params = {}) => {
       </body>`;
   const arm = (s, out) => {
     const t = D.shoulderTilt * Math.PI / 180;
-    const axis = v3(0, Math.cos(t), -out * Math.sin(t));
+    const axis = v3(0, Math.cos(t), out * Math.sin(t));
     const dir = [0, out * Math.sin(t), -Math.cos(t)];
     const L = D.armLength;
     return `

@@ -51,7 +51,7 @@ ${G}`,[ie,G]}function md(r){for(var a=r.length-2,l=r.length-1;l>=2&&r[l].optiona
             </body>
           </body>
         </body>
-      </body>`,h=(m,S)=>{let w=t.shoulderTilt*Math.PI/180,L=un(0,Math.cos(w),-S*Math.sin(w)),x=[0,S*Math.sin(w),-Math.cos(w)],y=t.armLength;return`
+      </body>`,h=(m,S)=>{let w=t.shoulderTilt*Math.PI/180,L=un(0,Math.cos(w),S*Math.sin(w)),x=[0,S*Math.sin(w),-Math.cos(w)],y=t.armLength;return`
       <body name="${m}_shoulder" pos="${un(...Pi(`${m}_shoulder`,"torso"))}">
         <joint name="${m}_shoulder_pitch" axis="${L}" range="-3.1 3.1" ${n}/>
         ${hi(`${m}_shoulder`)}
