@@ -98,3 +98,21 @@ export const toRecording = (m, indices, label) => {
     }
     return {page: label || indices.join('→'), ids: m.ids.slice(), frames, seconds: t0, fromFile: true, indices: indices.slice()};
 };
+
+/**
+ * The compact JSON made by scripts/gen-maxe1-motions.py → the same structure as parseMtn3.
+ * pages: {name: [[frame, ...pose]]}, flows: {name: [[page, loop, speed]]}, calls: [[index, flow]]
+ */
+export const fromCompact = j => {
+    const pages = {};
+    for (const [name, rows] of Object.entries(j.pages)) {
+        const steps = rows.map(r => ({frame: r[0], pose: r.slice(1)}));
+        pages[name] = {steps, seconds: steps[steps.length - 1].frame * FRAME_SECONDS};
+    }
+    const flows = {};
+    for (const [name, units] of Object.entries(j.flows)) {
+        flows[name] = units.map(u => ({page: u[0], loop: u[1], speed: u[2]})).filter(u => pages[u.page]);
+    }
+    const calls = j.calls.map(c => ({index: c[0], flow: c[1]})).filter(c => flows[c.flow] && flows[c.flow].length);
+    return {ids: j.ids.slice(), pages, flows, calls, source: j.source};
+};

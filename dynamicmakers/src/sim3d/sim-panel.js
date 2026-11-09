@@ -7,7 +7,9 @@ import {GaitLearner, REWARDS, defaultRewards, score} from './learn';
 import {checkPolicy} from './policy';
 import {MotionRecorder, summarize, poseAt, toJointRad, keyPoses} from './motion-check';
 import {posesProgramXML} from './gait-blocks';
-import {parseMtn3, findChains, toRecording, callSeconds} from './mtn3';
+import {parseMtn3, findChains, toRecording, callSeconds, fromCompact} from './mtn3';
+import MAXE1_MOTIONS from './maxe1-motions.json';
+import {motionNote} from './maxe1-motion-notes';
 import {assetUrl} from '../asset-url';
 
 const el = (tag, cls, text) => {
@@ -177,11 +179,10 @@ export class SimPanel {
             this.loadMtn3(mtnFile.files[0]);
             mtnFile.value = '';
         });
-        this.mtnBtn = button('tp-btn', '모션 파일(.mtn3) 열기', () => mtnFile.click(),
-            'R+ Task의 모션 파일 (예: 03_ENG1_MAX_E1_KR.mtn3)을 열면 공식 모션을 3D로 보고 블록으로 만들 수 있습니다');
+        this.mtnBtn = button('tp-btn', '다른 모션 파일(.mtn3) 열기', () => mtnFile.click(),
+            'MAX-E1 공식 예제 모션은 이미 들어 있습니다. 직접 만든 R+ Motion 파일(.mtn3)을 열면 그 모션으로 바뀝니다');
         this.mtnSel = el('select', 'sim-mtn');
-        this.mtnSel.disabled = true;
-        this.mtnSel.append(el('option', '', '모션 파일을 열면 여기서 고릅니다'));
+        this.mtnSel.title = 'MAX-E1 공식 예제 모션 (ROBOTIS 03_ENG1_MAX_E1.mtn3) — 번호는 CM-550에 저장된 모션 번호와 같습니다';
         this.mtnSel.addEventListener('change', () => this._pickMtn());
         this.mtnRepeat = 4;
         this.mtnRepeatInput = numInput(this.mtnRepeat, 1, v => { this.mtnRepeat = Math.max(1, Math.min(30, Math.round(v))); this._pickMtn(); }, 46);
@@ -189,6 +190,8 @@ export class SimPanel {
             'CM-550에 저장된 같은 번호의 모션을 실행합니다 (걷기는 페이지를 멈춤 없이 이어서)');
         rf.append(this.mtnBtn, this.mtnSel, el('span', 'tp-label', '반복'), this.mtnRepeatInput, this.mtnRunBtn, mtnFile);
         cm.append(rf);
+        this.mtnNote = el('div', 'sim-mtn-note', '');
+        cm.append(this.mtnNote);
         this.recInfo = el('div', 'sim-info', '아직 기록이 없습니다.');
         this.recTable = el('table', 'sim-table');
         cm.append(this.recInfo, this.recTable);
@@ -368,6 +371,8 @@ export class SimPanel {
             }));
         c4.append(r4);
         body.append(c4);
+        this.loadBuiltInMotions();
+        this._pickMtn();
         this._status();
     }
 
@@ -802,27 +807,63 @@ export class SimPanel {
         if (!file) return;
         try {
             const m = parseMtn3(await file.text());
-            this.mtn = m;
-            this.mtnChains = findChains(m);
-            const sel = this.mtnSel;
-            sel.innerHTML = '';
-            for (const [i, c] of this.mtnChains.entries()) {
-                const o = el('option', '', `걷기 묶음: ${c.name} (${c.start} → ${c.loop} ×반복 → ${c.end})`);
-                o.value = `c:${i}`;
-                sel.append(o);
-            }
-            for (const c of m.calls) {
-                const o = el('option', '', `${c.index} ${c.flow.replace(/^\d+_?H?_?/, '')} (${callSeconds(m, c.index).toFixed(1)}초)`);
-                o.value = `p:${c.index}`;
-                sel.append(o);
-            }
-            sel.disabled = false;
+            this._useMtn(m, false);
             this.log(`모션 파일을 열었습니다: ${file.name} — 모션 ${m.calls.length}개, 걷기 묶음 ${this.mtnChains.length}개, 관절 ${m.ids.length}개.`, 'ok');
             this._pickMtn();
         } catch (e) {
             this.log(`⚠ 모션 파일: ${e.message || e}`, 'err');
         }
         this._status();
+    }
+
+    /** The official MAX-E1 example motions, built in (no file needed). */
+    loadBuiltInMotions () {
+        try {
+            this._useMtn(fromCompact(MAXE1_MOTIONS), true);
+        } catch (e) {
+            this.log(`⚠ 공식 모션: ${e.message || e}`, 'err');
+        }
+    }
+
+    _useMtn (m, builtIn) {
+        this.mtn = m;
+        this.mtnBuiltIn = builtIn;
+        this.mtnChains = findChains(m);
+        const note = index => (builtIn ? motionNote(index) : {title: '', desc: ''});
+        const sel = this.mtnSel;
+        sel.innerHTML = '';
+        const group = label => {
+            const g = el('optgroup');
+            g.label = label;
+            sel.append(g);
+            return g;
+        };
+        const gc = group(builtIn ? 'MAX-E1 공식 모션 — 걷기 묶음 (시작 → 반복 → 끝)' : '걷기 묶음 (시작 → 반복 → 끝)');
+        for (const [i, c] of this.mtnChains.entries()) {
+            const t = note(c.start).title.replace(/ 시작$/, '');
+            const o = el('option', '', `걷기: ${t || c.name} (${c.start} → ${c.loop} ×반복 → ${c.end})`);
+            o.value = `c:${i}`;
+            gc.append(o);
+        }
+        const ranges = builtIn ? [[100, 199, '서기 · 동작 (100번대)'], [300, 499, '스마트폰 앱 버튼용 (300·400번대)'],
+            [700, 799, '한 걸음씩 걷기 (700번대)'], [0, 1e9, '그 밖의 모션']] : [[0, 1e9, '모션']];
+        const done = new Set();
+        for (const [lo, hi, label] of ranges) {
+            const list = m.calls.filter(c => c.index >= lo && c.index <= hi && !done.has(c.index));
+            if (!list.length) continue;
+            const g = group(builtIn ? `MAX-E1 공식 모션 — ${label}` : label);
+            for (const c of list) {
+                done.add(c.index);
+                const t = note(c.index).title || c.flow.replace(/^\d+_?H?_?/, '');
+                const o = el('option', '', `${c.index} ${t} · ${callSeconds(m, c.index).toFixed(1)}초`);
+                o.value = `p:${c.index}`;
+                g.append(o);
+            }
+        }
+        sel.disabled = false;
+        // default: the forward walk group, if there is one
+        const fw = this.mtnChains.findIndex(c => c.start === 150);
+        if (fw >= 0) sel.value = `c:${fw}`;
     }
 
     /** The chosen motion (or walk group) as a recording: shown, replayable in 3D, blocks. */
@@ -837,11 +878,31 @@ export class SimPanel {
             label = `${c.name} (${c.start} → ${c.loop} ×${this.mtnRepeat} → ${c.end})`;
         } else {
             seq = [Number(v)];
-            label = this.mtnSel.selectedOptions[0].textContent.replace(/ \([\d.]+초\)$/, '');
+            label = this.mtnSel.selectedOptions[0].textContent.replace(/ · [\d.]+초$/, '');
         }
         this.motionRec = toRecording(this.mtn, seq, label);
+        this._showMtnNote(kind, Number(v));
         this._showMotion();
         this._status();
+    }
+
+    _showMtnNote (kind, v) {
+        if (!this.mtnNote) return;
+        const src = this.mtnBuiltIn ? '출처: ROBOTIS ENGINEER Kit 1 MAX-E1 예제 모션 (03_ENG1_MAX_E1.mtn3). ' : '';
+        if (!this.mtnBuiltIn) {
+            this.mtnNote.textContent = '';
+            return;
+        }
+        if (kind === 'c') {
+            const c = this.mtnChains[v];
+            const a = motionNote(c.start);
+            const b = motionNote(c.loop);
+            const e = motionNote(c.end);
+            this.mtnNote.textContent = `${c.start} ${a.title}: ${a.desc} → ${c.loop} ${b.title} ×${this.mtnRepeat}: ${b.desc} → ${c.end} ${e.title}: ${e.desc} ${src}`;
+        } else {
+            const n = motionNote(v);
+            this.mtnNote.textContent = n.title ? `${v} ${n.title}: ${n.desc} ${src}` : src;
+        }
     }
 
     async runMtnOnRobot () {

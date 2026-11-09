@@ -422,4 +422,5 @@ body.dm-resizing iframe, body.dm-resizing #blocks { pointer-events: none; }
 .sim-tag { position: absolute; left: 8px; top: 8px; z-index: 1; padding: 3px 8px; border-radius: 6px; font-size: 12px;
     background: rgba(255, 255, 255, 0.85); color: #1f2a3a; pointer-events: none; font-variant-numeric: tabular-nums; }
 .sim-watch { gap: 6px; align-items: center; cursor: pointer; }
-.sim-mtn { max-width: 300px; }
+.sim-mtn { max-width: 340px; }
+.sim-mtn-note { font-size: 12px; margin: 4px 0 2px; line-height: 1.5; color: #3b4a63; }
