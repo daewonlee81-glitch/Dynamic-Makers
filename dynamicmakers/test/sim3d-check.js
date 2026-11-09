@@ -46,6 +46,28 @@ const check = (c, m) => { console.log(`${c ? 'ok' : 'FAIL'} - ${m}`); if (!c) fa
     check(walk && Number(walk[1]) > 40 && walk[2] === '서 있습니다', `default gait walks (${walk && walk[0]})`);
     await p.screenshot({path: process.env.SHOT || '/home/claude/work/sim3d.png'});
 
+    // 예제 모션 확인: play a CM-550 motion page while recording every joint, replay in 3D, make blocks
+    // (this test machine draws WebGL in software, ~1 frame/s: show another tab while recording so sampling is not starved)
+    await p.click('.simp button:has-text("실행하며 기록")');
+    await p.click('#view-monitor');
+    await p.waitForFunction(() => document.getElementById('console-lines').textContent.includes('기록 끝'), null, {timeout: 60000});
+    await p.click('#view-sim');
+    const rec = await sp(() => { const r = window.dynamicmakers.simPanel.motionRec; return {n: r.frames.length, secs: r.seconds, sync: r.syncRead,
+        info: document.querySelector('.simp .mon-card:nth-of-type(2) .sim-info').textContent}; });
+    const moved = /움직인 관절 (\d+)개/.exec(rec.info);
+    check(rec.n > 20 && rec.sync && moved && Number(moved[1]) >= 8, `motion recorded with SYNC READ (${rec.n} samples in ${rec.secs.toFixed(1)} s; "${rec.info.slice(0, 60)}…")`);
+    await p.click('.simp button:has-text("3D로 재생")');
+    await p.waitForFunction(() => document.getElementById('console-lines').textContent.includes('3D 재생 끝'), null, {timeout: 60000});
+    const rp = /3D 재생 끝: 앞으로 (-?\d+) cm, 옆으로 (-?\d+) cm, (서 있습니다|넘어졌습니다)/.exec(await out());
+    // (only the direction is checked: here the stand-in walk ran on slow simulated time but was
+    // recorded on the wall clock, so the replay is faster than the original and may tip over)
+    check(rp && Number(rp[1]) > 15, `recording replayed on the 3D robot walks forward (${rp && rp[0]})`);
+    const before = await sp(() => window.dynamicmakers.workspace.getAllBlocks(false).length);
+    await p.click('.simp button:has-text("블록으로 만들기")');
+    const made = await sp(() => window.dynamicmakers.workspace.getAllBlocks(false).filter(b => b.type === 'cm550_dxlTogether').length);
+    check(made > 5, `recorded motion turned into ${made} "모두 함께" blocks`);
+    await sp(() => window.dynamicmakers.workspace.clear());
+
     // stage 2b: learning (small run)
     await sp(() => {
         const s = window.dynamicmakers.simPanel;
@@ -92,7 +114,7 @@ const check = (c, m) => { console.log(`${c ? 'ok' : 'FAIL'} - ${m}`); if (!c) fa
     await sp(() => { const s = window.dynamicmakers.simPanel; s.store.gait = s._keepGait; });
 
     // stage 3: policy file
-    await p.setInputFiles('.simp input[type=file]', POLICY);
+    await p.setInputFiles('.simp input[type=file]:not(.sim-rec-file)', POLICY);
     await p.waitForFunction(() => document.getElementById('console-lines').textContent.includes('정책을 불러왔습니다'));
     check((await p.textContent('.simp')).includes('신경망 32-12'), 'policy loaded (network 32-12)');
     await p.click('text=정책으로 걷기 (3D)');

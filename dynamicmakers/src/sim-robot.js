@@ -232,6 +232,26 @@ class SimTransport {
                 return wasPlaying ? this.onAction('모션 정지') : undefined;
             }
             if (v === 0) return undefined;
+            if (this.physics) { // no official motions in the 3D robot: a short walk stands in for any page
+                const ph = this.physics;
+                const {gaitTargets, defaultGait} = require('./sim3d/gait');
+                const g = defaultGait();
+                const t0 = ph.data.time;
+                this.motionUntil = Date.now() + 3000;
+                ph.setController(time => {
+                    const t = time - t0;
+                    if (t > 2.5 || Date.now() > this.motionUntil) {
+                        const st = gaitTargets(g, 0, 0);
+                        for (const j in st) ph.setGoalRad(j, st[j]);
+                        ph.setController(null);
+                        return;
+                    }
+                    const tg = gaitTargets(g, t, Math.min(1, t / 0.6, Math.max(0, (2.5 - t) / 0.6)));
+                    for (const j in tg) ph.setGoalRad(j, tg[j]);
+                });
+                this.last.delete('motion');
+                return this._report('motion', v, `모션 ${v}번 재생 (3D 로봇에는 공식 모션이 없어 기본 걸음 2.5초로 대신)`);
+            }
             this.motionUntil = Date.now() + 1500;
             this.last.delete('motion');
             return this._report('motion', v, `모션 ${v}번 재생 (1.5초)`);
@@ -331,6 +351,12 @@ class SimTransport {
             if (!exists(id)) return Promise.resolve();
             if (this.physics) this.physics.setTorque(id, 0);
             this._reply(id);
+            return Promise.resolve();
+        }
+        if (inst === P2.INST.SYNC_READ) { // each listed motor answers in turn
+            const addr = P2.fromLE(params, 0, 2);
+            const size = P2.fromLE(params, 2, 2);
+            params.slice(4).filter(exists).forEach(i => this._reply(i, this._readBlock(i, addr, size)));
             return Promise.resolve();
         }
         if (inst === P2.INST.PING) {

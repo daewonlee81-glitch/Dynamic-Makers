@@ -5,6 +5,8 @@ import {MAXE1_DEFAULT, MAXE1_JOINT_MAP, MODEL_VERSION, buildMJCF} from './maxe1-
 import {GAIT_PARAMS, defaultGait, gaitTargets} from './gait';
 import {GaitLearner, REWARDS, defaultRewards, score} from './learn';
 import {checkPolicy} from './policy';
+import {MotionRecorder, summarize, poseAt, toJointRad, keyPoses} from './motion-check';
+import {posesProgramXML} from './gait-blocks';
 import {assetUrl} from '../asset-url';
 
 const el = (tag, cls, text) => {
@@ -138,6 +140,36 @@ export class SimPanel {
         r1.append(this.connBtn, this.resetBtn, this.pushBtn, this.pauseBtn, this.partsBtn);
         c1.append(r1);
         body.append(c1);
+
+        // ---- 예제 모션 확인 (실제 로봇) --------------------------------------------------
+        const cm = el('section', 'mon-card');
+        cm.append(el('h3', '', '예제 모션 확인 (실제 로봇의 공식 모션)'));
+        cm.append(el('p', 'mon-note', 'CM-550에 들어 있는 모션(R+ Task의 MAX-E1 예제)을 실행하면서 관절 12개의 각도를 기록합니다. ' +
+            '기록을 3D 로봇에 재생해서 앞으로 잘 걸으면 ID·방향 설정이 맞는 것입니다. 블록으로 바꿔 보거나 파일로 저장할 수도 있습니다. ' +
+            '로봇을 바닥에 내려놓고 주위를 비운 뒤 실행하고, 넘어질 것 같으면 [멈추기]를 누르세요.'));
+        const rm = el('div', 'tp-row');
+        this.motionPage = 1;
+        rm.append(el('span', 'tp-label', '모션 페이지'), numInput(this.motionPage, 1, v => { this.motionPage = Math.max(1, Math.round(v)); }, 56));
+        this.recBtn = button('tp-btn tp-primary', '▶ 실행하며 기록', () => this.recordMotion());
+        this.recStopBtn = button('tp-btn', '■ 멈추기', () => this.recorder && this.recorder.stop());
+        this.replayBtn = button('tp-btn', '3D로 재생', () => this.replayMotion(), '기록한 각도를 지금의 ID·방향 설정으로 3D 로봇에 그대로 줍니다');
+        this.recBlockBtn = button('tp-btn', '블록으로 만들기', () => this.motionBlocks());
+        this.recSaveBtn = button('tp-btn', '기록 저장', () => this.saveMotion());
+        const recFile = el('input', 'sim-rec-file');
+        recFile.type = 'file';
+        recFile.accept = '.json,application/json';
+        recFile.hidden = true;
+        recFile.addEventListener('change', () => {
+            this.loadMotion(recFile.files[0]);
+            recFile.value = '';
+        });
+        this.recLoadBtn = button('tp-btn', '기록 불러오기', () => recFile.click());
+        rm.append(this.recBtn, this.recStopBtn, this.replayBtn, this.recBlockBtn, this.recSaveBtn, this.recLoadBtn, recFile);
+        cm.append(rm);
+        this.recInfo = el('div', 'sim-info', '아직 기록이 없습니다.');
+        this.recTable = el('table', 'sim-table');
+        cm.append(this.recInfo, this.recTable);
+        body.append(cm);
 
         // ---- 2. 걸음 학습 ------------------------------------------------------------
         const c2 = el('section', 'mon-card');
@@ -639,6 +671,123 @@ export class SimPanel {
         }
     }
 
+    // ---- 예제 모션 확인 ------------------------------------------------------------------
+    async recordMotion () {
+        if (this.recorder && this.recorder.running) return;
+        if (!this.device.connected) {
+            this.log('먼저 실제 로봇(USB/블루투스)을 연결하세요. 3D 가상 로봇에는 공식 모션이 들어 있지 않습니다.', 'warn');
+            return;
+        }
+        this.recorder = new MotionRecorder({device: this.device, getJointMap: () => this.jointMap});
+        this._status();
+        const page = this.motionPage;
+        this.log(`모션 ${page}번을 실행하며 기록합니다…`);
+        try {
+            const rec = await this.recorder.record(page, {onFrame: (f, r) => {
+                this.recInfo.textContent = `모션 ${page}번 기록 중 · ${f.t.toFixed(1)}초 · ${r.frames.length}개`;
+            }});
+            this.motionRec = rec;
+            this._showMotion();
+            this.log(`모션 ${page}번 기록 끝: ${rec.seconds.toFixed(1)}초, ${rec.frames.length}개 ` +
+                `(초당 ${(rec.frames.length / Math.max(0.1, rec.seconds)).toFixed(0)}번${rec.syncRead ? ', 한꺼번에 읽기' : ', 하나씩 읽기'}).`, 'ok');
+        } catch (e) {
+            this.log(`⚠ 모션 기록: ${e.message || e}`, 'err');
+        }
+        this._status();
+    }
+
+    _showMotion () {
+        const rec = this.motionRec;
+        if (!rec) return;
+        const sum = summarize(rec, this.jointMap);
+        const moved = sum.filter(r => r.range > 3);
+        this.recInfo.textContent = `모션 ${rec.page}번 · ${rec.seconds.toFixed(1)}초 · 기록 ${rec.frames.length}개 · ` +
+            `움직인 관절 ${moved.length}개${moved.length ? ` (${moved.map(r => r.id).join(', ')})` : ' — 모션이 실행되지 않았거나 빈 페이지입니다'}`;
+        const f = v => (Number.isFinite(v) ? v.toFixed(1) : '-');
+        this.recTable.innerHTML = '<thead><tr><th>ID</th><th>관절</th><th>시작</th><th>최소</th><th>최대</th><th>움직임</th></tr></thead>';
+        const tb = el('tbody');
+        for (const r of sum) {
+            const tr = el('tr');
+            for (const v of [r.id, r.name, f(r.start), f(r.min), f(r.max), f(r.range)]) tr.append(el('td', 'sim-num', String(v)));
+            tb.append(tr);
+        }
+        this.recTable.append(tb);
+    }
+
+    async replayMotion () {
+        const rec = this.motionRec;
+        if (!rec) {
+            this.log('먼저 모션을 기록하거나 기록 파일을 불러오세요.', 'warn');
+            return;
+        }
+        try {
+            const ph = await this._ensureSim();
+            this.walker.stop();
+            ph.reset();
+            for (const j of this.jointMap) {
+                ph.setTorque(j.id, 1);
+                ph.setProfile(j.id, 0);
+            }
+            const map = this.jointMap;
+            const t0 = ph.data.time;
+            const lead = 0.6; // from standing straight into the motion's first pose
+            const first = toJointRad(rec.frames[0].deg, map);
+            this.log(`3D 로봇에 모션 ${rec.page}번 기록을 재생합니다 (${rec.seconds.toFixed(1)}초).`);
+            await new Promise(resolve => {
+                ph.setController(time => {
+                    const t = time - t0;
+                    if (t < lead) {
+                        for (const j in first) ph.setGoalRad(j, first[j] * (t / lead));
+                        return;
+                    }
+                    const tt = t - lead;
+                    if (tt > rec.seconds + 1) {
+                        ph.setController(null);
+                        resolve();
+                        return;
+                    }
+                    const q = toJointRad(poseAt(rec, Math.min(tt, rec.seconds)), map);
+                    for (const j in q) ph.setGoalRad(j, q[j]);
+                });
+            });
+            const t = ph.torso;
+            this.log(`3D 재생 끝: 앞으로 ${(t.x * 100).toFixed(0)} cm, 옆으로 ${(t.y * 100).toFixed(0)} cm, ` +
+                `${ph.fallen ? '넘어졌습니다' : '서 있습니다'}. (공식 걷기 모션이 3D에서도 앞으로 걸으면 ID·방향 설정이 맞습니다)`,
+            ph.fallen ? 'warn' : 'ok');
+        } catch (e) {
+            this.log(`⚠ 3D 재생: ${e.message || e}`, 'err');
+        }
+    }
+
+    motionBlocks () {
+        const rec = this.motionRec;
+        if (!rec || !this.insertXML) return;
+        const poses = keyPoses(rec, 0.12);
+        const n = this.insertXML((x, y) => posesProgramXML(poses, {x, y,
+            title: `CM-550 모션 ${rec.page}번을 기록한 자세 ${poses.length}개 (약 0.12초마다)`}).xml);
+        if (n !== false) this.log(`모션 ${rec.page}번을 블록으로 넣었습니다: 자세 ${poses.length}개, 자세마다 모터 ${rec.ids.length}개.`, 'ok');
+    }
+
+    saveMotion () {
+        const rec = this.motionRec;
+        if (!rec || !this.saveText) return;
+        this.saveText(`MAX-E1-motion-${rec.page}.json`, JSON.stringify(Object.assign({format: 'dm-motion-1'}, rec)));
+    }
+
+    async loadMotion (file) {
+        if (!file) return;
+        try {
+            const rec = JSON.parse(await file.text());
+            if (!rec || !Array.isArray(rec.frames) || !rec.frames.length || !Array.isArray(rec.ids)) throw new Error('모션 기록 파일이 아닙니다.');
+            this.motionRec = rec;
+            this._showMotion();
+            this.log(`모션 기록을 불러왔습니다: 페이지 ${rec.page}, ${rec.frames.length}개.`, 'ok');
+        } catch (e) {
+            this.log(`⚠ 모션 기록 파일: ${e.message || e}`, 'err');
+        }
+        this._status();
+    }
+
     makeBlocks (detailed) {
         if (this.addWalkScript) this.addWalkScript(detailed);
     }
@@ -684,6 +833,10 @@ export class SimPanel {
         if (this.view) this.partsBtn.textContent = this.view.showParts ? '단순 도형으로 보기' : '부품 모양으로 보기';
         this.previewBtn.disabled = learning;
         this.modeSel.disabled = learning;
+        const recording = Boolean(this.recorder && this.recorder.running);
+        this.recBtn.disabled = recording;
+        this.recStopBtn.disabled = !recording;
+        for (const b of [this.replayBtn, this.recBlockBtn, this.recSaveBtn]) b.disabled = !this.motionRec || recording;
         if (!learning) for (const p of GAIT_PARAMS) this.gaitCells[p.key].textContent = this.gait[p.key].toFixed(2);
         const pol = this.store.policy;
         this.policyInfo.textContent = pol ? `불러온 정책: ${pol.name || '정책'} · 신경망 ` +

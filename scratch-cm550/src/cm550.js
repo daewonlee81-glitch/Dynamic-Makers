@@ -377,6 +377,42 @@ class CM550Device {
         return this._scanPromise;
     }
 
+    /**
+     * Read one register from many motors with a single SYNC READ (each motor
+     * answers in turn). Motors that did not answer in time are read one by one,
+     * so the result is complete either way.
+     * @param {object} reg {addr, size}
+     * @param {number[]} ids
+     * @param {number} [waitMs] longest wait for the replies
+     * @returns {Promise<Map<number, number>>} id -> value
+     */
+    async syncReadDXL (reg, ids, waitMs = 120) {
+        const run = async () => {
+            if (!this.connected) throw new Error('CM-550이 연결되어 있지 않습니다.');
+            this._collector = [];
+            try {
+                await this.transport.write(P2.syncRead(reg.addr, reg.size, ids));
+                const t0 = Date.now();
+                while (Date.now() - t0 < waitMs) {
+                    if (new Set(this._collector.map(p => p.id)).size >= ids.length) break;
+                    await delay(4);
+                }
+                return this._collector;
+            } finally {
+                this._collector = null;
+            }
+        };
+        const result = this._queue.then(run, run);
+        this._queue = result.catch(() => {});
+        const out = new Map();
+        for (const p of await result) {
+            if (ids.includes(p.id) && p.params.length >= reg.size) out.set(p.id, P2.fromLE(p.params, 0, reg.size));
+        }
+        this.syncReadWorks = out.size > 0;
+        for (const id of ids) if (!out.has(id)) out.set(id, await this.readDXL(id, reg));
+        return out;
+    }
+
     /** Replace the known motor list (scan, diagnosis) and notify listeners. */
     setMotors (motors, busVolts) {
         this.motors = motors.slice().sort((a, b) => a.id - b.id);

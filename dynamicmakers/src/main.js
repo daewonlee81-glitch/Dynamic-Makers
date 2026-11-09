@@ -740,6 +740,18 @@ simPanel = window.dynamicmakers.simPanel = new SimPanel({
     connect: transport => connect('sim3d', transport),
     disconnect: () => ext.disconnect(),
     addWalkScript,
+    insertXML: makeXml => {
+        let x = 40;
+        let y = 40;
+        try {
+            if (workspace.getTopBlocks(false).length) {
+                const box = workspace.getBlocksBoundingBox();
+                x = box.left;
+                y = box.bottom + 48;
+            }
+        } catch (e) { /* default position */ }
+        ScratchBlocks.Xml.domToWorkspace(ScratchBlocks.utils.xml.textToDom(makeXml(x, y)), workspace);
+    },
     saveText: async (name, text) => {
         try {
             const [base, ext2] = name.split('.');

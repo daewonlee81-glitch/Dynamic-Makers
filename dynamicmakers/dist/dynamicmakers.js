@@ -4,12 +4,24 @@ var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __getProtoOf = Object.getPrototypeOf;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __esm = (fn, res, err) => function __init() {
+  if (err) throw err[0];
+  try {
+    return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+  } catch (e) {
+    throw err = [e], e;
+  }
+};
 var __commonJS = (cb, mod) => function __require() {
   try {
     return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
   } catch (e) {
     throw mod = 0, e;
   }
+};
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
 };
 var __copyProps = (to, from, except, desc) => {
   if (from && typeof from === "object" || typeof from === "function") {
@@ -27,6 +39,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
   mod
 ));
+var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
 // ../scratch-cm550/src/models.js
 var require_models = __commonJS({
@@ -1747,7 +1760,7 @@ var require_cm550 = __commonJS({
     var { WebSerialTransport, WebBluetoothTransport } = require_transport();
     var { modelInfo: modelInfo2, modelName: modelName3, describeMotors } = require_models();
     var CM550_ID = 200;
-    var CM = {
+    var CM2 = {
       MODEL_NUMBER: { addr: 0, size: 2 },
       FIRMWARE_VERSION: { addr: 6, size: 1 },
       MODE_NUMBER: { addr: 21, size: 1 },
@@ -1842,7 +1855,7 @@ var require_cm550 = __commonJS({
       LED_RED_BRIGHT: { base: 494, stride: 1, size: 1, ports: 2, category: MODULE.LED_RED_BRIGHT },
       LED_BLUE_BRIGHT: { base: 499, stride: 1, size: 1, ports: 2, category: MODULE.LED_BLUE_BRIGHT }
     };
-    var DXL2 = {
+    var DXL3 = {
       MODEL_NUMBER: { addr: 0, size: 2 },
       ID: { addr: 7, size: 1 },
       // 1 velocity, 3 position, 4 extended position, 16 PWM (XL-330: 0 current, 5 current-based position)
@@ -1878,7 +1891,7 @@ var require_cm550 = __commonJS({
     var MOTION_STOP = { NOW: 65533, KEYFRAME: 65534, UNIT: 65535 };
     var clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
     var degToTick = (deg2) => Math.round(deg2 / 360 * 4096);
-    var tickToDeg = (tick) => tick / 4096 * 360;
+    var tickToDeg2 = (tick) => tick / 4096 * 360;
     var delay4 = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     var CM550Device = class {
       constructor() {
@@ -1944,11 +1957,11 @@ var require_cm550 = __commonJS({
         this._modelCache = {};
         this.setMotors([]);
         try {
-          const model = await this.readCM(CM.MODEL_NUMBER);
+          const model = await this.readCM(CM2.MODEL_NUMBER);
           if (model !== 450) {
             this.lastError = `알 수 없는 컨트롤러 (모델 번호 ${model})`;
           }
-          await this.writeCM(CM.MODE_NUMBER, 2);
+          await this.writeCM(CM2.MODE_NUMBER, 2);
         } catch (e) {
           this.lastError = `CM-550 응답 없음: ${e.message}`;
         }
@@ -2091,7 +2104,7 @@ var require_cm550 = __commonJS({
           }
           let volts = 0;
           try {
-            volts = await this.readCM(CM.VOLTAGE) / 10;
+            volts = await this.readCM(CM2.VOLTAGE) / 10;
           } catch (e) {
           }
           this.setMotors(found, volts);
@@ -2103,6 +2116,42 @@ var require_cm550 = __commonJS({
         this._scanPromise.then(done, done);
         return this._scanPromise;
       }
+      /**
+       * Read one register from many motors with a single SYNC READ (each motor
+       * answers in turn). Motors that did not answer in time are read one by one,
+       * so the result is complete either way.
+       * @param {object} reg {addr, size}
+       * @param {number[]} ids
+       * @param {number} [waitMs] longest wait for the replies
+       * @returns {Promise<Map<number, number>>} id -> value
+       */
+      async syncReadDXL(reg, ids, waitMs = 120) {
+        const run = async () => {
+          if (!this.connected) throw new Error("CM-550이 연결되어 있지 않습니다.");
+          this._collector = [];
+          try {
+            await this.transport.write(P22.syncRead(reg.addr, reg.size, ids));
+            const t0 = Date.now();
+            while (Date.now() - t0 < waitMs) {
+              if (new Set(this._collector.map((p) => p.id)).size >= ids.length) break;
+              await delay4(4);
+            }
+            return this._collector;
+          } finally {
+            this._collector = null;
+          }
+        };
+        const result = this._queue.then(run, run);
+        this._queue = result.catch(() => {
+        });
+        const out = /* @__PURE__ */ new Map();
+        for (const p of await result) {
+          if (ids.includes(p.id) && p.params.length >= reg.size) out.set(p.id, P22.fromLE(p.params, 0, reg.size));
+        }
+        this.syncReadWorks = out.size > 0;
+        for (const id of ids) if (!out.has(id)) out.set(id, await this.readDXL(id, reg));
+        return out;
+      }
       /** Replace the known motor list (scan, diagnosis) and notify listeners. */
       setMotors(motors, busVolts) {
         this.motors = motors.slice().sort((a, b) => a.id - b.id);
@@ -2113,7 +2162,7 @@ var require_cm550 = __commonJS({
       /** Model number of `id` (cached; read from the motor once). Rejects unsupported models. */
       async requireModel(id) {
         if (typeof this._modelCache[id] === "undefined") {
-          this._modelCache[id] = await this.readDXL(id, DXL2.MODEL_NUMBER);
+          this._modelCache[id] = await this.readDXL(id, DXL3.MODEL_NUMBER);
         }
         const model = this._modelCache[id];
         if (!modelInfo2(model)) {
@@ -2146,7 +2195,7 @@ var require_cm550 = __commonJS({
         return this.read(id, reg.addr, reg.size, Boolean(reg.signed));
       }
       writeDXL(id, reg, value) {
-        if (reg === DXL2.GOAL_POSITION && this._lastGoal) this._lastGoal.delete(id);
+        if (reg === DXL3.GOAL_POSITION && this._lastGoal) this._lastGoal.delete(id);
         return this.write(id, reg.addr, value, reg.size);
       }
       ping(id) {
@@ -2166,7 +2215,7 @@ var require_cm550 = __commonJS({
       // ---- peripheral ports ----------------------------------------------
       async ensurePortCategory(port, category2) {
         if (this._categoryCache[port] === category2) return;
-        await this.writeCM(CM.MODULE_CATEGORY, category2, port);
+        await this.writeCM(CM2.MODULE_CATEGORY, category2, port);
         this._categoryCache[port] = category2;
         await delay4(50);
       }
@@ -2200,29 +2249,29 @@ var require_cm550 = __commonJS({
         }
         let current = this._modeCache[id];
         if (typeof current === "undefined") {
-          current = await this.readDXL(id, DXL2.OPERATING_MODE);
+          current = await this.readDXL(id, DXL3.OPERATING_MODE);
           this._modeCache[id] = current;
         }
         if (accepted.includes(current)) {
-          await this.writeDXL(id, DXL2.TORQUE_ENABLE, 1);
+          await this.writeDXL(id, DXL3.TORQUE_ENABLE, 1);
           return;
         }
-        const torque = await this.readDXL(id, DXL2.TORQUE_ENABLE);
-        if (torque) await this.writeDXL(id, DXL2.TORQUE_ENABLE, 0);
+        const torque = await this.readDXL(id, DXL3.TORQUE_ENABLE);
+        if (torque) await this.writeDXL(id, DXL3.TORQUE_ENABLE, 0);
         try {
-          await this.writeDXL(id, DXL2.OPERATING_MODE, target);
+          await this.writeDXL(id, DXL3.OPERATING_MODE, target);
         } catch (e) {
           if (!/접근 오류|Access/.test(e.message)) throw e;
           const ok = await this._withSiblingTorqueOff(
             id,
-            () => this.writeDXL(id, DXL2.OPERATING_MODE, target)
+            () => this.writeDXL(id, DXL3.OPERATING_MODE, target)
           );
           if (!ok) {
             throw new Error(`다이나믹셀 ${id}: 모드를 바꿀 수 없습니다. 같은 모듈(2XL430 등)의 다른 축이나 이 모터의 토크를 끈 뒤 다시 시도하세요.`);
           }
         }
         this._modeCache[id] = target;
-        await this.writeDXL(id, DXL2.TORQUE_ENABLE, 1);
+        await this.writeDXL(id, DXL3.TORQUE_ENABLE, 1);
       }
       /** Back-compat name used by blocks: switch to exactly `mode`. */
       setOperatingMode(id, mode) {
@@ -2240,26 +2289,26 @@ var require_cm550 = __commonJS({
           if (n < 0 || n > 252) continue;
           let model;
           try {
-            model = await this.readDXL(n, DXL2.MODEL_NUMBER);
+            model = await this.readDXL(n, DXL3.MODEL_NUMBER);
           } catch (e) {
             continue;
           }
           if (!DUAL_AXIS_MODELS.has(model)) continue;
-          const t = await this.readDXL(n, DXL2.TORQUE_ENABLE);
-          if (t) await this.writeDXL(n, DXL2.TORQUE_ENABLE, 0);
+          const t = await this.readDXL(n, DXL3.TORQUE_ENABLE);
+          if (t) await this.writeDXL(n, DXL3.TORQUE_ENABLE, 0);
           try {
             await fn();
             return true;
           } catch (e) {
           } finally {
-            if (t) await this.writeDXL(n, DXL2.TORQUE_ENABLE, 1);
+            if (t) await this.writeDXL(n, DXL3.TORQUE_ENABLE, 1);
           }
         }
         return false;
       }
       async getVelocityLimit(id) {
         if (!this._velocityLimitCache[id]) {
-          this._velocityLimitCache[id] = await this.readDXL(id, DXL2.VELOCITY_LIMIT);
+          this._velocityLimitCache[id] = await this.readDXL(id, DXL3.VELOCITY_LIMIT);
         }
         return this._velocityLimitCache[id];
       }
@@ -2275,9 +2324,9 @@ var require_cm550 = __commonJS({
         if (typeof speedPercent === "number" && !Number.isNaN(speedPercent)) {
           const limit = await this.getVelocityLimit(id);
           const pv = Math.round(limit * clamp(speedPercent, 0, 100) / 100);
-          await this.writeDXL(id, DXL2.PROFILE_VELOCITY, pv);
+          await this.writeDXL(id, DXL3.PROFILE_VELOCITY, pv);
         }
-        await this.writeDXL(id, DXL2.GOAL_POSITION, degToTick(degrees));
+        await this.writeDXL(id, DXL3.GOAL_POSITION, degToTick(degrees));
       }
       /**
        * Current-based position (grippers): move toward `degrees` but push with at
@@ -2285,21 +2334,21 @@ var require_cm550 = __commonJS({
        */
       async grip(id, degrees, forcePercent) {
         await this.ensureMode(id, [OP_MODE.CURRENT_POSITION]);
-        const limit = await this.readDXL(id, DXL2.CURRENT_LIMIT);
-        await this.writeDXL(id, DXL2.GOAL_CURRENT, Math.round(limit * clamp(forcePercent, 0, 100) / 100));
-        await this.writeDXL(id, DXL2.GOAL_POSITION, degToTick(degrees));
+        const limit = await this.readDXL(id, DXL3.CURRENT_LIMIT);
+        await this.writeDXL(id, DXL3.GOAL_CURRENT, Math.round(limit * clamp(forcePercent, 0, 100) / 100));
+        await this.writeDXL(id, DXL3.GOAL_POSITION, degToTick(degrees));
       }
       async setWheelSpeed(id, percent) {
         await this.setOperatingMode(id, OP_MODE.VELOCITY);
         const limit = await this.getVelocityLimit(id);
         const v = Math.round(limit * clamp(percent, -100, 100) / 100);
-        await this.writeDXL(id, DXL2.GOAL_VELOCITY, v);
+        await this.writeDXL(id, DXL3.GOAL_VELOCITY, v);
       }
       async waitUntilStopped(id, timeoutMs = 1e4) {
         const start = Date.now();
         await delay4(30);
         while (Date.now() - start < timeoutMs) {
-          const moving = await this.readDXL(id, DXL2.MOVING);
+          const moving = await this.readDXL(id, DXL3.MOVING);
           if (!moving) return;
           await delay4(30);
         }
@@ -2317,8 +2366,8 @@ var require_cm550 = __commonJS({
       async readPose(ids) {
         const pose = {};
         for (const id of this.poseIds(ids)) {
-          const tick = await this.readDXL(id, DXL2.PRESENT_POSITION);
-          pose[id] = Math.round(tickToDeg(tick) * 10) / 10;
+          const tick = await this.readDXL(id, DXL3.PRESENT_POSITION);
+          pose[id] = Math.round(tickToDeg2(tick) * 10) / 10;
         }
         return pose;
       }
@@ -2331,14 +2380,14 @@ var require_cm550 = __commonJS({
       async setJointsTorque(ids, on) {
         for (const id of this.poseIds(ids)) {
           if (!on) {
-            await this.writeDXL(id, DXL2.TORQUE_ENABLE, 0);
+            await this.writeDXL(id, DXL3.TORQUE_ENABLE, 0);
             continue;
           }
-          const hold = await this.readDXL(id, DXL2.PRESENT_POSITION);
-          await this.writeDXL(id, DXL2.GOAL_POSITION, hold);
+          const hold = await this.readDXL(id, DXL3.PRESENT_POSITION);
+          await this.writeDXL(id, DXL3.GOAL_POSITION, hold);
           await this.ensureMode(id, [OP_MODE.POSITION, OP_MODE.EXTENDED_POSITION]);
-          const now = await this.readDXL(id, DXL2.PRESENT_POSITION);
-          await this.writeDXL(id, DXL2.GOAL_POSITION, now);
+          const now = await this.readDXL(id, DXL3.PRESENT_POSITION);
+          await this.writeDXL(id, DXL3.GOAL_POSITION, now);
         }
       }
       /**
@@ -2354,7 +2403,7 @@ var require_cm550 = __commonJS({
         const plan = [];
         for (const id of ids) {
           await this.ensureMode(id, [OP_MODE.POSITION, OP_MODE.EXTENDED_POSITION]);
-          const cur = tickToDeg(await this.readDXL(id, DXL2.PRESENT_POSITION));
+          const cur = tickToDeg2(await this.readDXL(id, DXL3.PRESENT_POSITION));
           const target = Number(pose[id]);
           const degPerSec = Math.abs(target - cur) / secs;
           let pv = Math.max(1, Math.ceil(degPerSec / 6 / 0.229));
@@ -2362,8 +2411,8 @@ var require_cm550 = __commonJS({
           if (limit) pv = Math.min(pv, limit);
           plan.push({ id, pv, goal: degToTick(target) });
         }
-        for (const p of plan) await this.writeDXL(p.id, DXL2.PROFILE_VELOCITY, p.pv);
-        for (const p of plan) await this.writeDXL(p.id, DXL2.GOAL_POSITION, p.goal);
+        for (const p of plan) await this.writeDXL(p.id, DXL3.PROFILE_VELOCITY, p.pv);
+        for (const p of plan) await this.writeDXL(p.id, DXL3.GOAL_POSITION, p.goal);
         return ids;
       }
       /**
@@ -2380,24 +2429,24 @@ var require_cm550 = __commonJS({
         const fresh = items.filter((it) => !this._ready.has(it.id));
         if (fresh.length) {
           const here = [];
-          for (const it of fresh) here.push({ id: it.id, value: await this.readDXL(it.id, DXL2.PRESENT_POSITION) });
-          await this.syncWriteDXL(DXL2.GOAL_POSITION, here);
-          await this.syncWriteDXL(DXL2.TORQUE_ENABLE, fresh.map((it) => ({ id: it.id, value: 1 })));
+          for (const it of fresh) here.push({ id: it.id, value: await this.readDXL(it.id, DXL3.PRESENT_POSITION) });
+          await this.syncWriteDXL(DXL3.GOAL_POSITION, here);
+          await this.syncWriteDXL(DXL3.TORQUE_ENABLE, fresh.map((it) => ({ id: it.id, value: 1 })));
           for (const it of fresh) {
             await this.ensureMode(it.id, [OP_MODE.POSITION, OP_MODE.EXTENDED_POSITION]);
             this._ready.add(it.id);
           }
-          for (const h of here) this._lastGoal.set(h.id, tickToDeg(h.value));
+          for (const h of here) this._lastGoal.set(h.id, tickToDeg2(h.value));
         }
         for (const it of items) {
-          if (!this._lastGoal.has(it.id)) this._lastGoal.set(it.id, tickToDeg(await this.readDXL(it.id, DXL2.PRESENT_POSITION)));
+          if (!this._lastGoal.has(it.id)) this._lastGoal.set(it.id, tickToDeg2(await this.readDXL(it.id, DXL3.PRESENT_POSITION)));
         }
-        await this.syncWriteDXL(DXL2.PROFILE_VELOCITY, items.map((it) => ({
+        await this.syncWriteDXL(DXL3.PROFILE_VELOCITY, items.map((it) => ({
           id: it.id,
           // 0.229 rpm units; 1 rpm = 6 deg/s
           value: clamp(Math.ceil(Math.abs(it.deg - this._lastGoal.get(it.id)) / secs / 6 / 0.229), 1, 32767)
         })));
-        await this.syncWriteDXL(DXL2.GOAL_POSITION, items.map((it) => ({ id: it.id, value: degToTick(it.deg) })));
+        await this.syncWriteDXL(DXL3.GOAL_POSITION, items.map((it) => ({ id: it.id, value: degToTick(it.deg) })));
         for (const it of items) this._lastGoal.set(it.id, it.deg);
       }
       /**
@@ -2422,7 +2471,7 @@ var require_cm550 = __commonJS({
         for (const id of list) {
           let err = 0;
           try {
-            err = await this.readDXL(id, DXL2.HARDWARE_ERROR);
+            err = await this.readDXL(id, DXL3.HARDWARE_ERROR);
           } catch (e) {
             err = 0;
           }
@@ -2433,25 +2482,25 @@ var require_cm550 = __commonJS({
           try {
             await this.request(id, P22.reboot(id));
           } catch (e) {
-            await this.writeCM(CM.DXL_TORQUE, 3);
+            await this.writeCM(CM2.DXL_TORQUE, 3);
             break;
           }
         }
         if (rebooted.length) await delay4(800);
         const here = [];
         for (const id of list) {
-          const value = await this.readDXL(id, DXL2.PRESENT_POSITION);
-          await this.writeDXL(id, DXL2.GOAL_POSITION, value);
+          const value = await this.readDXL(id, DXL3.PRESENT_POSITION);
+          await this.writeDXL(id, DXL3.GOAL_POSITION, value);
           let mode = this._modeCache[id];
-          if (typeof mode === "undefined") mode = this._modeCache[id] = await this.readDXL(id, DXL2.OPERATING_MODE);
+          if (typeof mode === "undefined") mode = this._modeCache[id] = await this.readDXL(id, DXL3.OPERATING_MODE);
           if (mode !== OP_MODE.POSITION && mode !== OP_MODE.EXTENDED_POSITION) {
             await this.ensureMode(id, [OP_MODE.POSITION, OP_MODE.EXTENDED_POSITION]);
           }
           here.push({ id, value });
         }
-        await this.syncWriteDXL(DXL2.TORQUE_ENABLE, list.map((id) => ({ id, value: 1 })));
+        await this.syncWriteDXL(DXL3.TORQUE_ENABLE, list.map((id) => ({ id, value: 1 })));
         this._ready = new Set(list);
-        this._lastGoal = new Map(here.map((h) => [h.id, tickToDeg(h.value)]));
+        this._lastGoal = new Map(here.map((h) => [h.id, tickToDeg2(h.value)]));
         const secs = clamp(Number(seconds) || 0, 0.2, 10);
         await this.moveTogether(list.map((id) => ({ id, deg: pose[id] !== void 0 ? Number(pose[id]) : 180 })), secs);
         await delay4(secs * 1e3 + 300);
@@ -2460,41 +2509,41 @@ var require_cm550 = __commonJS({
       }
       // ---- motion ----------------------------------------------------------
       playMotion(page) {
-        return this.writeCM(CM.MOTION_INDEX, clamp(Math.round(page), 1, 65532));
+        return this.writeCM(CM2.MOTION_INDEX, clamp(Math.round(page), 1, 65532));
       }
       stopMotion(how = MOTION_STOP.UNIT) {
-        return this.writeCM(CM.MOTION_INDEX, how);
+        return this.writeCM(CM2.MOTION_INDEX, how);
       }
       async waitMotionDone(timeoutMs = 6e4) {
         const start = Date.now();
         await delay4(100);
         while (Date.now() - start < timeoutMs) {
-          const playing = await this.readCM(CM.MOTION_STATUS);
+          const playing = await this.readCM(CM2.MOTION_STATUS);
           if (!playing) return;
           await delay4(50);
         }
       }
       // ---- buzzer ----------------------------------------------------------
       async playNote(index, seconds) {
-        await this.writeCM(CM.BUZZER_INDEX, clamp(Math.round(index), 0, 51));
-        await this.writeCM(CM.BUZZER_TIME, clamp(Math.round(seconds * 10), 1, 50));
+        await this.writeCM(CM2.BUZZER_INDEX, clamp(Math.round(index), 0, 51));
+        await this.writeCM(CM2.BUZZER_TIME, clamp(Math.round(seconds * 10), 1, 50));
       }
       async playMelody(index) {
-        await this.writeCM(CM.BUZZER_INDEX, clamp(Math.round(index), 0, 25));
-        await this.writeCM(CM.BUZZER_TIME, 255);
+        await this.writeCM(CM2.BUZZER_INDEX, clamp(Math.round(index), 0, 25));
+        await this.writeCM(CM2.BUZZER_TIME, 255);
       }
     };
     module.exports = {
       CM550Device,
       CM550_ID,
-      CM,
+      CM: CM2,
       MODULE,
       PORT: PORT2,
-      DXL: DXL2,
+      DXL: DXL3,
       OP_MODE,
       MOTION_STOP,
       degToTick,
-      tickToDeg,
+      tickToDeg: tickToDeg2,
       clamp,
       delay: delay4
     };
@@ -2544,12 +2593,12 @@ var require_extension = __commonJS({
   "../scratch-cm550/src/extension.js"(exports, module) {
     var {
       CM550Device,
-      CM,
+      CM: CM2,
       PORT: PORT2,
-      DXL: DXL2,
+      DXL: DXL3,
       OP_MODE,
       MOTION_STOP,
-      tickToDeg,
+      tickToDeg: tickToDeg2,
       clamp,
       delay: delay4
     } = require_cm550();
@@ -3157,7 +3206,7 @@ var require_extension = __commonJS({
             await this.device.stopMotion(MOTION_STOP.NOW);
             for (const id of Object.keys(this.device._modeCache)) {
               if (this.device._modeCache[id] === OP_MODE.VELOCITY) {
-                await this.device.writeDXL(Number(id), DXL2.GOAL_VELOCITY, 0);
+                await this.device.writeDXL(Number(id), DXL3.GOAL_VELOCITY, 0);
               }
             }
           } catch (e) {
@@ -3202,7 +3251,7 @@ var require_extension = __commonJS({
         dxlTorque(args) {
           const id = num3(args.ID);
           return this._guard(async () => {
-            await this.device.writeDXL(id, DXL2.TORQUE_ENABLE, this._onOff(args.ONOFF));
+            await this.device.writeDXL(id, DXL3.TORQUE_ENABLE, this._onOff(args.ONOFF));
           });
         }
         dxlMoveTo(args) {
@@ -3222,7 +3271,7 @@ var require_extension = __commonJS({
             for (const id of ids) {
               await this.device.ensureMode(id, [OP_MODE.POSITION, OP_MODE.EXTENDED_POSITION]);
             }
-            await this.device.syncWriteDXL(DXL2.GOAL_POSITION, ids.map((id, i) => ({
+            await this.device.syncWriteDXL(DXL3.GOAL_POSITION, ids.map((id, i) => ({
               id,
               value: Math.round(degs[i] / 360 * 4096)
             })));
@@ -3287,7 +3336,7 @@ var require_extension = __commonJS({
               const limit = await this.device.getVelocityLimit(ids[i]);
               items.push({ id: ids[i], value: limit * clamp(speeds[i], -100, 100) / 100 });
             }
-            await this.device.syncWriteDXL(DXL2.GOAL_VELOCITY, items);
+            await this.device.syncWriteDXL(DXL3.GOAL_VELOCITY, items);
           });
         }
         dxlStop(args) {
@@ -3295,10 +3344,10 @@ var require_extension = __commonJS({
           return this._guard(async () => {
             const mode = this.device._modeCache[id];
             if (mode === OP_MODE.VELOCITY) {
-              await this.device.writeDXL(id, DXL2.GOAL_VELOCITY, 0);
+              await this.device.writeDXL(id, DXL3.GOAL_VELOCITY, 0);
             } else {
-              const pos = await this.device.readDXL(id, DXL2.PRESENT_POSITION);
-              await this.device.writeDXL(id, DXL2.GOAL_POSITION, pos);
+              const pos = await this.device.readDXL(id, DXL3.PRESENT_POSITION);
+              await this.device.writeDXL(id, DXL3.GOAL_POSITION, pos);
             }
           });
         }
@@ -3308,11 +3357,11 @@ var require_extension = __commonJS({
           return this._guard(() => this.device.setOperatingMode(num3(args.ID), mode));
         }
         dxlLed(args) {
-          return this._guard(() => this.device.writeDXL(num3(args.ID), DXL2.LED, this._onOff(args.ONOFF)));
+          return this._guard(() => this.device.writeDXL(num3(args.ID), DXL3.LED, this._onOff(args.ONOFF)));
         }
         dxlAllTorque(args) {
           return this._guard(async () => {
-            await this.device.writeCM(CM.DXL_TORQUE, this._onOff(args.ONOFF) ? 2 : 1);
+            await this.device.writeCM(CM2.DXL_TORQUE, this._onOff(args.ONOFF) ? 2 : 1);
             await delay4(100);
           });
         }
@@ -3321,33 +3370,33 @@ var require_extension = __commonJS({
           return this._guard(async () => {
             switch (args.PROP) {
               case "velocity": {
-                const v = await this.device.readDXL(id, DXL2.PRESENT_VELOCITY);
+                const v = await this.device.readDXL(id, DXL3.PRESENT_VELOCITY);
                 return Math.round(v * 0.229 * 100) / 100;
               }
               case "load": {
-                const v = await this.device.readDXL(id, DXL2.PRESENT_LOAD);
+                const v = await this.device.readDXL(id, DXL3.PRESENT_LOAD);
                 return v / 10;
               }
               case "temperature":
-                return this.device.readDXL(id, DXL2.PRESENT_TEMPERATURE);
+                return this.device.readDXL(id, DXL3.PRESENT_TEMPERATURE);
               case "voltage": {
-                const v = await this.device.readDXL(id, DXL2.PRESENT_INPUT_VOLTAGE);
+                const v = await this.device.readDXL(id, DXL3.PRESENT_INPUT_VOLTAGE);
                 return v / 10;
               }
               case "model":
-                return this.device.readDXL(id, DXL2.MODEL_NUMBER);
+                return this.device.readDXL(id, DXL3.MODEL_NUMBER);
               case "error":
-                return this.device.readDXL(id, DXL2.HARDWARE_ERROR);
+                return this.device.readDXL(id, DXL3.HARDWARE_ERROR);
               case "position":
               default: {
-                const v = await this.device.readDXL(id, DXL2.PRESENT_POSITION);
-                return Math.round(tickToDeg(v) * 10) / 10;
+                const v = await this.device.readDXL(id, DXL3.PRESENT_POSITION);
+                return Math.round(tickToDeg2(v) * 10) / 10;
               }
             }
           }, 0);
         }
         dxlIsMoving(args) {
-          return this._guard(async () => Boolean(await this.device.readDXL(num3(args.ID), DXL2.MOVING)), false);
+          return this._guard(async () => Boolean(await this.device.readDXL(num3(args.ID), DXL3.MOVING)), false);
         }
         dxlScan() {
           return this._guard(async () => {
@@ -3464,13 +3513,13 @@ var require_extension = __commonJS({
         cmLedColor(args) {
           const mix = LED_MIX[args.COLOR] || LED_MIX.off;
           return this._guard(async () => {
-            await this.device.writeCM(CM.LED_RED, mix.rgb[0]);
-            await this.device.writeCM(CM.LED_GREEN, mix.rgb[1]);
-            await this.device.writeCM(CM.LED_BLUE, mix.rgb[2]);
+            await this.device.writeCM(CM2.LED_RED, mix.rgb[0]);
+            await this.device.writeCM(CM2.LED_GREEN, mix.rgb[1]);
+            await this.device.writeCM(CM2.LED_BLUE, mix.rgb[2]);
           });
         }
         cmLed(args) {
-          const reg = { red: CM.LED_RED, green: CM.LED_GREEN, blue: CM.LED_BLUE }[args.COLOR] || CM.LED_RED;
+          const reg = { red: CM2.LED_RED, green: CM2.LED_GREEN, blue: CM2.LED_BLUE }[args.COLOR] || CM2.LED_RED;
           return this._guard(() => this.device.writeCM(reg, this._onOff(args.ONOFF)));
         }
         cmBuzzerNote(args) {
@@ -3485,36 +3534,36 @@ var require_extension = __commonJS({
         }
         cmButton(args) {
           return this._guard(async () => {
-            const s = await this.device.readCM(CM.BUTTON_STATUS);
+            const s = await this.device.readCM(CM2.BUTTON_STATUS);
             return args.BUTTON === "mode" ? s === 2 || s === 3 : s === 1 || s === 3;
           }, false);
         }
         cmTilt(args) {
-          const reg = { roll: CM.ROLL, pitch: CM.PITCH, yaw: CM.YAW }[args.AXIS] || CM.ROLL;
+          const reg = { roll: CM2.ROLL, pitch: CM2.PITCH, yaw: CM2.YAW }[args.AXIS] || CM2.ROLL;
           return this._guard(async () => await this.device.readCM(reg) / 100, 0);
         }
         cmGyro(args) {
-          const reg = { x: CM.GYRO_X, y: CM.GYRO_Y, z: CM.GYRO_Z }[String(args.AXIS).toLowerCase()] || CM.GYRO_X;
+          const reg = { x: CM2.GYRO_X, y: CM2.GYRO_Y, z: CM2.GYRO_Z }[String(args.AXIS).toLowerCase()] || CM2.GYRO_X;
           return this._guard(async () => await this.device.readCM(reg) / 100, 0);
         }
         cmAccel(args) {
-          const reg = { x: CM.ACC_X, y: CM.ACC_Y, z: CM.ACC_Z }[String(args.AXIS).toLowerCase()] || CM.ACC_X;
+          const reg = { x: CM2.ACC_X, y: CM2.ACC_Y, z: CM2.ACC_Z }[String(args.AXIS).toLowerCase()] || CM2.ACC_X;
           return this._guard(async () => await this.device.readCM(reg) / 100, 0);
         }
         cmVoltage() {
-          return this._guard(async () => await this.device.readCM(CM.VOLTAGE) / 10, 0);
+          return this._guard(async () => await this.device.readCM(CM2.VOLTAGE) / 10, 0);
         }
         cmTemperature() {
-          return this._guard(() => this.device.readCM(CM.TEMPERATURE), 0);
+          return this._guard(() => this.device.readCM(CM2.TEMPERATURE), 0);
         }
         cmSoundCount() {
-          return this._guard(() => this.device.readCM(CM.SOUND_COUNT), 0);
+          return this._guard(() => this.device.readCM(CM2.SOUND_COUNT), 0);
         }
         cmSoundReset() {
-          return this._guard(() => this.device.writeCM(CM.SOUND_COUNT, 0));
+          return this._guard(() => this.device.writeCM(CM2.SOUND_COUNT, 0));
         }
         cmDxlPower(args) {
-          return this._guard(() => this.device.writeCM(CM.DXL_POWER, this._onOff(args.ONOFF)));
+          return this._guard(() => this.device.writeCM(CM2.DXL_POWER, this._onOff(args.ONOFF)));
         }
         // ------------------------------------------------------------------
         // 5-pin ports
@@ -3573,16 +3622,16 @@ var require_extension = __commonJS({
           return this._guard(() => this.device.stopMotion(how));
         }
         motionSpeed(args) {
-          return this._guard(() => this.device.writeCM(CM.MOTION_SPEED, clamp(num3(args.PERCENT), 20, 200)));
+          return this._guard(() => this.device.writeCM(CM2.MOTION_SPEED, clamp(num3(args.PERCENT), 20, 200)));
         }
         motionNext(args) {
-          return this._guard(() => this.device.writeCM(CM.MOTION_NEXT_PAGE, clamp(num3(args.PAGE), 0, 65535)));
+          return this._guard(() => this.device.writeCM(CM2.MOTION_NEXT_PAGE, clamp(num3(args.PAGE), 0, 65535)));
         }
         motionIsPlaying() {
-          return this._guard(async () => Boolean(await this.device.readCM(CM.MOTION_STATUS)), false);
+          return this._guard(async () => Boolean(await this.device.readCM(CM2.MOTION_STATUS)), false);
         }
         motionCount() {
-          return this._guard(() => this.device.readCM(CM.MOTION_COUNT), 0);
+          return this._guard(() => this.device.readCM(CM2.MOTION_COUNT), 0);
         }
         // ------------------------------------------------------------------
         // advanced
@@ -3599,6 +3648,53 @@ var require_extension = __commonJS({
       return Scratch3CM550Blocks;
     };
     module.exports = { createExtension: createExtension2, EXTENSION_ID };
+  }
+});
+
+// src/sim3d/gait.js
+var gait_exports = {};
+__export(gait_exports, {
+  GAIT_PARAMS: () => GAIT_PARAMS,
+  defaultGait: () => defaultGait,
+  gaitTargets: () => gaitTargets,
+  standTargets: () => standTargets
+});
+var GAIT_PARAMS, defaultGait, gaitTargets, standTargets;
+var init_gait = __esm({
+  "src/sim3d/gait.js"() {
+    GAIT_PARAMS = [
+      { key: "period", name: "한 걸음 주기 (초)", min: 0.35, max: 1.2, step: 0.01, def: 0.35 },
+      { key: "height", name: "무릎 굽힘 (낮게 서기)", min: 0.05, max: 0.6, step: 0.01, def: 0.086 },
+      { key: "sway", name: "옆으로 흔들기", min: 0.06, max: 0.35, step: 0.01, def: 0.061 },
+      { key: "lift", name: "발 들기", min: 0.12, max: 0.5, step: 0.01, def: 0.121 },
+      { key: "stride", name: "보폭", min: 0, max: 0.4, step: 0.01, def: 0.224 },
+      { key: "liftPhase", name: "발 드는 때 (위상)", min: -3.14, max: 3.14, step: 0.01, def: -2.591 },
+      { key: "arm", name: "팔 흔들기", min: 0, max: 0.6, step: 0.01, def: 0.51 }
+    ];
+    defaultGait = () => Object.fromEntries(GAIT_PARAMS.map((p) => [p.key, p.def]));
+    gaitTargets = (g, t, k = 1) => {
+      const ph = 2 * Math.PI * t / g.period;
+      const roll = g.sway * Math.sin(ph) * k;
+      const out = {};
+      for (const [s, sg] of [["R", 1], ["L", -1]]) {
+        const lift = g.lift * Math.max(0, Math.sin(ph + g.liftPhase + (s === "L" ? Math.PI : 0))) * k;
+        const step = g.stride * Math.cos(ph) * sg * k;
+        out[`${s}_hip_roll`] = roll;
+        out[`${s}_ankle_roll`] = -roll;
+        out[`${s}_hip_pitch`] = -g.height * k - lift + step;
+        out[`${s}_knee`] = g.height * k + lift;
+        out[`${s}_shoulder_pitch`] = -g.arm * Math.cos(ph) * sg * k;
+        out[`${s}_shoulder_roll`] = 0;
+      }
+      return out;
+    };
+    standTargets = () => {
+      const out = {};
+      for (const s of ["R", "L"]) {
+        for (const j of ["hip_roll", "ankle_roll", "hip_pitch", "knee", "shoulder_pitch", "shoulder_roll"]) out[`${s}_${j}`] = 0;
+      }
+      return out;
+    };
   }
 });
 
@@ -3671,7 +3767,7 @@ var require_sim_robot = __commonJS({
       146: 1
     };
     var fault = () => typeof window !== "undefined" && window.__dmSimFault || "";
-    var tickToDeg = (t) => Math.round(t / 4096 * 3600) / 10;
+    var tickToDeg2 = (t) => Math.round(t / 4096 * 3600) / 10;
     var onOff = (v) => v ? "켜기" : "끄기";
     var signed2 = (v, size) => v >= 2 ** (size * 8 - 1) ? v - 2 ** (size * 8) : v;
     var SimTransport2 = class {
@@ -3885,6 +3981,26 @@ var require_sim_robot = __commonJS({
             return wasPlaying ? this.onAction("모션 정지") : void 0;
           }
           if (v === 0) return void 0;
+          if (this.physics) {
+            const ph = this.physics;
+            const { gaitTargets: gaitTargets2, defaultGait: defaultGait2 } = (init_gait(), __toCommonJS(gait_exports));
+            const g = defaultGait2();
+            const t0 = ph.data.time;
+            this.motionUntil = Date.now() + 3e3;
+            ph.setController((time) => {
+              const t = time - t0;
+              if (t > 2.5 || Date.now() > this.motionUntil) {
+                const st = gaitTargets2(g, 0, 0);
+                for (const j in st) ph.setGoalRad(j, st[j]);
+                ph.setController(null);
+                return;
+              }
+              const tg = gaitTargets2(g, t, Math.min(1, t / 0.6, Math.max(0, (2.5 - t) / 0.6)));
+              for (const j in tg) ph.setGoalRad(j, tg[j]);
+            });
+            this.last.delete("motion");
+            return this._report("motion", v, `모션 ${v}번 재생 (3D 로봇에는 공식 모션이 없어 기본 걸음 2.5초로 대신)`);
+          }
           this.motionUntil = Date.now() + 1500;
           this.last.delete("motion");
           return this._report("motion", v, `모션 ${v}번 재생 (1.5초)`);
@@ -3947,7 +4063,7 @@ var require_sim_robot = __commonJS({
           this.moves.set(id, { from, to, start: Date.now(), end: Date.now() + ms });
           this.regs.set(`${id}:132`, to);
           this.last.delete(`p${id}`);
-          return this._report(`p${id}`, to, `다이나믹셀 ${id} → ${tickToDeg(to)}°`);
+          return this._report(`p${id}`, to, `다이나믹셀 ${id} → ${tickToDeg2(to)}°`);
         }
         if (addr === 102) {
           const limit = this.regs.get(`${id}:38`) || 1;
@@ -3979,6 +4095,12 @@ var require_sim_robot = __commonJS({
           if (!exists(id)) return Promise.resolve();
           if (this.physics) this.physics.setTorque(id, 0);
           this._reply(id);
+          return Promise.resolve();
+        }
+        if (inst === P22.INST.SYNC_READ) {
+          const addr = P22.fromLE(params, 0, 2);
+          const size = P22.fromLE(params, 2, 2);
+          params.slice(4).filter(exists).forEach((i) => this._reply(i, this._readBlock(i, addr, size)));
           return Promise.resolve();
         }
         if (inst === P22.INST.PING) {
@@ -6557,35 +6679,8 @@ var AIPanel = class {
   }
 };
 
-// src/sim3d/gait.js
-var GAIT_PARAMS = [
-  { key: "period", name: "한 걸음 주기 (초)", min: 0.35, max: 1.2, step: 0.01, def: 0.35 },
-  { key: "height", name: "무릎 굽힘 (낮게 서기)", min: 0.05, max: 0.6, step: 0.01, def: 0.086 },
-  { key: "sway", name: "옆으로 흔들기", min: 0.06, max: 0.35, step: 0.01, def: 0.061 },
-  { key: "lift", name: "발 들기", min: 0.12, max: 0.5, step: 0.01, def: 0.121 },
-  { key: "stride", name: "보폭", min: 0, max: 0.4, step: 0.01, def: 0.224 },
-  { key: "liftPhase", name: "발 드는 때 (위상)", min: -3.14, max: 3.14, step: 0.01, def: -2.591 },
-  { key: "arm", name: "팔 흔들기", min: 0, max: 0.6, step: 0.01, def: 0.51 }
-];
-var defaultGait = () => Object.fromEntries(GAIT_PARAMS.map((p) => [p.key, p.def]));
-var gaitTargets = (g, t, k = 1) => {
-  const ph = 2 * Math.PI * t / g.period;
-  const roll = g.sway * Math.sin(ph) * k;
-  const out = {};
-  for (const [s, sg] of [["R", 1], ["L", -1]]) {
-    const lift = g.lift * Math.max(0, Math.sin(ph + g.liftPhase + (s === "L" ? Math.PI : 0))) * k;
-    const step = g.stride * Math.cos(ph) * sg * k;
-    out[`${s}_hip_roll`] = roll;
-    out[`${s}_ankle_roll`] = -roll;
-    out[`${s}_hip_pitch`] = -g.height * k - lift + step;
-    out[`${s}_knee`] = g.height * k + lift;
-    out[`${s}_shoulder_pitch`] = -g.arm * Math.cos(ph) * sg * k;
-    out[`${s}_shoulder_roll`] = 0;
-  }
-  return out;
-};
-
 // src/ai/ai-extension.js
+init_gait();
 var AI_EXTENSION_ID = "dmai";
 var SKELETON_OPCODES = ["skelVisible", "skelAngle", "skelPos", "skelFollow", "skelSwitch"];
 var createAIExtension = ({ ArgumentType, BlockType }, engine, { log: log2, isRunning, tracker, device, walker: walker2, simStore: simStore2 } = {}) => {
@@ -6857,6 +6952,9 @@ var createAIExtension = ({ ArgumentType, BlockType }, engine, { log: log2, isRun
   }
   return DMAIBlocks;
 };
+
+// src/sim3d/walker.js
+init_gait();
 
 // src/sim3d/policy.js
 var OBS_NAMES = ["roll", "pitch", "gx", "gy", "sin", "cos"];
@@ -8680,7 +8778,11 @@ var buildMJCF = (params = {}) => {
 `;
 };
 
+// src/sim3d/sim-panel.js
+init_gait();
+
 // src/sim3d/learn.js
+init_gait();
 var REWARDS = [
   { key: "forward", name: "앞으로 간 거리 (m당)", def: 100 },
   { key: "side", name: "옆으로 벗어남 (m당 감점)", def: 30 },
@@ -8799,6 +8901,165 @@ var GaitLearner = class {
   stop() {
     this.running = false;
   }
+};
+
+// src/sim3d/motion-check.js
+var { DXL: DXL2, CM } = require_cm550();
+var DEG2 = 180 / Math.PI;
+var tickToDeg = (t) => t / 4096 * 360;
+var MotionRecorder = class {
+  constructor({ device, getJointMap }) {
+    this.device = device;
+    this.getJointMap = getJointMap;
+    this.running = false;
+  }
+  /**
+   * @param {number} page motion page stored in the CM-550
+   * @param {object} [o]
+   * @param {number} [o.maxSeconds] stop recording after this long
+   * @param {Function} [o.onFrame] (frame, rec) after each sample
+   * @returns {Promise<{page, ids, frames: Array<{t, deg: Object<number, number>}>, seconds, syncRead}>}
+   */
+  async record(page, { maxSeconds = 20, onFrame } = {}) {
+    const dev = this.device;
+    if (!dev.connected) throw new Error("먼저 로봇을 연결하세요.");
+    const ids = this.getJointMap().map((j) => j.id);
+    const rec = { page, ids, frames: [], seconds: 0, syncRead: false };
+    const sample = async (t02) => {
+      const pos = await dev.syncReadDXL(DXL2.PRESENT_POSITION, ids);
+      const deg2 = {};
+      for (const id of ids) deg2[id] = Math.round(tickToDeg(pos.get(id)) * 10) / 10;
+      const frame = { t: Math.round(performance.now() - t02) / 1e3, deg: deg2 };
+      rec.frames.push(frame);
+      if (onFrame) onFrame(frame, rec);
+    };
+    this.running = true;
+    const t0 = performance.now();
+    await sample(t0);
+    await dev.playMotion(page);
+    let idle = 0;
+    try {
+      while (this.running) {
+        await sample(t0);
+        const playing = await dev.readCM(CM.MOTION_STATUS);
+        const t = (performance.now() - t0) / 1e3;
+        if (!playing && t > 0.4) idle++;
+        if (idle >= 3 || t > maxSeconds) break;
+      }
+      if (!this.running) await dev.stopMotion();
+    } finally {
+      this.running = false;
+    }
+    rec.seconds = rec.frames.length ? rec.frames[rec.frames.length - 1].t : 0;
+    rec.syncRead = Boolean(dev.syncReadWorks);
+    return rec;
+  }
+  stop() {
+    this.running = false;
+  }
+};
+var summarize = (rec, jointMap) => jointMap.map((j) => {
+  const v = rec.frames.map((f2) => f2.deg[j.id]).filter((x) => typeof x === "number");
+  const min = Math.min(...v);
+  const max = Math.max(...v);
+  return { id: j.id, name: j.name, joint: j.joint, start: v[0], min, max, range: max - min };
+});
+var poseAt = (rec, t) => {
+  const f2 = rec.frames;
+  if (!f2.length) return {};
+  if (t <= f2[0].t) return f2[0].deg;
+  for (let i = 1; i < f2.length; i++) {
+    if (f2[i].t >= t) {
+      const a = f2[i - 1];
+      const b = f2[i];
+      const k = (t - a.t) / Math.max(1e-6, b.t - a.t);
+      const out = {};
+      for (const id of Object.keys(b.deg)) out[id] = a.deg[id] + (b.deg[id] - a.deg[id]) * k;
+      return out;
+    }
+  }
+  return f2[f2.length - 1].deg;
+};
+var toJointRad = (deg2, jointMap) => {
+  const out = {};
+  for (const j of jointMap) {
+    if (typeof deg2[j.id] === "number") out[j.joint] = j.sign * (deg2[j.id] - j.center) / DEG2;
+  }
+  return out;
+};
+var keyPoses = (rec, step = 0.12) => {
+  const end = rec.seconds;
+  const out = [];
+  let prev = 0;
+  for (let t = step; t < end + step / 2; t += step) {
+    const tt = Math.min(t, end);
+    const deg2 = poseAt(rec, tt);
+    out.push({
+      secs: Math.round((tt - prev) * 1e3) / 1e3,
+      joints: rec.ids.map((id) => ({ id, deg: Math.round(deg2[id] * 10) / 10 }))
+    });
+    prev = tt;
+  }
+  return out;
+};
+
+// src/sim3d/gait-blocks.js
+init_gait();
+var FRAMES = 8;
+var VAR_ID = "dm-walk-slow";
+var VAR_NAME = "느리게";
+var esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+var r1 = (v) => Math.round(v * 10) / 10;
+var toDegrees = (targets, jointMap) => jointMap.map((j) => ({
+  id: j.id,
+  joint: j.joint,
+  name: j.name,
+  deg: r1(j.center + j.sign * (targets[j.joint] || 0) * 180 / Math.PI)
+})).sort((a, b) => a.id - b.id);
+var stanceTargets = (g) => {
+  const out = {};
+  for (const s of ["R", "L"]) {
+    out[`${s}_hip_pitch`] = -g.height;
+    out[`${s}_knee`] = g.height;
+  }
+  return out;
+};
+var stepFrames = (g, frames = FRAMES, k = 1) => Array.from(
+  { length: frames },
+  (_, i) => gaitTargets(g, (i + 1) * g.period / frames, k)
+);
+var num2 = (v) => `<shadow type="math_number"><field name="NUM">${v}</field></shadow>`;
+var slowVar = `<block type="data_variable"><field name="VARIABLE" id="${VAR_ID}" variabletype="">${VAR_NAME}</field></block>`;
+var timesSlow = (secs) => `<block type="operator_multiply"><value name="NUM1">${num2(secs)}</value><value name="NUM2">${num2(1)}${slowVar}</value></block>`;
+var comment = (text2) => `<comment pinned="false" h="70" w="260">${esc(text2)}</comment>`;
+var goals = (joints) => joints.reduceRight((next, j) => `<block type="cm550_dxlGoal"><value name="ID"><shadow type="cm550_menu_dxlId"><field name="dxlId">${j.id}</field></shadow></value><value name="DEG">${num2(j.deg)}</value>${next ? `<next>${next}</next>` : ""}</block>`, "");
+var group = (joints, secsXML, note, next) => `<block type="cm550_dxlTogether">${note ? comment(note) : ""}<value name="SECS">${num2(1)}${secsXML}</value><statement name="SUBSTACK">${goals(joints)}</statement>${next ? `<next>${next}</next>` : ""}</block>`;
+var gaitProgramXML = (g, jointMap, { steps = 20, x = 40, y = 40 } = {}) => {
+  const dt = Math.round(g.period / FRAMES * 1e3) / 1e3;
+  const stance = toDegrees(stanceTargets(g), jointMap);
+  const straight = toDegrees({}, jointMap);
+  const frames = stepFrames(g).map((t) => toDegrees(t, jointMap));
+  let loop = "";
+  for (let i = frames.length - 1; i >= 0; i--) {
+    loop = group(frames[i], timesSlow(dt), i === 0 ? `한 걸음(${g.period.toFixed(3)}초)을 자세 ${FRAMES}개로 나눴습니다. 자세마다 모터 ${jointMap.length}개의 목표 각도를 ${dt}초 × 느리게 동안 함께 움직입니다.` : "", loop);
+  }
+  const small = stepFrames(g, FRAMES, 0.5).map((t) => toDegrees(t, jointMap));
+  const chain = (list, note, next) => list.reduceRight((acc, joints, i) => group(joints, timesSlow(dt), i === 0 ? note : "", acc), next);
+  const repeat = `<block type="control_repeat">${comment(`걸음 학습으로 찾은 걸음 · ${steps}걸음`)}<value name="TIMES"><shadow type="math_whole_number"><field name="NUM">${steps}</field></shadow></value><statement name="SUBSTACK">${loop}</statement><next>${group(stance, timesSlow(0.5), "", group(straight, "", "똑바로 서기"))}</next></block>`;
+  const setSlow = `<block type="data_setvariableto">` + comment("실제 로봇은 1.5~2로 키워 천천히 시작하세요 (모든 시간에 곱해집니다).") + `<field name="VARIABLE" id="${VAR_ID}" variabletype="">${VAR_NAME}</field><value name="VALUE"><shadow type="text"><field name="TEXT">1</field></shadow></value><next><block type="cm550_dxlPrepare">` + comment("걸음 학습과 같은 조건에서 시작: 오류가 난 모터는 다시 시작하고, 토크를 한 번에 켠 뒤 모두 180°(바로 서기)로.") + `<value name="SECS">${num2(2)}</value><next>${group(
+    stance,
+    timesSlow(1),
+    "무릎을 굽힌 출발 자세",
+    chain(small, "출발: 절반 크기로 한 걸음 (갑자기 크게 걸으면 넘어지기 쉽습니다)", repeat)
+  )}</next></block></next></block>`;
+  const xml = `<xml><variables><variable type="" id="${VAR_ID}" islocal="false" iscloud="false">${VAR_NAME}</variable></variables><block type="event_whenflagclicked" x="${Math.round(x)}" y="${Math.round(y)}"><next>${setSlow}</next></block></xml>`;
+  return { xml, frames: FRAMES, dt, steps, blocks: (2 * frames.length + 3) * (jointMap.length + 1) };
+};
+var posesProgramXML = (poses, { x = 40, y = 40, title = "" } = {}) => {
+  const chain = poses.reduceRight((acc, p, i) => group(p.joints, timesSlow(p.secs), i === 0 ? title : "", acc), "");
+  const setSlow = `<block type="data_setvariableto">` + comment("실제 로봇에서 처음에는 1.5~2로 키워 천천히 확인하세요 (모든 시간에 곱해집니다).") + `<field name="VARIABLE" id="${VAR_ID}" variabletype="">${VAR_NAME}</field><value name="VALUE"><shadow type="text"><field name="TEXT">1</field></shadow></value><next><block type="cm550_dxlPrepare"><value name="SECS">${num2(2)}</value>${chain ? `<next>${chain}</next>` : ""}</block></next></block>`;
+  const xml = `<xml><variables><variable type="" id="${VAR_ID}" islocal="false" iscloud="false">${VAR_NAME}</variable></variables><block type="event_whenflagclicked" x="${Math.round(x)}" y="${Math.round(y)}"><next>${setSlow}</next></block></xml>`;
+  return { xml, poses: poses.length };
 };
 
 // src/sim3d/sim-panel.js
@@ -8934,6 +9195,34 @@ var SimPanel = class {
     r12.append(this.connBtn, this.resetBtn, this.pushBtn, this.pauseBtn, this.partsBtn);
     c1.append(r12);
     body.append(c1);
+    const cm = el5("section", "mon-card");
+    cm.append(el5("h3", "", "예제 모션 확인 (실제 로봇의 공식 모션)"));
+    cm.append(el5("p", "mon-note", "CM-550에 들어 있는 모션(R+ Task의 MAX-E1 예제)을 실행하면서 관절 12개의 각도를 기록합니다. 기록을 3D 로봇에 재생해서 앞으로 잘 걸으면 ID·방향 설정이 맞는 것입니다. 블록으로 바꿔 보거나 파일로 저장할 수도 있습니다. 로봇을 바닥에 내려놓고 주위를 비운 뒤 실행하고, 넘어질 것 같으면 [멈추기]를 누르세요."));
+    const rm = el5("div", "tp-row");
+    this.motionPage = 1;
+    rm.append(el5("span", "tp-label", "모션 페이지"), numInput(this.motionPage, 1, (v) => {
+      this.motionPage = Math.max(1, Math.round(v));
+    }, 56));
+    this.recBtn = button3("tp-btn tp-primary", "▶ 실행하며 기록", () => this.recordMotion());
+    this.recStopBtn = button3("tp-btn", "■ 멈추기", () => this.recorder && this.recorder.stop());
+    this.replayBtn = button3("tp-btn", "3D로 재생", () => this.replayMotion(), "기록한 각도를 지금의 ID·방향 설정으로 3D 로봇에 그대로 줍니다");
+    this.recBlockBtn = button3("tp-btn", "블록으로 만들기", () => this.motionBlocks());
+    this.recSaveBtn = button3("tp-btn", "기록 저장", () => this.saveMotion());
+    const recFile = el5("input", "sim-rec-file");
+    recFile.type = "file";
+    recFile.accept = ".json,application/json";
+    recFile.hidden = true;
+    recFile.addEventListener("change", () => {
+      this.loadMotion(recFile.files[0]);
+      recFile.value = "";
+    });
+    this.recLoadBtn = button3("tp-btn", "기록 불러오기", () => recFile.click());
+    rm.append(this.recBtn, this.recStopBtn, this.replayBtn, this.recBlockBtn, this.recSaveBtn, this.recLoadBtn, recFile);
+    cm.append(rm);
+    this.recInfo = el5("div", "sim-info", "아직 기록이 없습니다.");
+    this.recTable = el5("table", "sim-table");
+    cm.append(this.recInfo, this.recTable);
+    body.append(cm);
     const c2 = el5("section", "mon-card");
     c2.append(el5("h3", "", "2. 걸음 학습 (시뮬레이터 속에서 스스로 찾기)"));
     c2.append(el5("p", "mon-note", "걸음은 숫자 7개로 정해집니다. [학습 시작]을 누르면 시뮬레이터가 수백 가지 걸음을 시험하고, 점수가 높은 걸음 근처를 다시 시험하며 점점 좋아집니다. 점수를 어떻게 줄지(보상)는 여러분이 정합니다."));
@@ -9460,6 +9749,119 @@ var SimPanel = class {
       this.log(`⚠ ${e.message || e}`, "err");
     }
   }
+  // ---- 예제 모션 확인 ------------------------------------------------------------------
+  async recordMotion() {
+    if (this.recorder && this.recorder.running) return;
+    if (!this.device.connected) {
+      this.log("먼저 실제 로봇(USB/블루투스)을 연결하세요. 3D 가상 로봇에는 공식 모션이 들어 있지 않습니다.", "warn");
+      return;
+    }
+    this.recorder = new MotionRecorder({ device: this.device, getJointMap: () => this.jointMap });
+    this._status();
+    const page = this.motionPage;
+    this.log(`모션 ${page}번을 실행하며 기록합니다…`);
+    try {
+      const rec = await this.recorder.record(page, { onFrame: (f2, r) => {
+        this.recInfo.textContent = `모션 ${page}번 기록 중 · ${f2.t.toFixed(1)}초 · ${r.frames.length}개`;
+      } });
+      this.motionRec = rec;
+      this._showMotion();
+      this.log(`모션 ${page}번 기록 끝: ${rec.seconds.toFixed(1)}초, ${rec.frames.length}개 (초당 ${(rec.frames.length / Math.max(0.1, rec.seconds)).toFixed(0)}번${rec.syncRead ? ", 한꺼번에 읽기" : ", 하나씩 읽기"}).`, "ok");
+    } catch (e) {
+      this.log(`⚠ 모션 기록: ${e.message || e}`, "err");
+    }
+    this._status();
+  }
+  _showMotion() {
+    const rec = this.motionRec;
+    if (!rec) return;
+    const sum = summarize(rec, this.jointMap);
+    const moved = sum.filter((r) => r.range > 3);
+    this.recInfo.textContent = `모션 ${rec.page}번 · ${rec.seconds.toFixed(1)}초 · 기록 ${rec.frames.length}개 · 움직인 관절 ${moved.length}개${moved.length ? ` (${moved.map((r) => r.id).join(", ")})` : " — 모션이 실행되지 않았거나 빈 페이지입니다"}`;
+    const f2 = (v) => Number.isFinite(v) ? v.toFixed(1) : "-";
+    this.recTable.innerHTML = "<thead><tr><th>ID</th><th>관절</th><th>시작</th><th>최소</th><th>최대</th><th>움직임</th></tr></thead>";
+    const tb = el5("tbody");
+    for (const r of sum) {
+      const tr = el5("tr");
+      for (const v of [r.id, r.name, f2(r.start), f2(r.min), f2(r.max), f2(r.range)]) tr.append(el5("td", "sim-num", String(v)));
+      tb.append(tr);
+    }
+    this.recTable.append(tb);
+  }
+  async replayMotion() {
+    const rec = this.motionRec;
+    if (!rec) {
+      this.log("먼저 모션을 기록하거나 기록 파일을 불러오세요.", "warn");
+      return;
+    }
+    try {
+      const ph = await this._ensureSim();
+      this.walker.stop();
+      ph.reset();
+      for (const j of this.jointMap) {
+        ph.setTorque(j.id, 1);
+        ph.setProfile(j.id, 0);
+      }
+      const map = this.jointMap;
+      const t0 = ph.data.time;
+      const lead = 0.6;
+      const first = toJointRad(rec.frames[0].deg, map);
+      this.log(`3D 로봇에 모션 ${rec.page}번 기록을 재생합니다 (${rec.seconds.toFixed(1)}초).`);
+      await new Promise((resolve) => {
+        ph.setController((time) => {
+          const t2 = time - t0;
+          if (t2 < lead) {
+            for (const j in first) ph.setGoalRad(j, first[j] * (t2 / lead));
+            return;
+          }
+          const tt = t2 - lead;
+          if (tt > rec.seconds + 1) {
+            ph.setController(null);
+            resolve();
+            return;
+          }
+          const q = toJointRad(poseAt(rec, Math.min(tt, rec.seconds)), map);
+          for (const j in q) ph.setGoalRad(j, q[j]);
+        });
+      });
+      const t = ph.torso;
+      this.log(
+        `3D 재생 끝: 앞으로 ${(t.x * 100).toFixed(0)} cm, 옆으로 ${(t.y * 100).toFixed(0)} cm, ${ph.fallen ? "넘어졌습니다" : "서 있습니다"}. (공식 걷기 모션이 3D에서도 앞으로 걸으면 ID·방향 설정이 맞습니다)`,
+        ph.fallen ? "warn" : "ok"
+      );
+    } catch (e) {
+      this.log(`⚠ 3D 재생: ${e.message || e}`, "err");
+    }
+  }
+  motionBlocks() {
+    const rec = this.motionRec;
+    if (!rec || !this.insertXML) return;
+    const poses = keyPoses(rec, 0.12);
+    const n = this.insertXML((x, y) => posesProgramXML(poses, {
+      x,
+      y,
+      title: `CM-550 모션 ${rec.page}번을 기록한 자세 ${poses.length}개 (약 0.12초마다)`
+    }).xml);
+    if (n !== false) this.log(`모션 ${rec.page}번을 블록으로 넣었습니다: 자세 ${poses.length}개, 자세마다 모터 ${rec.ids.length}개.`, "ok");
+  }
+  saveMotion() {
+    const rec = this.motionRec;
+    if (!rec || !this.saveText) return;
+    this.saveText(`MAX-E1-motion-${rec.page}.json`, JSON.stringify(Object.assign({ format: "dm-motion-1" }, rec)));
+  }
+  async loadMotion(file) {
+    if (!file) return;
+    try {
+      const rec = JSON.parse(await file.text());
+      if (!rec || !Array.isArray(rec.frames) || !rec.frames.length || !Array.isArray(rec.ids)) throw new Error("모션 기록 파일이 아닙니다.");
+      this.motionRec = rec;
+      this._showMotion();
+      this.log(`모션 기록을 불러왔습니다: 페이지 ${rec.page}, ${rec.frames.length}개.`, "ok");
+    } catch (e) {
+      this.log(`⚠ 모션 기록 파일: ${e.message || e}`, "err");
+    }
+    this._status();
+  }
   makeBlocks(detailed) {
     if (this.addWalkScript) this.addWalkScript(detailed);
   }
@@ -9498,6 +9900,10 @@ var SimPanel = class {
     if (this.view) this.partsBtn.textContent = this.view.showParts ? "단순 도형으로 보기" : "부품 모양으로 보기";
     this.previewBtn.disabled = learning;
     this.modeSel.disabled = learning;
+    const recording = Boolean(this.recorder && this.recorder.running);
+    this.recBtn.disabled = recording;
+    this.recStopBtn.disabled = !recording;
+    for (const b of [this.replayBtn, this.recBlockBtn, this.recSaveBtn]) b.disabled = !this.motionRec || recording;
     if (!learning) for (const p of GAIT_PARAMS) this.gaitCells[p.key].textContent = this.gait[p.key].toFixed(2);
     const pol = this.store.policy;
     this.policyInfo.textContent = pol ? `불러온 정책: ${pol.name || "정책"} · 신경망 ${pol.layers.map((l) => l.W.length).join("-")} · 학습 점수 ${pol.score !== void 0 ? Number(pol.score).toFixed(1) : "?"}` : "정책이 없습니다.";
@@ -9505,58 +9911,6 @@ var SimPanel = class {
     this.policyClear.disabled = !pol;
     this._drawChart();
   }
-};
-
-// src/sim3d/gait-blocks.js
-var FRAMES = 8;
-var VAR_ID = "dm-walk-slow";
-var VAR_NAME = "느리게";
-var esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-var r1 = (v) => Math.round(v * 10) / 10;
-var toDegrees = (targets, jointMap) => jointMap.map((j) => ({
-  id: j.id,
-  joint: j.joint,
-  name: j.name,
-  deg: r1(j.center + j.sign * (targets[j.joint] || 0) * 180 / Math.PI)
-})).sort((a, b) => a.id - b.id);
-var stanceTargets = (g) => {
-  const out = {};
-  for (const s of ["R", "L"]) {
-    out[`${s}_hip_pitch`] = -g.height;
-    out[`${s}_knee`] = g.height;
-  }
-  return out;
-};
-var stepFrames = (g, frames = FRAMES, k = 1) => Array.from(
-  { length: frames },
-  (_, i) => gaitTargets(g, (i + 1) * g.period / frames, k)
-);
-var num2 = (v) => `<shadow type="math_number"><field name="NUM">${v}</field></shadow>`;
-var slowVar = `<block type="data_variable"><field name="VARIABLE" id="${VAR_ID}" variabletype="">${VAR_NAME}</field></block>`;
-var timesSlow = (secs) => `<block type="operator_multiply"><value name="NUM1">${num2(secs)}</value><value name="NUM2">${num2(1)}${slowVar}</value></block>`;
-var comment = (text2) => `<comment pinned="false" h="70" w="260">${esc(text2)}</comment>`;
-var goals = (joints) => joints.reduceRight((next, j) => `<block type="cm550_dxlGoal"><value name="ID"><shadow type="cm550_menu_dxlId"><field name="dxlId">${j.id}</field></shadow></value><value name="DEG">${num2(j.deg)}</value>${next ? `<next>${next}</next>` : ""}</block>`, "");
-var group = (joints, secsXML, note, next) => `<block type="cm550_dxlTogether">${note ? comment(note) : ""}<value name="SECS">${num2(1)}${secsXML}</value><statement name="SUBSTACK">${goals(joints)}</statement>${next ? `<next>${next}</next>` : ""}</block>`;
-var gaitProgramXML = (g, jointMap, { steps = 20, x = 40, y = 40 } = {}) => {
-  const dt = Math.round(g.period / FRAMES * 1e3) / 1e3;
-  const stance = toDegrees(stanceTargets(g), jointMap);
-  const straight = toDegrees({}, jointMap);
-  const frames = stepFrames(g).map((t) => toDegrees(t, jointMap));
-  let loop = "";
-  for (let i = frames.length - 1; i >= 0; i--) {
-    loop = group(frames[i], timesSlow(dt), i === 0 ? `한 걸음(${g.period.toFixed(3)}초)을 자세 ${FRAMES}개로 나눴습니다. 자세마다 모터 ${jointMap.length}개의 목표 각도를 ${dt}초 × 느리게 동안 함께 움직입니다.` : "", loop);
-  }
-  const small = stepFrames(g, FRAMES, 0.5).map((t) => toDegrees(t, jointMap));
-  const chain = (list, note, next) => list.reduceRight((acc, joints, i) => group(joints, timesSlow(dt), i === 0 ? note : "", acc), next);
-  const repeat = `<block type="control_repeat">${comment(`걸음 학습으로 찾은 걸음 · ${steps}걸음`)}<value name="TIMES"><shadow type="math_whole_number"><field name="NUM">${steps}</field></shadow></value><statement name="SUBSTACK">${loop}</statement><next>${group(stance, timesSlow(0.5), "", group(straight, "", "똑바로 서기"))}</next></block>`;
-  const setSlow = `<block type="data_setvariableto">` + comment("실제 로봇은 1.5~2로 키워 천천히 시작하세요 (모든 시간에 곱해집니다).") + `<field name="VARIABLE" id="${VAR_ID}" variabletype="">${VAR_NAME}</field><value name="VALUE"><shadow type="text"><field name="TEXT">1</field></shadow></value><next><block type="cm550_dxlPrepare">` + comment("걸음 학습과 같은 조건에서 시작: 오류가 난 모터는 다시 시작하고, 토크를 한 번에 켠 뒤 모두 180°(바로 서기)로.") + `<value name="SECS">${num2(2)}</value><next>${group(
-    stance,
-    timesSlow(1),
-    "무릎을 굽힌 출발 자세",
-    chain(small, "출발: 절반 크기로 한 걸음 (갑자기 크게 걸으면 넘어지기 쉽습니다)", repeat)
-  )}</next></block></next></block>`;
-  const xml = `<xml><variables><variable type="" id="${VAR_ID}" islocal="false" iscloud="false">${VAR_NAME}</variable></variables><block type="event_whenflagclicked" x="${Math.round(x)}" y="${Math.round(y)}"><next>${setSlow}</next></block></xml>`;
-  return { xml, frames: FRAMES, dt, steps, blocks: (2 * frames.length + 3) * (jointMap.length + 1) };
 };
 
 // src/main.js
@@ -10167,6 +10521,19 @@ simPanel = window.dynamicmakers.simPanel = new SimPanel({
   connect: (transport) => connect("sim3d", transport),
   disconnect: () => ext.disconnect(),
   addWalkScript,
+  insertXML: (makeXml) => {
+    let x = 40;
+    let y = 40;
+    try {
+      if (workspace.getTopBlocks(false).length) {
+        const box = workspace.getBlocksBoundingBox();
+        x = box.left;
+        y = box.bottom + 48;
+      }
+    } catch (e) {
+    }
+    ScratchBlocks2.Xml.domToWorkspace(ScratchBlocks2.utils.xml.textToDom(makeXml(x, y)), workspace);
+  },
   saveText: async (name, text2) => {
     try {
       const [base, ext2] = name.split(".");

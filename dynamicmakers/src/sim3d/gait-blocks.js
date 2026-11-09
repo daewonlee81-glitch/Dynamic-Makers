@@ -87,3 +87,24 @@ export const gaitProgramXML = (g, jointMap, {steps = 20, x = 40, y = 40} = {}) =
         `<block type="event_whenflagclicked" x="${Math.round(x)}" y="${Math.round(y)}"><next>${setSlow}</next></block></xml>`;
     return {xml, frames: FRAMES, dt, steps, blocks: ((2 * frames.length) + 3) * (jointMap.length + 1)};
 };
+
+/**
+ * A recorded motion (예제 모션 확인) as blocks: start like the walk program
+ * (느리게, 준비), then one "모두 함께" block per key pose.
+ * @param {Array<{secs: number, joints: Array<{id, deg}>}>} poses
+ * @param {object} [o]
+ * @param {string} [o.title] note on the first pose
+ */
+export const posesProgramXML = (poses, {x = 40, y = 40, title = ''} = {}) => {
+    const chain = poses.reduceRight((acc, p, i) =>
+        group(p.joints, timesSlow(p.secs), i === 0 ? title : '', acc), '');
+    const setSlow = `<block type="data_setvariableto">` +
+        comment('실제 로봇에서 처음에는 1.5~2로 키워 천천히 확인하세요 (모든 시간에 곱해집니다).') +
+        `<field name="VARIABLE" id="${VAR_ID}" variabletype="">${VAR_NAME}</field>` +
+        `<value name="VALUE"><shadow type="text"><field name="TEXT">1</field></shadow></value>` +
+        `<next><block type="cm550_dxlPrepare"><value name="SECS">${num(2)}</value>` +
+        `${chain ? `<next>${chain}</next>` : ''}</block></next></block>`;
+    const xml = `<xml><variables><variable type="" id="${VAR_ID}" islocal="false" iscloud="false">${VAR_NAME}</variable></variables>` +
+        `<block type="event_whenflagclicked" x="${Math.round(x)}" y="${Math.round(y)}"><next>${setSlow}</next></block></xml>`;
+    return {xml, poses: poses.length};
+};
