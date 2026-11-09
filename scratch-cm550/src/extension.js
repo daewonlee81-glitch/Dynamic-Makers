@@ -374,6 +374,12 @@ const createExtension = ({ArgumentType, BlockType, formatMessage, cast}) => {
                         arguments: {PAGE: ARG_NUM(1)}
                     },
                     {
+                        opcode: 'motionChain',
+                        blockType: BlockType.COMMAND,
+                        text: t('motionChain', '모션 [START] 번 시작 → [LOOP] 번 [SECS] 초 동안 반복 → [END] 번 끝'),
+                        arguments: {START: ARG_NUM(150), LOOP: ARG_NUM(152), SECS: ARG_NUM(5), END: ARG_NUM(154)}
+                    },
+                    {
                         opcode: 'motionStop',
                         blockType: BlockType.COMMAND,
                         text: t('motionStop', '모션 정지 [HOW]'),
@@ -1069,6 +1075,12 @@ const createExtension = ({ArgumentType, BlockType, formatMessage, cast}) => {
 
         motionPlay (args) {
             return this._guard(() => this.device.playMotion(num(args.PAGE)));
+        }
+
+        /** Pages one after another without stopping (MAX-E1: 150 → 152 … → 154 walks forward). */
+        motionChain (args) {
+            return this._guard(() => this.device.playMotionChain(num(args.START), num(args.LOOP),
+                clamp(num(args.SECS), 0, 600), num(args.END), {seconds: true}));
         }
 
         motionPlayWait (args) {

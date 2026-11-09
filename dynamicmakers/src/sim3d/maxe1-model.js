@@ -19,7 +19,7 @@
  */
 import CAD from './maxe1-cad.json' with {type: 'json'};
 
-export const MODEL_VERSION = 3; // saved robot settings from an older model are not reused
+export const MODEL_VERSION = 4; // saved robot settings from an older model are not reused
 
 export const MAXE1_DEFAULT = {
     extraMass: 0, // kg added to the torso (e.g. a sensor you mounted)
@@ -31,28 +31,27 @@ export const MAXE1_DEFAULT = {
 /**
  * Which DYNAMIXEL ID drives which joint, the direction (sign) and the angle
  * (degrees) that means "straight" for that joint. Consecutive IDs share one
- * 2XL430 module (A = odd, B = even). Checked against the assembly manual
- * (ver2113, steps 7·15·16·29 and p.39): the six modules are identical copies,
- * not mirror images, so every horn of one kind faces the same way —
- *   shoulder 앞뒤 (A) horn screwed to the body, facing it;
- *   shoulder 옆 (B), ankle 옆 (B) horns facing forward, carrying the arm / foot;
- *   hip 옆 (A) horn facing forward, screwed to the pelvis bracket;
- *   hip 앞뒤 (B), ankle 앞뒤 (A) horns facing the robot's left, joined to the leg links.
- * DYNAMIXEL position grows counter-clockwise seen from the horn, which gives the
- * signs below (left and right differ only where the horn faces the body).
+ * 2XL430 module (A = odd, B = even).
+ * The directions come from ROBOTIS' own MAX-E1 example motions
+ * (03_ENG1_MAX_E1.mtn3): its symmetric poses (앉기 107, 브라보 109, 일어서기 105)
+ * fix how left and right relate, and 앉기 (knees forward), 인사 108 (right arm
+ * up in front), 왼발킥 120 (weight onto the right foot, left leg kicks forward)
+ * and the walk 150-154 (weight onto the standing leg) fix the rest. Played in
+ * the 3D world with these signs, the official walk 150 → 152 ×5 → 154 walks
+ * about 90 cm forward without falling.
  */
 export const MAXE1_JOINT_MAP = [
     {id: 1, joint: 'R_shoulder_pitch', name: '오른팔 앞뒤', sign: -1, center: 180},
-    {id: 2, joint: 'R_shoulder_roll', name: '오른팔 옆', sign: 1, center: 180},
+    {id: 2, joint: 'R_shoulder_roll', name: '오른팔 옆', sign: -1, center: 180},
     {id: 3, joint: 'L_shoulder_pitch', name: '왼팔 앞뒤', sign: 1, center: 180},
     {id: 4, joint: 'L_shoulder_roll', name: '왼팔 옆', sign: 1, center: 180},
     {id: 5, joint: 'R_hip_roll', name: '오른쪽 엉덩이 옆', sign: -1, center: 180},
     {id: 6, joint: 'R_hip_pitch', name: '오른쪽 엉덩이 앞뒤', sign: 1, center: 180},
     {id: 7, joint: 'L_hip_roll', name: '왼쪽 엉덩이 옆', sign: -1, center: 180},
     {id: 8, joint: 'L_hip_pitch', name: '왼쪽 엉덩이 앞뒤', sign: 1, center: 180},
-    {id: 9, joint: 'R_knee', name: '오른쪽 발목 앞뒤 (무릎 굽힘)', sign: 1, center: 180},
+    {id: 9, joint: 'R_knee', name: '오른쪽 발목 앞뒤 (무릎 굽힘)', sign: -1, center: 180},
     {id: 10, joint: 'R_ankle_roll', name: '오른쪽 발목 옆', sign: 1, center: 180},
-    {id: 11, joint: 'L_knee', name: '왼쪽 발목 앞뒤 (무릎 굽힘)', sign: 1, center: 180},
+    {id: 11, joint: 'L_knee', name: '왼쪽 발목 앞뒤 (무릎 굽힘)', sign: -1, center: 180},
     {id: 12, joint: 'L_ankle_roll', name: '왼쪽 발목 옆', sign: 1, center: 180}
 ];
 

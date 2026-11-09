@@ -7,6 +7,7 @@ import {GaitLearner, REWARDS, defaultRewards, score} from './learn';
 import {checkPolicy} from './policy';
 import {MotionRecorder, summarize, poseAt, toJointRad, keyPoses} from './motion-check';
 import {posesProgramXML} from './gait-blocks';
+import {parseMtn3, findChains, toRecording, callSeconds} from './mtn3';
 import {assetUrl} from '../asset-url';
 
 const el = (tag, cls, text) => {
@@ -88,7 +89,7 @@ export class SimPanel {
         // settings saved for an older robot model (other lengths) are not reused
         const sameModel = saved.modelVersion === MODEL_VERSION;
         this.params = Object.assign({}, MAXE1_DEFAULT, sameModel ? saved.params || {} : {});
-        // (v3 fixed the joint directions, so an older saved ID map is not reused either)
+        // (v3/v4 fixed the joint directions, so an older saved ID map is not reused either)
         this.jointMap = (sameModel && saved.joints && saved.joints.length === MAXE1_JOINT_MAP.length ? saved.joints : MAXE1_JOINT_MAP)
             .map(j => Object.assign({}, j));
         this.weights = Object.assign(defaultRewards(), saved.weights || {});
@@ -166,6 +167,28 @@ export class SimPanel {
         this.recLoadBtn = button('tp-btn', '기록 불러오기', () => recFile.click());
         rm.append(this.recBtn, this.recStopBtn, this.replayBtn, this.recBlockBtn, this.recSaveBtn, this.recLoadBtn, recFile);
         cm.append(rm);
+        // R+ motion file: every official motion without the robot (3D, blocks) or on it
+        const rf = el('div', 'tp-row');
+        const mtnFile = el('input', 'sim-rec-file');
+        mtnFile.type = 'file';
+        mtnFile.accept = '.mtn3';
+        mtnFile.hidden = true;
+        mtnFile.addEventListener('change', () => {
+            this.loadMtn3(mtnFile.files[0]);
+            mtnFile.value = '';
+        });
+        this.mtnBtn = button('tp-btn', '모션 파일(.mtn3) 열기', () => mtnFile.click(),
+            'R+ Task의 모션 파일 (예: 03_ENG1_MAX_E1_KR.mtn3)을 열면 공식 모션을 3D로 보고 블록으로 만들 수 있습니다');
+        this.mtnSel = el('select', 'sim-mtn');
+        this.mtnSel.disabled = true;
+        this.mtnSel.append(el('option', '', '모션 파일을 열면 여기서 고릅니다'));
+        this.mtnSel.addEventListener('change', () => this._pickMtn());
+        this.mtnRepeat = 4;
+        this.mtnRepeatInput = numInput(this.mtnRepeat, 1, v => { this.mtnRepeat = Math.max(1, Math.min(30, Math.round(v))); this._pickMtn(); }, 46);
+        this.mtnRunBtn = button('tp-btn', '실제 로봇에서 실행', () => this.runMtnOnRobot(),
+            'CM-550에 저장된 같은 번호의 모션을 실행합니다 (걷기는 페이지를 멈춤 없이 이어서)');
+        rf.append(this.mtnBtn, this.mtnSel, el('span', 'tp-label', '반복'), this.mtnRepeatInput, this.mtnRunBtn, mtnFile);
+        cm.append(rf);
         this.recInfo = el('div', 'sim-info', '아직 기록이 없습니다.');
         this.recTable = el('table', 'sim-table');
         cm.append(this.recInfo, this.recTable);
@@ -701,7 +724,8 @@ export class SimPanel {
         if (!rec) return;
         const sum = summarize(rec, this.jointMap);
         const moved = sum.filter(r => r.range > 3);
-        this.recInfo.textContent = `모션 ${rec.page}번 · ${rec.seconds.toFixed(1)}초 · 기록 ${rec.frames.length}개 · ` +
+        this.recInfo.textContent = `${rec.fromFile ? `모션 파일: ${rec.page}` : `모션 ${rec.page}번`} · ${rec.seconds.toFixed(1)}초 · ` +
+            `${rec.fromFile ? '키프레임' : '기록'} ${rec.frames.length}개 · ` +
             `움직인 관절 ${moved.length}개${moved.length ? ` (${moved.map(r => r.id).join(', ')})` : ' — 모션이 실행되지 않았거나 빈 페이지입니다'}`;
         const f = v => (Number.isFinite(v) ? v.toFixed(1) : '-');
         this.recTable.innerHTML = '<thead><tr><th>ID</th><th>관절</th><th>시작</th><th>최소</th><th>최대</th><th>움직임</th></tr></thead>';
@@ -732,7 +756,7 @@ export class SimPanel {
             const t0 = ph.data.time;
             const lead = 0.6; // from standing straight into the motion's first pose
             const first = toJointRad(rec.frames[0].deg, map);
-            this.log(`3D 로봇에 모션 ${rec.page}번 기록을 재생합니다 (${rec.seconds.toFixed(1)}초).`);
+            this.log(`3D 로봇에 ${rec.fromFile ? rec.page : `모션 ${rec.page}번 기록`}을 재생합니다 (${rec.seconds.toFixed(1)}초).`);
             await new Promise(resolve => {
                 ph.setController(time => {
                     const t = time - t0;
@@ -764,14 +788,91 @@ export class SimPanel {
         if (!rec || !this.insertXML) return;
         const poses = keyPoses(rec, 0.12);
         const n = this.insertXML((x, y) => posesProgramXML(poses, {x, y,
-            title: `CM-550 모션 ${rec.page}번을 기록한 자세 ${poses.length}개 (약 0.12초마다)`}).xml);
-        if (n !== false) this.log(`모션 ${rec.page}번을 블록으로 넣었습니다: 자세 ${poses.length}개, 자세마다 모터 ${rec.ids.length}개.`, 'ok');
+            title: `${rec.fromFile ? `모션 파일의 ${rec.page}` : `CM-550 모션 ${rec.page}번을 기록한`} 자세 ${poses.length}개 (약 0.12초마다)`}).xml);
+        if (n !== false) this.log(`${rec.fromFile ? rec.page : `모션 ${rec.page}번`}을 블록으로 넣었습니다: 자세 ${poses.length}개, 자세마다 모터 ${rec.ids.length}개.`, 'ok');
     }
 
     saveMotion () {
         const rec = this.motionRec;
         if (!rec || !this.saveText) return;
-        this.saveText(`MAX-E1-motion-${rec.page}.json`, JSON.stringify(Object.assign({format: 'dm-motion-1'}, rec)));
+        this.saveText(`MAX-E1-motion-${String(rec.page).replace(/[^\w가-힣-]+/g, '_').slice(0, 40)}.json`, JSON.stringify(Object.assign({format: 'dm-motion-1'}, rec)));
+    }
+
+    async loadMtn3 (file) {
+        if (!file) return;
+        try {
+            const m = parseMtn3(await file.text());
+            this.mtn = m;
+            this.mtnChains = findChains(m);
+            const sel = this.mtnSel;
+            sel.innerHTML = '';
+            for (const [i, c] of this.mtnChains.entries()) {
+                const o = el('option', '', `걷기 묶음: ${c.name} (${c.start} → ${c.loop} ×반복 → ${c.end})`);
+                o.value = `c:${i}`;
+                sel.append(o);
+            }
+            for (const c of m.calls) {
+                const o = el('option', '', `${c.index} ${c.flow.replace(/^\d+_?H?_?/, '')} (${callSeconds(m, c.index).toFixed(1)}초)`);
+                o.value = `p:${c.index}`;
+                sel.append(o);
+            }
+            sel.disabled = false;
+            this.log(`모션 파일을 열었습니다: ${file.name} — 모션 ${m.calls.length}개, 걷기 묶음 ${this.mtnChains.length}개, 관절 ${m.ids.length}개.`, 'ok');
+            this._pickMtn();
+        } catch (e) {
+            this.log(`⚠ 모션 파일: ${e.message || e}`, 'err');
+        }
+        this._status();
+    }
+
+    /** The chosen motion (or walk group) as a recording: shown, replayable in 3D, blocks. */
+    _pickMtn () {
+        if (!this.mtn || !this.mtnSel.value) return;
+        const [kind, v] = this.mtnSel.value.split(':');
+        let seq;
+        let label;
+        if (kind === 'c') {
+            const c = this.mtnChains[Number(v)];
+            seq = [c.start, ...Array(this.mtnRepeat).fill(c.loop), c.end];
+            label = `${c.name} (${c.start} → ${c.loop} ×${this.mtnRepeat} → ${c.end})`;
+        } else {
+            seq = [Number(v)];
+            label = this.mtnSel.selectedOptions[0].textContent.replace(/ \([\d.]+초\)$/, '');
+        }
+        this.motionRec = toRecording(this.mtn, seq, label);
+        this._showMotion();
+        this._status();
+    }
+
+    async runMtnOnRobot () {
+        if (!this.mtn || !this.mtnSel.value) return;
+        if (!this.device.connected || (this.device.transport && this.device.transport.physics)) {
+            this.log('실제 로봇(USB/블루투스)을 연결하세요. 3D 로봇에는 [3D로 재생]을 쓰세요.', 'warn');
+            return;
+        }
+        const [kind, v] = this.mtnSel.value.split(':');
+        try {
+            this._mtnRunning = true;
+            this._status();
+            const r = await this.device.prepareJoints(this.jointMap.map(j => j.id), {}, 2);
+            if (r.rebooted.length) this.log(`다이나믹셀 ${r.rebooted.join(', ')}: 오류가 있어 다시 시작했습니다.`, 'warn');
+            if (kind === 'c') {
+                const c = this.mtnChains[Number(v)];
+                this.log(`실제 로봇: ${c.name} — 모션 ${c.start} → ${c.loop} ×${this.mtnRepeat} → ${c.end} (CM-550에 저장된 모션)`);
+                await this.device.playMotionChain(c.start, c.loop, this.mtnRepeat, c.end,
+                    {startSecs: callSeconds(this.mtn, c.start), loopSecs: callSeconds(this.mtn, c.loop)});
+            } else {
+                this.log(`실제 로봇: 모션 ${v}번 (CM-550에 저장된 모션)`);
+                await this.device.playMotion(Number(v));
+                await this.device.waitMotionDone(30000);
+            }
+            this.log('실제 로봇: 모션 끝.', 'ok');
+        } catch (e) {
+            this.log(`⚠ 실제 로봇 모션: ${e.message || e}`, 'err');
+        } finally {
+            this._mtnRunning = false;
+            this._status();
+        }
     }
 
     async loadMotion (file) {
@@ -837,6 +938,7 @@ export class SimPanel {
         this.recBtn.disabled = recording;
         this.recStopBtn.disabled = !recording;
         for (const b of [this.replayBtn, this.recBlockBtn, this.recSaveBtn]) b.disabled = !this.motionRec || recording;
+        this.mtnRunBtn.disabled = !this.mtn || Boolean(this._mtnRunning);
         if (!learning) for (const p of GAIT_PARAMS) this.gaitCells[p.key].textContent = this.gait[p.key].toFixed(2);
         const pol = this.store.policy;
         this.policyInfo.textContent = pol ? `불러온 정책: ${pol.name || '정책'} · 신경망 ` +

@@ -68,6 +68,26 @@ const check = (c, m) => { console.log(`${c ? 'ok' : 'FAIL'} - ${m}`); if (!c) fa
     check(made > 5, `recorded motion turned into ${made} "모두 함께" blocks`);
     await sp(() => window.dynamicmakers.workspace.clear());
 
+    // R+ motion file (.mtn3): official motions in 3D without the robot (a small made-up file here;
+    // MTN3=…/03_ENG1_MAX_E1_KR.mtn3 checks that the official walk walks forward)
+    const MTN3 = process.env.MTN3 || path.join(__dirname, 'fixtures', 'mini.mtn3');
+    await p.setInputFiles('.simp input[accept=".mtn3"]', MTN3);
+    await p.waitForFunction(() => document.getElementById('console-lines').textContent.includes('모션 파일을 열었습니다'));
+    const opts = await p.$$eval('.simp .sim-mtn option', os => os.map(o => o.textContent));
+    check(opts.some(o => o.startsWith('걷기 묶음: 전진 (150 → 152')), `walk group listed from the motion file ("${opts.find(o => o.startsWith('걷기')) || ''}")`);
+    const mrec = await sp(() => { const r = window.dynamicmakers.simPanel.motionRec; return {n: r.frames.length, secs: r.seconds, file: r.fromFile}; });
+    check(mrec.file && mrec.n > 3 && mrec.secs > 0.5, `walk group as key frames (${mrec.n}, ${mrec.secs.toFixed(2)} s)`);
+    const replays = ((await out()).match(/3D 재생 끝/g) || []).length;
+    await p.click('.simp button:has-text("3D로 재생")');
+    await p.waitForFunction(n => (document.getElementById('console-lines').textContent.match(/3D 재생 끝/g) || []).length > n, replays, {timeout: 90000});
+    const mw = [...(await out()).matchAll(/3D 재생 끝: 앞으로 (-?\d+) cm, 옆으로 (-?\d+) cm, (서 있습니다|넘어졌습니다)/g)].pop();
+    check(mw && (!process.env.MTN3 || (Number(mw[1]) > 40 && mw[3] === '서 있습니다')),
+        `motion file played on the 3D robot (${mw && mw[0]})`);
+    await p.click('.simp button:has-text("블록으로 만들기")');
+    const mb = await sp(() => window.dynamicmakers.workspace.getAllBlocks(false).filter(b => b.type === 'cm550_dxlTogether').length);
+    check(mb > 3, `motion file turned into ${mb} "모두 함께" blocks`);
+    await sp(() => window.dynamicmakers.workspace.clear());
+
     // stage 2b: learning (small run)
     await sp(() => {
         const s = window.dynamicmakers.simPanel;

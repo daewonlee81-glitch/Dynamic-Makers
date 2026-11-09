@@ -414,7 +414,7 @@ body.dm-resizing iframe, body.dm-resizing #blocks { pointer-events: none; }
 .sim-learn-view { height: 240px; margin-top: 8px; }
 .sim-learn-view[hidden] { display: none; }
 .sim-learn-view.sim-race { height: 380px; }
-.sim-mode, .sim-speed { font: inherit; font-size: 12px; padding: 2px 4px; border: 1px solid #c9d2e0; border-radius: 6px; background: #fff; }
+.sim-mode, .sim-speed, .sim-mtn { font: inherit; font-size: 12px; padding: 2px 4px; border: 1px solid #c9d2e0; border-radius: 6px; background: #fff; }
 .sim-mode-note { margin: 2px 0 0; }
 .sim-big { position: absolute; right: 8px; top: 8px; z-index: 1; padding: 2px 8px; border: 1px solid #c9d2e0; border-radius: 6px;
     background: rgba(255, 255, 255, 0.85); font-size: 12px; cursor: pointer; }
@@ -422,3 +422,4 @@ body.dm-resizing iframe, body.dm-resizing #blocks { pointer-events: none; }
 .sim-tag { position: absolute; left: 8px; top: 8px; z-index: 1; padding: 3px 8px; border-radius: 6px; font-size: 12px;
     background: rgba(255, 255, 255, 0.85); color: #1f2a3a; pointer-events: none; font-variant-numeric: tabular-nums; }
 .sim-watch { gap: 6px; align-items: center; cursor: pointer; }
+.sim-mtn { max-width: 300px; }

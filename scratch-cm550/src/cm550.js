@@ -804,6 +804,55 @@ class CM550Device {
         return this.writeCM(CM.MOTION_INDEX, clamp(Math.round(page), 1, 65532));
     }
 
+    /**
+     * Play motion pages stored in the CM-550 one after another without a stop,
+     * the way the official MAX-E1 task walks: start page, the repeat page again
+     * and again, then the end page. The next page is set in advance (register
+     * 69 "Motion Next Page") so the motion never pauses between pages.
+     * @param {number} start e.g. 150 (전진 시작)
+     * @param {number} loop e.g. 152 (전진 반복)
+     * @param {number} repeat how many times the loop page plays (or seconds, see o.seconds)
+     * @param {number} end e.g. 154 (전진 종료)
+     * @param {object} [o]
+     * @param {number} [o.startSecs] length of the start page at 100 % speed (from the .mtn3 file)
+     * @param {number} [o.loopSecs] length of the loop page at 100 % speed
+     * @param {boolean} [o.seconds] treat `repeat` as seconds (when page lengths are unknown)
+     * @param {function} [o.shouldStop] () => true to finish early (with the end page)
+     */
+    async playMotionChain (start, loop, repeat, end, {startSecs = 0, loopSecs = 0, seconds = false, shouldStop} = {}) {
+        const NONE = 65535;
+        let speed = 1;
+        try {
+            speed = Math.max(0.2, (await this.readCM(CM.MOTION_SPEED)) / 100) || 1;
+        } catch (e) { /* 100 % */ }
+        const known = startSecs > 0 && loopSecs > 0 && !seconds;
+        // when to switch "next" to the end page: during the last loop page
+        const until = known ? (startSecs + (loopSecs * Math.max(1, repeat)) - (loopSecs * 0.5)) / speed :
+            Math.max(0.5, Number(repeat) || 0);
+        await this.writeCM(CM.MOTION_NEXT_PAGE, loop);
+        await this.writeCM(CM.MOTION_INDEX, start);
+        const t0 = Date.now();
+        while ((Date.now() - t0) / 1000 < until) {
+            if (shouldStop && shouldStop()) break;
+            await this.writeCM(CM.MOTION_NEXT_PAGE, loop); // keep the walk going
+            await delay(120);
+        }
+        await this.writeCM(CM.MOTION_NEXT_PAGE, end);
+        // after the end page has started, nothing follows it
+        const t1 = Date.now();
+        const endBy = known ? ((loopSecs * 0.6) + 0.15) / speed : 3;
+        while ((Date.now() - t1) / 1000 < endBy) {
+            if (!known) {
+                try {
+                    if ((await this.readCM(CM.MOTION_INDEX)) === end || (await this.readCM(CM.MOTION_NEXT_PAGE)) !== end) break;
+                } catch (e) { /* keep waiting */ }
+            }
+            await delay(50);
+        }
+        await this.writeCM(CM.MOTION_NEXT_PAGE, NONE);
+        await this.waitMotionDone(15000);
+    }
+
     stopMotion (how = MOTION_STOP.UNIT) {
         return this.writeCM(CM.MOTION_INDEX, how);
     }

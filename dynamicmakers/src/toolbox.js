@@ -34,7 +34,7 @@ export const ROBOT_GROUPS = [
     },
     {
         id: 'db_motion', name: '모션',
-        opcodes: ['motionPlay', 'motionPlayWait', 'motionStop', '---', 'motionSpeed', 'motionNext', '---',
+        opcodes: ['motionPlay', 'motionPlayWait', 'motionChain', 'motionStop', '---', 'motionSpeed', 'motionNext', '---',
             'motionIsPlaying', 'motionCount']
     },
     {

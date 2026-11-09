@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<!-- small made-up motion file for the tests (same layout as R+ Task 3.0 .mtn3) -->
+<Root name="R+Motion" version="2.0.0">
+  <DesignRoot name="test" controller="CM-550">
+    <skeleton>
+      <joint motor="2XL" id="1" enable="True" />
+      <joint motor="2XL" id="2" enable="True" />
+      <joint motor="2XL" id="3" enable="True" />
+      <joint motor="2XL" id="4" enable="True" />
+      <joint motor="2XL" id="5" enable="True" />
+      <joint motor="2XL" id="6" enable="True" />
+      <joint motor="2XL" id="7" enable="True" />
+      <joint motor="2XL" id="8" enable="True" />
+      <joint motor="2XL" id="9" enable="True" />
+      <joint motor="2XL" id="10" enable="True" />
+      <joint motor="2XL" id="11" enable="True" />
+      <joint motor="2XL" id="12" enable="True" />
+    </skeleton>
+  </DesignRoot>
+  <FlowRoot>
+    <Flow name="101H_기본동작" return="-1">
+      <units>
+        <unit main="101H_기본동작" mainSpeed="1" loop="1" exit="" exitSpeed="1" callSite="False" />
+      </units>
+    </Flow>
+    <Flow name="150H_전진_시작" return="-1">
+      <units>
+        <unit main="150H_전진_시작" mainSpeed="1" loop="1" exit="" exitSpeed="1" callSite="False" />
+      </units>
+    </Flow>
+    <Flow name="152H_전진_반복" return="-1">
+      <units>
+        <unit main="152H_전진_반복" mainSpeed="1" loop="1" exit="" exitSpeed="1" callSite="False" />
+      </units>
+    </Flow>
+    <Flow name="154H_전진_종료" return="-1">
+      <units>
+        <unit main="154H_전진_종료" mainSpeed="1" loop="1" exit="" exitSpeed="1" callSite="False" />
+      </units>
+    </Flow>
+  </FlowRoot>
+  <PageRoot>
+    <Page name="101H_기본동작">
+      <param compileSize="1" acceleration="32" softness="5" />
+      <steps>
+        <step frame="128" pose="0 0 0 0 0 0 0 0 0 0 0 0" />
+      </steps>
+    </Page>
+    <Page name="150H_전진_시작">
+      <param compileSize="1" acceleration="32" softness="5" />
+      <steps>
+        <step frame="64" pose="0 0 0 0 0 -20 0 -20 -20 0 -20 0" />
+      </steps>
+    </Page>
+    <Page name="152H_전진_반복">
+      <param compileSize="1" acceleration="32" softness="5" />
+      <steps>
+        <step frame="32" pose="10 0 10 0 0 -30 0 -10 -15 0 -25 0" />
+        <step frame="64" pose="0 0 0 0 0 -20 0 -20 -20 0 -20 0" />
+      </steps>
+    </Page>
+    <Page name="154H_전진_종료">
+      <param compileSize="1" acceleration="32" softness="5" />
+      <steps>
+        <step frame="64" pose="0 0 0 0 0 0 0 0 0 0 0 0" />
+      </steps>
+    </Page>
+  </PageRoot>
+  <BucketRoot>
+    <Bucket name="main">
+      <callFlows>
+        <callFlow callIndex="101" subIndex="0" exitIndex="0" flow="101H_기본동작" />
+        <callFlow callIndex="150" subIndex="0" exitIndex="0" flow="150H_전진_시작" />
+        <callFlow callIndex="152" subIndex="0" exitIndex="0" flow="152H_전진_반복" />
+        <callFlow callIndex="154" subIndex="0" exitIndex="0" flow="154H_전진_종료" />
+      </callFlows>
+    </Bucket>
+  </BucketRoot>
+</Root>

@@ -409,6 +409,33 @@ test('prepareJoints ("모든 다이나믹셀 준비하기"): reboots motors in e
     assert.equal(dev.prepared, true);
 });
 
+test('playMotionChain: next page set in advance, end page last, then nothing after it', async () => {
+    const dev = new CM550Device();
+    const regs = {'200:64': 100};
+    const writes = [];
+    const t0 = Date.now();
+    attach(dev, new FakeTransport(bytes => {
+        const id = bytes[4];
+        const inst = bytes[7];
+        const addr = bytes[8] | (bytes[9] << 8);
+        if (inst === P2.INST.READ) return statusPacket(id, P2.le(regs[`${id}:${addr}`] || 0, bytes[10]));
+        if (inst === P2.INST.WRITE) {
+            const size = bytes[5] + (bytes[6] << 8) - 5;
+            regs[`${id}:${addr}`] = P2.fromLE(bytes, 10, size);
+            writes.push([addr, regs[`${id}:${addr}`], Date.now() - t0]);
+            return statusPacket(id);
+        }
+        return null;
+    }));
+    await dev.playMotionChain(150, 152, 2, 154, {startSecs: 0.2, loopSecs: 0.4});
+    const seq = writes.map(w => `${w[0]}=${w[1]}`).filter((w, i, a) => w !== a[i - 1]);
+    assert.deepEqual(seq, ['69=152', '66=150', '69=152', '69=154', '69=65535']);
+    const toEnd = writes.find(w => w[0] === 69 && w[1] === 154)[2];
+    const toNone = writes.find(w => w[0] === 69 && w[1] === 65535)[2];
+    assert.ok(toEnd >= 750 && toEnd < 1100, `end page queued during the last loop (${toEnd} ms)`);
+    assert.ok(toNone - toEnd >= 350, `nothing after the end page, once it has started (${toNone - toEnd} ms later)`);
+});
+
 test('pose blocks store poses in the project list "로봇 자세"', async () => {
     const {createExtension} = require('../src/extension');
     const Cls = createExtension({

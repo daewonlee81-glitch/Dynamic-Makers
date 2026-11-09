@@ -653,6 +653,9 @@ class PythonGenerator {
         case 'portMotor': this.line(`${portOf()}.motor(${n('SPEED')})`); break;
         case 'motionPlay': this.line(`motion.play(${n('PAGE')})`); break;
         case 'motionPlayWait': this.line(`motion.play(${n('PAGE')}, wait=True)`); break;
+        case 'motionChain':
+            this.line(`motion.chain(${n('START')}, ${n('LOOP')}, ${n('END')}, seconds=${n('SECS')})`);
+            break;
         case 'motionStop': this.line(`motion.stop(${this.choice(block, 'HOW')})`); break;
         case 'motionSpeed': this.line(`motion.set_speed(${n('PERCENT')})`); break;
         case 'motionNext': this.line(`motion.set_next(${n('PAGE')})`); break;

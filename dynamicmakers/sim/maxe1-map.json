@@ -19,7 +19,7 @@
       "id": 2,
       "joint": "R_shoulder_roll",
       "name": "오른팔 옆",
-      "sign": 1,
+      "sign": -1,
       "center": 180
     },
     {
@@ -68,7 +68,7 @@
       "id": 9,
       "joint": "R_knee",
       "name": "오른쪽 발목 앞뒤 (무릎 굽힘)",
-      "sign": 1,
+      "sign": -1,
       "center": 180
     },
     {
@@ -82,7 +82,7 @@
       "id": 11,
       "joint": "L_knee",
       "name": "왼쪽 발목 앞뒤 (무릎 굽힘)",
-      "sign": 1,
+      "sign": -1,
       "center": 180
     },
     {

@@ -77,6 +77,7 @@ from cm550 import *      # cm, dxl, port(), motion, wait, start, ... 를 가져�
 | 블록 | Python |
 |---|---|
 | 모션 [1] 번 재생 / 재생하고 기다리기 | `motion.play(1)` / `motion.play(1, wait=True)` |
+| 모션 [시작] 번 시작 → [반복] 번 [초] 초 동안 반복 → [끝] 번 끝 | `motion.chain(시작, 반복, 끝, seconds=초)` | CM-550에 저장된 페이지를 멈춤 없이 이어서 재생 (다음 페이지 레지스터 69). MAX-E1 예제: 150 → 152 → 154 = 앞으로 걷기, 155 → 157 → 159 = 뒤로 걷기, 160 → 162 → 164 = 빠르게 앞으로 |
 | 모션 정지 [현재 동작이 끝나면/키프레임/즉시] | `motion.stop("unit" / "keyframe" / "now")` |
 | 모션 속도를 [100] % 로 설정 | `motion.set_speed(100)` |
 | 다음 모션 페이지를 [n] 번으로 | `motion.set_next(n)` |
