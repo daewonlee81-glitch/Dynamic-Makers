@@ -28,6 +28,8 @@
 
         <div class="spacer"></div>
 
+        <button id="btn-tutor" class="tb-btn btn-tutor" aria-pressed="false" title="AI 튜터 열기/닫기 — 내 블록을 읽고 줄 번호로 설명해 줍니다 (이 컴퓨터 안에서만 동작)"><span class="ico">🤖</span><span class="lbl">AI 튜터</span></button>
+
         <div class="view-switch" role="tablist" aria-label="오른쪽 화면">
             <button id="view-python" class="view-btn active" role="tab">Python</button>
             <button id="view-monitor" class="view-btn" role="tab">모니터</button>
@@ -64,6 +66,8 @@
         <aside id="ai" class="side-panel" hidden></aside>
         <aside id="sim" class="side-panel" hidden></aside>
     </main>
+
+    <aside id="tutor-drawer" class="tutor" hidden></aside>
 
     <footer id="console">
         <div class="console-header">

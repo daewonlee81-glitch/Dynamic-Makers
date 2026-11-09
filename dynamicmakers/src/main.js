@@ -25,6 +25,7 @@ import {Walker} from './sim3d/walker';
 import {SimPanel} from './sim3d/sim-panel';
 import {MAXE1_JOINT_MAP} from './sim3d/maxe1-model';
 import {gaitProgramXML} from './sim3d/gait-blocks';
+import {initTutor} from './tutor';
 
 const $ = id => document.getElementById(id);
 
@@ -137,6 +138,7 @@ const CM550Extension = createExtension({
     formatMessage: msg => msg.default
 });
 const ext = new CM550Extension(vm.runtime);
+let lastRobotError = ''; // for the AI tutor's "오류 설명"
 // show block errors in the output window (same message at most every 3 s)
 {
     let lastMsg = '';
@@ -147,11 +149,15 @@ const ext = new CM550Extension(vm.runtime);
         lastMsg = message;
         lastAt = now;
         log(`⚠ ${message}`, 'err');
+        lastRobotError = message;
     };
     ext.onInfo = message => log(message, 'warn');
 }
 // each ▶ 실행 starts from the same condition: the first walk prepares the motors again
-vm.runtime.on('PROJECT_START', () => { ext.device.prepared = false; });
+vm.runtime.on('PROJECT_START', () => {
+    ext.device.prepared = false;
+    lastRobotError = '';
+});
 {
     const em = vm.extensionManager;
     const serviceName = em._registerInternalExtension(ext);
@@ -308,6 +314,22 @@ const resizeBlocks = () => {
 
 // ---- Python panel -----------------------------------------------------------
 const python = mountPythonPanel(vm, {host: $('python'), accent: BRAND, onToggle: () => setTimeout(resizeBlocks)});
+
+// AI 튜터: rule checks always, a local AI model (WebLLM / Chrome built-in) once installed
+window.dynamicmakers.tutor = initTutor({
+    workspace,
+    button: $('btn-tutor'),
+    drawer: $('tutor-drawer'),
+    code: () => python.getCode(),
+    device: () => ext.device,
+    robotLabel: () => {
+        const tr = ext.device.transport;
+        if (tr instanceof SimTransport) return tr.physics ? '3D 가상 로봇 (MAX-E1, MuJoCo)' : '가상 로봇';
+        return 'CM-550';
+    },
+    lastError: () => lastRobotError,
+    log
+});
 
 // ---- automatic per-model handling after every motor scan ---------------------
 ext.device.onMotorsChange = (motors, desc) => {
