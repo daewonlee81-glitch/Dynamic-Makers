@@ -8598,9 +8598,11 @@ var GaitLearner = class {
    * @param {number} [o.generations]
    * @param {number} [o.seconds] length of each try
    * @param {number} [o.seed]
+   * @param {function} [o.evalBatch] async (gaits, seconds) → results (or null to stop): 동시 경주 —
+   *     a whole generation walks together instead of one try after another
    */
-  constructor({ sim, ranges, weights, population = 20, generations = 30, seconds = 5, seed = 1 }) {
-    Object.assign(this, { sim, ranges, weights, population, generations, seconds });
+  constructor({ sim, ranges, weights, population = 20, generations = 30, seconds = 5, seed = 1, evalBatch = null }) {
+    Object.assign(this, { sim, ranges, weights, population, generations, seconds, evalBatch });
     this.normal = rng(seed);
     this.keys = GAIT_PARAMS.map((p) => p.key);
     this.free = this.keys.filter((k) => !ranges[k].fixed);
@@ -8631,7 +8633,21 @@ var GaitLearner = class {
     const elite = Math.max(2, Math.round(this.population / 4));
     while (this.running && this.gen < this.generations) {
       const crowd = [];
-      for (let i = 0; i < this.population && this.running; i++) {
+      if (this.evalBatch) {
+        const gaits = Array.from({ length: this.population }, () => this._sample());
+        this.genGaits = gaits;
+        const results = await this.evalBatch(gaits, this.seconds, this);
+        if (!results) break;
+        gaits.forEach((gait, i) => {
+          const result = results[i];
+          const s = score(result, this.weights);
+          crowd.push({ gait, score: s, result, lane: i });
+          this.tries++;
+          if (!this.best || s > this.best.score) this.best = { gait, score: s, result };
+        });
+        if (onProgress) onProgress(this);
+      }
+      for (let i = 0; !this.evalBatch && i < this.population && this.running; i++) {
         const gait = this._sample();
         const result = this.sim.evaluate(gait, this.seconds);
         const s = score(result, this.weights);
@@ -8653,6 +8669,7 @@ var GaitLearner = class {
         this.sd[k] = Math.max(sd, 0.04 * (r.max - r.min));
       }
       this.genBest = top[0];
+      this.genCrowd = crowd;
       this.history.push({
         gen: this.gen,
         best: top[0].score,
@@ -8755,6 +8772,8 @@ var SimPanel = class {
       Object.assign({ min: p.min, max: p.max, fixed: false }, (saved.ranges || {})[p.key] || {})
     ]));
     this.search = Object.assign({ population: 20, generations: 30, seconds: 5 }, saved.search || {});
+    if (!["race", "watch", "fast"].includes(this.search.mode)) this.search.mode = this.search.watch === false ? "fast" : "race";
+    if (!this.search.speed) this.search.speed = 1;
     this.visible = false;
     this._build();
     this.walker.onUpdate(() => this._status());
@@ -8883,23 +8902,52 @@ var SimPanel = class {
     this.blockOneBtn = button3("tp-btn", "한 줄 블록", () => this.makeBlocks(false), '"학습한 걸음으로 걷기" 블록 하나를 넣습니다');
     r2.append(this.learnBtn, this.previewBtn, this.blockBtn, this.blockOneBtn);
     c2.append(r2);
-    const wr = el5("label", "tp-row sim-watch");
-    this.watchBox = el5("input");
-    this.watchBox.type = "checkbox";
-    this.watchBox.checked = this.search.watch !== false;
-    this.watchBox.addEventListener("change", () => {
-      this.search.watch = this.watchBox.checked;
+    const wr = el5("div", "tp-row sim-watch");
+    this.modeSel = el5("select", "sim-mode");
+    for (const [v, t] of [
+      ["race", "동시 경주 — 한 세대의 로봇이 모두 함께 걷기"],
+      ["watch", "세대마다 1등 걸음만 보기"],
+      ["fast", "보지 않고 빠르게 학습"]
+    ]) {
+      const o = el5("option", "", t);
+      o.value = v;
+      this.modeSel.append(o);
+    }
+    this.modeSel.value = this.search.mode;
+    this.speedSel = el5("select", "sim-speed");
+    for (const v of [1, 2, 4]) {
+      const o = el5("option", "", `${v}배속`);
+      o.value = String(v);
+      this.speedSel.append(o);
+    }
+    this.speedSel.value = String(this.search.speed);
+    this.speedSel.title = "동시 경주를 빨리 돌립니다 (로봇이 많으면 컴퓨터 성능만큼만 빨라집니다)";
+    const showSpeed = () => {
+      this.speedSel.hidden = this.modeSel.value !== "race";
+    };
+    this.modeSel.addEventListener("change", () => {
+      this.search.mode = this.modeSel.value;
+      showSpeed();
       this._persist();
     });
-    wr.append(this.watchBox, el5(
-      "span",
-      "tp-label",
-      "학습하는 모습 보기 — 세대마다 가장 잘한 걸음을 3D 로봇이 걸어 보입니다 (학습이 조금 느려집니다)"
-    ));
+    this.speedSel.addEventListener("change", () => {
+      this.search.speed = Number(this.speedSel.value);
+      if (this.race) this.race.speed = this.search.speed;
+      this._persist();
+    });
+    showSpeed();
+    wr.append(el5("span", "tp-label", "학습 보기"), this.modeSel, this.speedSel);
     c2.append(wr);
+    c2.append(el5("p", "mon-note sim-mode-note", "동시 경주: 한 세대의 로봇들(한 번에 시험하는 가지 수만큼)이 나란히 서서 각자 다른 걸음으로 동시에 걷고, 그 결과로 점수를 매깁니다. 다음 세대는 잘한 로봇들의 걸음을 섞어 다시 출발합니다."));
     this.learnView = el5("div", "sim-view sim-learn-view");
     this.learnTag = el5("div", "sim-tag", "");
-    this.learnView.append(this.learnTag);
+    this.bigBtn = button3("sim-big", "⛶ 크게", () => {
+      const v = this.learnView;
+      if (document.fullscreenElement) document.exitFullscreen();
+      else if (v.requestFullscreen) v.requestFullscreen().catch(() => {
+      });
+    }, "학습 화면을 전체 화면으로 봅니다 (Esc로 돌아오기)");
+    this.learnView.append(this.learnTag, this.bigBtn);
     this.learnView.hidden = true;
     c2.append(this.learnView);
     this.chart = el5("canvas", "sim-chart");
@@ -9004,13 +9052,15 @@ var SimPanel = class {
   async _ensureSim() {
     if (this.physics) return this.physics;
     this.stateEl.textContent = "물리 엔진(MuJoCo)을 준비하는 중…";
-    const { loadMujoco, PhysicsSim, SimView } = await loadSimBundle();
+    const { loadMujoco, PhysicsSim, SimView, RaceSim } = await loadSimBundle();
+    this._RaceSim = RaceSim;
+    this._SimView = SimView;
     const mj = await loadMujoco();
     this.physics = new PhysicsSim(mj, { params: this.params, jointMap: this.jointMap });
     this.viewMsg.remove();
     this.view = new SimView(this.viewHost, this.physics);
     this.physics.onUpdate(() => {
-      if (this.visible) this.view.render();
+      if (this.visible && !this.raceView) this.view.render();
       this._tickInfo();
     });
     this.physics.start();
@@ -9062,6 +9112,7 @@ var SimPanel = class {
   async toggleLearn() {
     if (this.learner && this.learner.running) {
       this.learner.stop();
+      if (this.race) this.race.abort();
       return;
     }
     try {
@@ -9071,6 +9122,8 @@ var SimPanel = class {
         r.value = this.gait[p.key];
         if (r.min > r.max) [r.min, r.max] = [r.max, r.min];
       }
+      const mode = this.modeSel.value;
+      const racing = mode === "race" && Boolean(this._RaceSim);
       this.learner = new GaitLearner({
         sim,
         ranges: this.ranges,
@@ -9078,13 +9131,15 @@ var SimPanel = class {
         population: this.search.population,
         generations: this.search.generations,
         seconds: this.search.seconds,
-        seed: Date.now() % 1e5
+        seed: Date.now() % 1e5,
+        evalBatch: racing ? (gaits, secs, L) => this._raceGen(gaits, secs, L) : null
       });
-      this.log(`걸음 학습을 시작합니다: ${this.search.population}가지 × ${this.search.generations}세대.`);
+      this.log(`걸음 학습을 시작합니다: ${this.search.population}가지 × ${this.search.generations}세대${racing ? ` — 동시 경주 (로봇 ${this.search.population}대가 함께 걷습니다)` : ""}.`);
       this._status();
       const before = score(sim.evaluate(this.gait, this.search.seconds), this.weights);
-      const watch = this.watchBox.checked && !this.walker.running;
+      const watch = mode === "watch" && !this.walker.running;
       if (watch) this._watchStart(this.gait, `시작 걸음 · 점수 ${before.toFixed(1)}`);
+      if (racing) this._raceStart(this.search.population);
       let shown = 0;
       let best;
       try {
@@ -9097,6 +9152,7 @@ var SimPanel = class {
         });
       } finally {
         if (watch) this._watchStop();
+        if (racing) this._raceStop();
       }
       if (best) {
         const r = best.result;
@@ -9163,6 +9219,52 @@ var SimPanel = class {
       const tg = gaitTargets(gait, t, k);
       for (const j in tg) ph.setGoalRad(j, tg[j]);
     });
+  }
+  // ---- 동시 경주: a whole generation walks side by side in one world ---------------------
+  _raceStart(n) {
+    this.race = new this._RaceSim(this.physics.mj, { params: this.params, n });
+    this.race.speed = this.search.speed || 1;
+    this.learnView.hidden = false;
+    this.learnView.classList.add("sim-race");
+    this.raceView = new this._SimView(this.learnView, this.race);
+    this.raceView.setShowParts(this.view ? this.view.showParts : true);
+    this.learnTag.textContent = `로봇 ${n}대가 출발선에 섰습니다`;
+    this.raceView.render();
+  }
+  async _raceGen(gaits, secs, L) {
+    const race = this.race;
+    if (!race) return null;
+    const gen = L.gen + 1;
+    let last = 0;
+    const results = await race.run(gaits, secs, { onFrame: (r) => {
+      const info = r.info();
+      let lead = null;
+      for (const x of info) if (!x.fell && (!lead || x.dx > lead.dx)) lead = x;
+      r.ranks = info.map((x) => lead && x.lane === lead.lane ? 1 : null);
+      this.raceView.render();
+      const now = performance.now();
+      if (now - last < 150) return;
+      last = now;
+      const fell2 = info.filter((x) => x.fell).length;
+      this.learnTag.textContent = `${gen}/${L.generations}세대 경주 · ${r.t.toFixed(1)}/${secs}초 · 넘어짐 ${fell2}/${info.length}${lead ? ` · 선두 ${lead.lane + 1}번 ${Math.round(lead.dx * 100)} cm` : ""}`;
+    } });
+    if (!results) return null;
+    const scored = results.map((r, i) => ({ i, s: score(r, this.weights) })).sort((a, b) => b.s - a.s);
+    race.ranks = results.map((_, i) => i === scored[0].i ? 1 : null);
+    this.raceView.render();
+    const fell = results.filter((r) => r.fell).length;
+    const w = results[scored[0].i];
+    this.learnTag.textContent = `${gen}세대 결과 · 1등 ${scored[0].i + 1}번 (점수 ${scored[0].s.toFixed(1)}, ${Math.round(w.dx * 100)} cm) · 넘어짐 ${fell}/${results.length}`;
+    await new Promise((r) => setTimeout(r, 900));
+    return results;
+  }
+  _raceStop() {
+    if (this.raceView) this.raceView.dispose();
+    if (this.race) this.race.delete();
+    this.raceView = null;
+    this.race = null;
+    this.learnView.hidden = true;
+    this.learnView.classList.remove("sim-race");
   }
   _watchStop() {
     this._watching = false;
@@ -9278,6 +9380,7 @@ var SimPanel = class {
     for (const b of [this.resetBtn, this.pushBtn, this.pauseBtn, this.partsBtn]) b.disabled = !this.physics;
     if (this.view) this.partsBtn.textContent = this.view.showParts ? "단순 도형으로 보기" : "부품 모양으로 보기";
     this.previewBtn.disabled = learning;
+    this.modeSel.disabled = learning;
     if (!learning) for (const p of GAIT_PARAMS) this.gaitCells[p.key].textContent = this.gait[p.key].toFixed(2);
     const pol = this.store.policy;
     this.policyInfo.textContent = pol ? `불러온 정책: ${pol.name || "정책"} · 신경망 ${pol.layers.map((l) => l.W.length).join("-")} · 학습 점수 ${pol.score !== void 0 ? Number(pol.score).toFixed(1) : "?"}` : "정책이 없습니다.";
