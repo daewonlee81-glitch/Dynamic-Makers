@@ -48,6 +48,8 @@ const check = (c, m) => { console.log(`${c ? 'ok' : 'FAIL'} - ${m}`); if (!c) fa
 
     // 예제 모션 확인: play a CM-550 motion page while recording every joint, replay in 3D, make blocks
     // (this test machine draws WebGL in software, ~1 frame/s: show another tab while recording so sampling is not starved)
+    // "모션 N번" on the 3D robot plays that official motion (here 103 숨쉬기 2: all 12 joints, 5.3 s)
+    await sp(() => { window.dynamicmakers.simPanel.motionPage = 103; });
     await p.click('.simp button:has-text("실행하며 기록")');
     await p.click('#view-monitor');
     await p.waitForFunction(() => document.getElementById('console-lines').textContent.includes('기록 끝'), null, {timeout: 60000});
@@ -58,10 +60,9 @@ const check = (c, m) => { console.log(`${c ? 'ok' : 'FAIL'} - ${m}`); if (!c) fa
     check(rec.n > 20 && rec.sync && moved && Number(moved[1]) >= 8, `motion recorded with SYNC READ (${rec.n} samples in ${rec.secs.toFixed(1)} s; "${rec.info.slice(0, 60)}…")`);
     await p.click('.simp button:has-text("3D로 재생")');
     await p.waitForFunction(() => document.getElementById('console-lines').textContent.includes('3D 재생 끝'), null, {timeout: 60000});
+    check(/모션 103번 재생: 숨쉬기 2/.test(await out()), 'motion 103 on the 3D robot plays the official 숨쉬기 2 (no stand-in walk)');
     const rp = /3D 재생 끝: 앞으로 (-?\d+) cm, 옆으로 (-?\d+) cm, (서 있습니다|넘어졌습니다)/.exec(await out());
-    // (only the direction is checked: here the stand-in walk ran on slow simulated time but was
-    // recorded on the wall clock, so the replay is faster than the original and may tip over)
-    check(rp && Number(rp[1]) > 15, `recording replayed on the 3D robot walks forward (${rp && rp[0]})`);
+    check(rp && rp[3] === '서 있습니다' && Math.abs(Number(rp[1])) < 15, `recorded 숨쉬기 2 replayed in 3D: stays in place, standing (${rp && rp[0]})`);
     const before = await sp(() => window.dynamicmakers.workspace.getAllBlocks(false).length);
     await p.click('.simp button:has-text("블록으로 만들기")');
     const made = await sp(() => window.dynamicmakers.workspace.getAllBlocks(false).filter(b => b.type === 'cm550_dxlTogether').length);
@@ -82,6 +83,22 @@ const check = (c, m) => { console.log(`${c ? 'ok' : 'FAIL'} - ${m}`); if (!c) fa
     await p.waitForFunction(n => (document.getElementById('console-lines').textContent.match(/3D 재생 끝/g) || []).length > n, r0, {timeout: 120000});
     const bw = [...(await out()).matchAll(/3D 재생 끝: 앞으로 (-?\d+) cm, 옆으로 (-?\d+) cm, (서 있습니다|넘어졌습니다)/g)].pop();
     check(bw && Number(bw[1]) > 40 && bw[3] === '서 있습니다', `built-in official walk (150 → 152 ×4 → 154) walks forward on the 3D robot (${bw && bw[0]})`);
+
+    // the block "모션 150 시작 → 152 4초 반복 → 154 끝" on the 3D robot: pages chained through register 69
+    const chain = await p.evaluate(async () => {
+        const s = window.dynamicmakers.simPanel;
+        s.physics.reset();
+        await new Promise(r => setTimeout(r, 1500));
+        const x0 = s.physics.torso.x;
+        const t0 = Date.now();
+        const st0 = s.physics.data.time;
+        await s.device.playMotionChain(150, 152, 4, 154, {seconds: true});
+        await new Promise(r => setTimeout(r, 800));
+        return {dx: (s.physics.torso.x - x0) * 100, fallen: s.physics.fallen, secs: (Date.now() - t0) / 1000, sim: s.physics.data.time - st0};
+    });
+    const chainLog = await out();
+    check(chain.dx > 15 && !chain.fallen && /모션 152번 이어서/.test(chainLog) && /모션 154번 이어서/.test(chainLog),
+        `motion chain block walks the 3D robot with the official pages (${chain.dx.toFixed(0)} cm in ${chain.secs.toFixed(1)} s, sim ${chain.sim.toFixed(1)} s, ${chain.fallen ? 'fell' : 'standing'}; ${(chainLog.match(/모션 1\d\d번 (재생|이어서)/g) || []).slice(-8).join(' / ')})`);
 
     // another R+ motion file (.mtn3) replaces them (a small made-up file here)
     const MTN3 = process.env.MTN3 || path.join(__dirname, 'fixtures', 'mini.mtn3');

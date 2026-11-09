@@ -7,8 +7,8 @@ import {GaitLearner, REWARDS, defaultRewards, score} from './learn';
 import {checkPolicy} from './policy';
 import {MotionRecorder, summarize, poseAt, toJointRad, keyPoses} from './motion-check';
 import {posesProgramXML} from './gait-blocks';
-import {parseMtn3, findChains, toRecording, callSeconds, fromCompact} from './mtn3';
-import MAXE1_MOTIONS from './maxe1-motions.json';
+import {parseMtn3, findChains, toRecording, callSeconds} from './mtn3';
+import {builtInMotions, setMotions} from './motion-library';
 import {motionNote} from './maxe1-motion-notes';
 import {assetUrl} from '../asset-url';
 
@@ -151,7 +151,7 @@ export class SimPanel {
             '기록을 3D 로봇에 재생해서 앞으로 잘 걸으면 ID·방향 설정이 맞는 것입니다. 블록으로 바꿔 보거나 파일로 저장할 수도 있습니다. ' +
             '로봇을 바닥에 내려놓고 주위를 비운 뒤 실행하고, 넘어질 것 같으면 [멈추기]를 누르세요.'));
         const rm = el('div', 'tp-row');
-        this.motionPage = 1;
+        this.motionPage = 108;
         rm.append(el('span', 'tp-label', '모션 페이지'), numInput(this.motionPage, 1, v => { this.motionPage = Math.max(1, Math.round(v)); }, 56));
         this.recBtn = button('tp-btn tp-primary', '▶ 실행하며 기록', () => this.recordMotion());
         this.recStopBtn = button('tp-btn', '■ 멈추기', () => this.recorder && this.recorder.stop());
@@ -819,7 +819,7 @@ export class SimPanel {
     /** The official MAX-E1 example motions, built in (no file needed). */
     loadBuiltInMotions () {
         try {
-            this._useMtn(fromCompact(MAXE1_MOTIONS), true);
+            this._useMtn(builtInMotions(), true);
         } catch (e) {
             this.log(`⚠ 공식 모션: ${e.message || e}`, 'err');
         }
@@ -828,6 +828,7 @@ export class SimPanel {
     _useMtn (m, builtIn) {
         this.mtn = m;
         this.mtnBuiltIn = builtIn;
+        setMotions(builtIn ? null : m); // "모션 N번" blocks on the virtual robots play these
         this.mtnChains = findChains(m);
         const note = index => (builtIn ? motionNote(index) : {title: '', desc: ''});
         const sel = this.mtnSel;

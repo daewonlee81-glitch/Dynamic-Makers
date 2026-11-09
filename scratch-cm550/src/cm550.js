@@ -840,11 +840,14 @@ class CM550Device {
         await this.writeCM(CM.MOTION_NEXT_PAGE, end);
         // after the end page has started, nothing follows it
         const t1 = Date.now();
-        const endBy = known ? ((loopSecs * 0.6) + 0.15) / speed : 3;
+        // (unknown lengths: wait until the end page runs or the motion stopped — a long loop page
+        // or a slow simulator can take several seconds to reach the end of the page)
+        const endBy = known ? ((loopSecs * 0.6) + 0.15) / speed : 15;
         while ((Date.now() - t1) / 1000 < endBy) {
             if (!known) {
                 try {
-                    if ((await this.readCM(CM.MOTION_INDEX)) === end || (await this.readCM(CM.MOTION_NEXT_PAGE)) !== end) break;
+                    if ((await this.readCM(CM.MOTION_INDEX)) === end || (await this.readCM(CM.MOTION_NEXT_PAGE)) !== end ||
+                        !(await this.readCM(CM.MOTION_STATUS))) break;
                 } catch (e) { /* keep waiting */ }
             }
             await delay(50);

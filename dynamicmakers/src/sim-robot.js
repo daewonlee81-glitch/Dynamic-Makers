@@ -144,7 +144,11 @@ class SimTransport {
             }
         }
         if (id === CM_ID) {
-            if (addr === 68) return now < this.motionUntil ? 1 : 0; // motion playing
+            if (addr === 68) { // motion playing (the 2D robot also follows 69 = next page)
+                if (!this.physics && this.motionUntil && now >= this.motionUntil) this._nextOnClock(now);
+                return now < this.motionUntil || this._mplayAlive(now) ? 1 : 0;
+            }
+            if (addr === 66 && this._mplay) return this._mplay.index;
             const tilt = typeof window !== 'undefined' && window.__dmSimTilt; // tests: {roll, pitch, shake}
             if (tilt && addr >= 102 && addr <= 118) {
                 const wob = tilt.shake ? Math.sin(now / 40) * tilt.shake : 0;
@@ -204,6 +208,91 @@ class SimTransport {
         else this._describeDxl(id, addr, value, size, prev);
     }
 
+    /** CM-550 register 64: motion play speed in % (default 100). */
+    _playSpeed () {
+        const v = this.regs.get(`${CM_ID}:64`);
+        return v ? Math.max(0.2, v / 100) : 1;
+    }
+
+    _nextOnClock (now) {
+        const lib = require('./sim3d/motion-library');
+        const next = this.regs.get(`${CM_ID}:69`);
+        if (this._stopAtEnd || !next || next >= 65533 || !lib.hasMotion(next)) {
+            this.motionUntil = 0;
+            return;
+        }
+        this.regs.set(`${CM_ID}:69`, 65535);
+        this.regs.set(`${CM_ID}:66`, next);
+        this.motionUntil = now + Math.max(300, lib.motionSeconds(next) * 1000 / this._playSpeed());
+        this.last.delete('motion');
+        this._report('motion', next, `모션 ${next}번 이어서: ${lib.motionName(next)}`);
+    }
+
+    _mplayAlive (now) {
+        const s = this._mplay;
+        if (!s) return false;
+        if (now > s.wallLimit) { // simulation stopped (paused / tab hidden): do not wait forever
+            this._mplay = null;
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Play call `index` of the motion file on the 3D robot like the CM-550 does:
+     * key frames interpolated in simulated time; register 69 (다음 페이지) chains the
+     * next call without a pause, 65534/65535 in register 66 stop at the end of the page.
+     */
+    _playOnPhysics (index) {
+        const ph = this.physics;
+        const lib = require('./sim3d/motion-library');
+        const ids = lib.currentMotions().ids.filter(id => this.ids.includes(id));
+        const cur = () => lib.currentMotions().ids.map(id => (this.ids.includes(id) ?
+            ((ph.presentTick(id) - 2048) * 360 / 4096) : 0));
+        const begin = (idx, from, time) => {
+            const speed = this._playSpeed();
+            const tl = lib.motionTimeline(idx, from, speed);
+            this.regs.set(`${CM_ID}:66`, idx);
+            this._mplay = {index: idx, tl, t0: time, stopAtEnd: false,
+                wallLimit: Date.now() + (tl.seconds * 4000) + 5000};
+        };
+        for (const id of ids) { // the motion engine drives the joints itself: full speed, torque on
+            ph.setProfile(id, 0);
+            if (!ph.torqueOn(id)) ph.setTorque(id, 1);
+            this.regs.set(`${id}:64`, 1);
+        }
+        begin(index, cur(), ph.data.time);
+        ph.setController(time => {
+            const s = this._mplay;
+            if (!s) {
+                ph.setController(null);
+                return;
+            }
+            s.wallLimit = Math.max(s.wallLimit, Date.now() + 5000); // still stepping
+            const t = time - s.t0;
+            const pose = lib.poseAtTime(s.tl, Math.min(t, s.tl.seconds));
+            s.tl.ids.forEach((id, n) => {
+                if (this.ids.includes(id)) {
+                    const tick = Math.round(2048 + (pose[n] * 4096 / 360));
+                    this.regs.set(`${id}:116`, tick);
+                    ph.setGoalTick(id, tick);
+                }
+            });
+            if (t < s.tl.seconds) return;
+            const next = this.regs.get(`${CM_ID}:69`);
+            if (!s.stopAtEnd && next && next < 65533 && lib.hasMotion(next)) {
+                this.regs.set(`${CM_ID}:69`, 65535); // used: the task sets it again for the next page
+                const last = s.tl.frames[s.tl.frames.length - 1].pose;
+                begin(next, last, time);
+                this.last.delete('motion');
+                this._report('motion', next, `모션 ${next}번 이어서: ${lib.motionName(next)}`);
+                return;
+            }
+            this._mplay = null;
+            ph.setController(null);
+        });
+    }
+
     _describeController (addr, v) {
         const leds = {91: '빨강', 92: '초록', 93: '파랑'};
         if (leds[addr]) {
@@ -226,35 +315,37 @@ class SimTransport {
         }
         if (addr === 66) {
             if (v >= 65533) {
-                const wasPlaying = Date.now() < this.motionUntil;
+                const wasPlaying = Date.now() < this.motionUntil || Boolean(this._mplay);
+                if (v !== 65533 && (this._mplay || Date.now() < this.motionUntil)) { // 65534 / 65535: stop when this page ends
+                    if (this._mplay) this._mplay.stopAtEnd = true;
+                    else this._stopAtEnd = true;
+                    return undefined;
+                }
+                this._mplay = null;
                 this.motionUntil = 0;
                 this.last.delete('motion');
                 return wasPlaying ? this.onAction('모션 정지') : undefined;
             }
             if (v === 0) return undefined;
-            if (this.physics) { // no official motions in the 3D robot: a short walk stands in for any page
-                const ph = this.physics;
-                const {gaitTargets, defaultGait} = require('./sim3d/gait');
-                const g = defaultGait();
-                const t0 = ph.data.time;
-                this.motionUntil = Date.now() + 3000;
-                ph.setController(time => {
-                    const t = time - t0;
-                    if (t > 2.5 || Date.now() > this.motionUntil) {
-                        const st = gaitTargets(g, 0, 0);
-                        for (const j in st) ph.setGoalRad(j, st[j]);
-                        ph.setController(null);
-                        return;
-                    }
-                    const tg = gaitTargets(g, t, Math.min(1, t / 0.6, Math.max(0, (2.5 - t) / 0.6)));
-                    for (const j in tg) ph.setGoalRad(j, tg[j]);
-                });
+            const lib = require('./sim3d/motion-library');
+            if (!lib.hasMotion(v)) {
                 this.last.delete('motion');
-                return this._report('motion', v, `모션 ${v}번 재생 (3D 로봇에는 공식 모션이 없어 기본 걸음 2.5초로 대신)`);
+                if (this.physics) {
+                    this.motionUntil = 0;
+                    return this._report('motion', v, `⚠ 모션 ${v}번: 이 번호의 모션이 없습니다 (3D 탭의 모션 목록에서 번호를 확인하세요)`);
+                }
+                this.motionUntil = Date.now() + 1500;
+                return this._report('motion', v, `모션 ${v}번 재생 (1.5초)`);
             }
-            this.motionUntil = Date.now() + 1500;
+            this._stopAtEnd = false;
+            const secs = lib.motionSeconds(v) / this._playSpeed();
             this.last.delete('motion');
-            return this._report('motion', v, `모션 ${v}번 재생 (1.5초)`);
+            if (this.physics) {
+                this._playOnPhysics(v);
+                return this._report('motion', v, `모션 ${v}번 재생: ${lib.motionName(v)} · ${secs.toFixed(1)}초`);
+            }
+            this.motionUntil = Date.now() + Math.max(300, secs * 1000);
+            return this._report('motion', v, `모션 ${v}번 재생: ${lib.motionName(v)} · ${secs.toFixed(1)}초`);
         }
         if (addr === 64) return this._report('mspeed', v, `모션 속도 ${v}%`);
         if (addr === 22) return this._report('dxlpower', v, `다이나믹셀 전원 ${onOff(v)}`);
