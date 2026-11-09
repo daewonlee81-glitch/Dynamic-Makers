@@ -109,8 +109,8 @@ const check = (c, m) => { console.log(`${c ? 'ok' : 'FAIL'} - ${m}`); if (!c) fa
     await p.click('#view-python');
     const pyd = await p.$eval('#python', e => e.textContent);
     const goals = (pyd.match(/dxl\.goal\(/g) || []).length;
-    check(pyd.includes('with dxl.together(') && /dxl\.goal\(12, -?[\d.]+\)/.test(pyd) && goals === 12 * 19,
-        `Python shows every motor: with dxl.together(...) + ${goals} dxl.goal(id, deg) lines`);
+    check(pyd.includes('dxl.prepare(2)') && pyd.indexOf('dxl.prepare(2)') < pyd.indexOf('with dxl.together(') && pyd.includes('with dxl.together(') && /dxl\.goal\(12, -?[\d.]+\)/.test(pyd) && goals === 12 * 19,
+        `Python starts with dxl.prepare(2), then every motor: with dxl.together(...) + ${goals} dxl.goal(id, deg) lines`);
     // run it on the 3D robot. This test machine may simulate slower than real time
     // (software WebGL): then the program's "느리게" is raised to match.
     const speed = await sp(() => new Promise(res => {

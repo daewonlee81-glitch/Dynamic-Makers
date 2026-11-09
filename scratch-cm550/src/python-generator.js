@@ -615,6 +615,7 @@ class PythonGenerator {
             this.body(block.inputs.SUBSTACK && block.inputs.SUBSTACK.block);
             break;
         case 'dxlGoal': this.line(`dxl.goal(${id()}, ${n('DEG')})`); break;
+        case 'dxlPrepare': this.line(`dxl.prepare(${n('SECS')})`); break;
         case 'dxlWheel': this.line(`dxl.wheel(${id()}, ${n('SPEED')})`); break;
         case 'dxlWheelTwo':
             this.line(`dxl.wheels(${n('ID1')}, ${n('SPEED1')}, ${n('ID2')}, ${n('SPEED2')})`);

@@ -309,6 +309,12 @@ class SimTransport {
         return prev; // profile velocity etc.: internal
     }
 
+    /** "모든 다이나믹셀 준비하기" on the 3D robot: back on its feet in a fresh world, like each try in 걸음 학습. */
+    prepareWorld () {
+        if (this.physics) this.physics.reset();
+        return Promise.resolve();
+    }
+
     write (bytes) {
         if (!this.isOpen) return Promise.reject(new Error('가상 로봇이 연결되어 있지 않습니다.'));
         const b = Array.from(bytes);
@@ -321,6 +327,12 @@ class SimTransport {
         const relays = this._busAlive() && fault() !== 'relay';
         const exists = i => i === CM_ID || (this.ids.includes(i) && relays);
 
+        if (inst === P2.INST.REBOOT) { // like a real motor: errors cleared, torque off
+            if (!exists(id)) return Promise.resolve();
+            if (this.physics) this.physics.setTorque(id, 0);
+            this._reply(id);
+            return Promise.resolve();
+        }
         if (inst === P2.INST.PING) {
             const pong = i => this._reply(i, P2.le(this.regs.get(`${i}:0`) || 0, 2).concat([i === CM_ID ? 47 : 46]));
             if (id === P2.BROADCAST_ID) [CM_ID, ...this.ids].filter(exists).forEach(pong);

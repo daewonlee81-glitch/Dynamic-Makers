@@ -7,6 +7,7 @@
  *   sound  — loudness in 32 pitch bands over the last second
  *   sensor — CM-550 tilt, gyro and acceleration over the last second
  */
+import {assetUrl} from '../asset-url';
 
 const delay = ms => new Promise(r => setTimeout(r, ms));
 
@@ -17,7 +18,7 @@ export const loadTF = () => {
         tfPromise = new Promise((resolve, reject) => {
             if (window.DMAI_TF) return resolve(window.DMAI_TF);
             const s = document.createElement('script');
-            s.src = 'dm-ai.js';
+            s.src = assetUrl('dm-ai.js');
             s.onload = () => (window.DMAI_TF ? resolve(window.DMAI_TF) :
                 reject(new Error('AI 모듈을 불러오지 못했습니다.')));
             s.onerror = () => reject(new Error('AI 모듈(dm-ai.js)을 불러오지 못했습니다.'));

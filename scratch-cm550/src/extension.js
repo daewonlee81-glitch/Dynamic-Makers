@@ -120,6 +120,12 @@ const createExtension = ({ArgumentType, BlockType, formatMessage, cast}) => {
                         }
                     },
                     {
+                        opcode: 'dxlPrepare',
+                        blockType: BlockType.COMMAND,
+                        text: t('dxlPrepare', '모든 다이나믹셀 준비하기 (오류 지우기 · [SECS] 초 동안 180°로)'),
+                        arguments: {SECS: ARG_NUM(2)}
+                    },
+                    {
                         opcode: 'dxlTogether',
                         blockType: BlockType.CONDITIONAL,
                         branchCount: 1,
@@ -672,6 +678,19 @@ const createExtension = ({ArgumentType, BlockType, formatMessage, cast}) => {
                 await this.device.syncWriteDXL(DXL.GOAL_POSITION, ids.map((id, i) => ({
                     id, value: Math.round(degs[i] / 360 * 4096)
                 })));
+            });
+        }
+
+        /**
+         * Same start every time (like each try in 걸음 학습): motors with an error are
+         * rebooted, all torques go on together, all joints move slowly to 180°.
+         */
+        dxlPrepare (args) {
+            return this._guard(async () => {
+                const r = await this.device.prepareJoints(null, {}, clamp(num(args.SECS), 0.2, 10));
+                if (r.rebooted.length && typeof this.onInfo === 'function') {
+                    this.onInfo(`다이나믹셀 ${r.rebooted.join(', ')}: 오류가 있어 다시 시작했습니다.`);
+                }
             });
         }
 

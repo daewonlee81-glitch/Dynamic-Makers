@@ -148,7 +148,10 @@ const ext = new CM550Extension(vm.runtime);
         lastAt = now;
         log(`⚠ ${message}`, 'err');
     };
+    ext.onInfo = message => log(message, 'warn');
 }
+// each ▶ 실행 starts from the same condition: the first walk prepares the motors again
+vm.runtime.on('PROJECT_START', () => { ext.device.prepared = false; });
 {
     const em = vm.extensionManager;
     const serviceName = em._registerInternalExtension(ext);

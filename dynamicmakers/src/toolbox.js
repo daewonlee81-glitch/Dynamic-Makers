@@ -20,7 +20,7 @@ const category = (name, id, colors, body, extra = '') =>
 export const ROBOT_GROUPS = [
     {
         id: 'db_dxl', name: '다이나믹셀',
-        opcodes: ['dxlMoveTo', 'dxlMoveToWait', 'dxlMoveTwo', '---', 'dxlTogether', 'dxlGoal', '---', 'dxlWheel', 'dxlWheelTwo', 'dxlStop', '---',
+        opcodes: ['dxlMoveTo', 'dxlMoveToWait', 'dxlMoveTwo', '---', 'dxlPrepare', 'dxlTogether', 'dxlGoal', '---', 'dxlWheel', 'dxlWheelTwo', 'dxlStop', '---',
             'dxlTorque', 'dxlAllTorque', 'dxlSetMode', 'dxlLed', '---', 'dxlRead', 'dxlIsMoving', 'dxlScan']
     },
     {

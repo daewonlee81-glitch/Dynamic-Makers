@@ -15,6 +15,7 @@ const en = {
     'cm550.dxlMoveToWait': 'move DYNAMIXEL [ID] to [DEG]° and wait (speed [SPEED] %)',
     'cm550.dxlTogether': 'move all together in [SECS] seconds',
     'cm550.dxlGoal': 'DYNAMIXEL [ID] target [DEG]°',
+    'cm550.dxlPrepare': 'prepare all DYNAMIXELs (clear errors · to 180° in [SECS] s)',
     'cm550.dxlMoveTwo': 'move DYNAMIXEL [ID1] to [DEG1]° and [ID2] to [DEG2]° together',
     'cm550.dxlWheel': 'DYNAMIXEL [ID] wheel speed [SPEED] %',
     'cm550.dxlWheelTwo': 'left wheel [ID1] speed [SPEED1] % , right wheel [ID2] speed [SPEED2] %',

@@ -6,6 +6,7 @@
  */
 import {buildMJCF, MAXE1_JOINT_MAP, ACTUATED} from './maxe1-model';
 import {gaitTargets} from './gait';
+import {assetUrl} from '../asset-url';
 
 const DEG = 180 / Math.PI;
 export const CONTROL_DT = 0.04; // the walker sends new goals 25 times a second
@@ -26,7 +27,7 @@ export const loadMujoco = () => {
                 const stream = new Blob([gz]).stream().pipeThrough(new DecompressionStream('gzip'));
                 wasmBinary = new Uint8Array(await new Response(stream).arrayBuffer());
             } else {
-                const res = await fetch('mujoco.wasm');
+                const res = await fetch(assetUrl('mujoco.wasm'));
                 if (!res.ok) throw new Error('물리 엔진(mujoco.wasm)을 불러오지 못했습니다.');
                 wasmBinary = new Uint8Array(await res.arrayBuffer());
             }

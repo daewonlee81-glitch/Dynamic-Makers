@@ -62,4 +62,17 @@ OUTFILE=dist/dm-ai.js node scripts/bundle-ai.js   # TensorFlow.js + MobileNet, l
 cp src/ai/movenet-data.js dist/dm-pose.js          # skeleton model (6 MB), loaded on demand
 OUTFILE=dist/dm-sim.js node scripts/bundle-sim.js  # 3D simulator (MuJoCo + three.js), loaded on demand
 cp node_modules/@mujoco/mujoco/mujoco.wasm dist/mujoco.wasm
+# cache busting: every file gets ?v=<content hash>, so a new release shows at once
+# (GitHub Pages lets browsers keep files for 10 minutes) and unchanged files stay cached
+python3 - <<'PY'
+import hashlib, json
+h = lambda f: hashlib.md5(open('dist/' + f, 'rb').read()).hexdigest()[:10]
+files = ['dynamicmakers.js', 'dynamicmakers.css', 'dm-ai.js', 'dm-pose.js', 'dm-sim.js', 'mujoco.wasm']
+v = {f: h(f) for f in files}
+s = open('dist/index.html', encoding='utf-8').read()
+s = s.replace('href="dynamicmakers.css"', f'href="dynamicmakers.css?v={v["dynamicmakers.css"]}"')
+s = s.replace('src="dynamicmakers.js"', f'src="dynamicmakers.js?v={v["dynamicmakers.js"]}"')
+s = s.replace('</head>', f'    <script>window.DM_ASSETS = {json.dumps(v)};</script>\n</head>', 1)
+open('dist/index.html', 'w', encoding='utf-8').write(s)
+PY
 ls -la dist

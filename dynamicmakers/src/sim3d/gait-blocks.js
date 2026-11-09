@@ -79,8 +79,10 @@ export const gaitProgramXML = (g, jointMap, {steps = 20, x = 40, y = 40} = {}) =
         comment('실제 로봇은 1.5~2로 키워 천천히 시작하세요 (모든 시간에 곱해집니다).') +
         `<field name="VARIABLE" id="${VAR_ID}" variabletype="">${VAR_NAME}</field>` +
         `<value name="VALUE"><shadow type="text"><field name="TEXT">1</field></shadow></value>` +
-        `<next>${group(stance, timesSlow(1), '무릎을 굽힌 출발 자세',
-            chain(small, '출발: 절반 크기로 한 걸음 (갑자기 크게 걸으면 넘어지기 쉽습니다)', repeat))}</next></block>`;
+        `<next><block type="cm550_dxlPrepare">` +
+        comment('걸음 학습과 같은 조건에서 시작: 오류가 난 모터는 다시 시작하고, 토크를 한 번에 켠 뒤 모두 180°(바로 서기)로.') +
+        `<value name="SECS">${num(2)}</value><next>${group(stance, timesSlow(1), '무릎을 굽힌 출발 자세',
+            chain(small, '출발: 절반 크기로 한 걸음 (갑자기 크게 걸으면 넘어지기 쉽습니다)', repeat))}</next></block></next></block>`;
     const xml = `<xml><variables><variable type="" id="${VAR_ID}" islocal="false" iscloud="false">${VAR_NAME}</variable></variables>` +
         `<block type="event_whenflagclicked" x="${Math.round(x)}" y="${Math.round(y)}"><next>${setSlow}</next></block></xml>`;
     return {xml, frames: FRAMES, dt, steps, blocks: ((2 * frames.length) + 3) * (jointMap.length + 1)};

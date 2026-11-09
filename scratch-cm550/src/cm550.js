@@ -160,6 +160,7 @@ class CM550Device {
         this._velocityLimitCache = {};
         this._modeCache = {};
         this._ready = null; // moveTogether: joints prepared, and the goal last sent to each
+        this.prepared = false; // prepareJoints() done since connecting / the last program start
         this._lastGoal = null;
         this.onStateChange = null;
     }
@@ -202,6 +203,7 @@ class CM550Device {
         this._velocityLimitCache = {};
         this._modeCache = {};
         this._ready = null; // moveTogether: joints prepared, and the goal last sent to each
+        this.prepared = false; // prepareJoints() done since connecting / the last program start
         this._lastGoal = null;
         this._modelCache = {};
         this.setMotors([]);
@@ -699,6 +701,65 @@ class CM550Device {
         })));
         await this.syncWriteDXL(DXL.GOAL_POSITION, items.map(it => ({id: it.id, value: degToTick(it.deg)})));
         for (const it of items) this._lastGoal.set(it.id, it.deg);
+    }
+
+    /**
+     * 시작 준비 (block "모든 모터 준비하기"): put the motors in the same starting
+     * condition every time, the way the 3D robot starts each try in 걸음 학습 —
+     *   1. a motor reporting a hardware error (과부하, 과열, …) is rebooted, which
+     *      clears the error (it stays limp until step 3);
+     *   2. every joint is checked for position mode and told to hold where it is;
+     *   3. torque goes on for ALL joints in one command (one by one, the robot sags);
+     *   4. all joints move slowly together to the start pose (180° = straight).
+     * The 3D 가상 로봇 is instead put back on its feet in a fresh world.
+     * @param {number[]} [ids] default: every motor found by the last scan
+     * @param {Object<number, number>} [pose] {id: degrees}; missing IDs go to 180°
+     * @param {number} [seconds] time for the move to the start pose
+     * @returns {Promise<{rebooted: number[], ids: number[]}>}
+     */
+    async prepareJoints (ids, pose = {}, seconds = 2) {
+        const list = (ids && ids.length ? ids : this.motors.map(m => m.id)).map(Number);
+        if (!list.length) throw new Error('준비할 다이나믹셀이 없습니다. 먼저 [다이나믹셀 검색]을 하세요.');
+        if (this.transport && this.transport.prepareWorld) await this.transport.prepareWorld();
+        const rebooted = [];
+        for (const id of list) {
+            let err = 0;
+            try {
+                err = await this.readDXL(id, DXL.HARDWARE_ERROR);
+            } catch (e) {
+                err = 0; // a motor that does not answer is reported by the moves below
+            }
+            if (err) rebooted.push(id);
+        }
+        for (const id of rebooted) {
+            delete this._modeCache[id];
+            try {
+                await this.request(id, P2.reboot(id));
+            } catch (e) { // not relayed: ask the CM-550 to reboot every DYNAMIXEL instead
+                await this.writeCM(CM.DXL_TORQUE, 3);
+                break;
+            }
+        }
+        if (rebooted.length) await delay(800); // the motor restarts (LED blinks)
+        const here = [];
+        for (const id of list) {
+            const value = await this.readDXL(id, DXL.PRESENT_POSITION);
+            await this.writeDXL(id, DXL.GOAL_POSITION, value); // hold here when torque comes on
+            let mode = this._modeCache[id];
+            if (typeof mode === 'undefined') mode = this._modeCache[id] = await this.readDXL(id, DXL.OPERATING_MODE);
+            if (mode !== OP_MODE.POSITION && mode !== OP_MODE.EXTENDED_POSITION) {
+                await this.ensureMode(id, [OP_MODE.POSITION, OP_MODE.EXTENDED_POSITION]);
+            }
+            here.push({id, value});
+        }
+        await this.syncWriteDXL(DXL.TORQUE_ENABLE, list.map(id => ({id, value: 1})));
+        this._ready = new Set(list);
+        this._lastGoal = new Map(here.map(h => [h.id, tickToDeg(h.value)]));
+        const secs = clamp(Number(seconds) || 0, 0.2, 10);
+        await this.moveTogether(list.map(id => ({id, deg: pose[id] !== undefined ? Number(pose[id]) : 180})), secs);
+        await delay((secs * 1000) + 300); // arrive and settle
+        this.prepared = true;
+        return {rebooted, ids: list};
     }
 
     // ---- motion ----------------------------------------------------------

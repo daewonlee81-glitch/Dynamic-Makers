@@ -9,6 +9,7 @@ import {loadGraphModel} from '@tensorflow/tfjs-converter';
 import '@tensorflow/tfjs-backend-webgl';
 import '@tensorflow/tfjs-backend-cpu';
 import {MOBILENET} from './mobilenet-data';
+import {assetUrl} from '../asset-url';
 
 const b64ToBuffer = b64 => {
     const raw = atob(b64);
@@ -36,7 +37,7 @@ const ensureBackend = () => {
 const loadPoseScript = () => new Promise((resolve, reject) => {
     if (window.DMAI_POSE_MODEL) return resolve(window.DMAI_POSE_MODEL);
     const s = document.createElement('script');
-    s.src = 'dm-pose.js';
+    s.src = assetUrl('dm-pose.js');
     s.onload = () => (window.DMAI_POSE_MODEL ? resolve(window.DMAI_POSE_MODEL) :
         reject(new Error('스켈레톤 모델을 불러오지 못했습니다.')));
     s.onerror = () => reject(new Error('스켈레톤 모델(dm-pose.js)을 불러오지 못했습니다.'));

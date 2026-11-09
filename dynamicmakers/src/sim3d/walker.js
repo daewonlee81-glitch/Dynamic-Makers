@@ -54,8 +54,11 @@ export class Walker {
      * @param {object} [opts]
      * @param {object} [opts.policy] trained network (JSON from the Python kit)
      * @param {number} [opts.slow] 1 = as learned; 1.5 = 1.5× slower (safer on the real robot)
+     * @param {boolean} [opts.prepare] start from the same condition as 걸음 학습 (errors cleared,
+     *     torque on, standing straight; the 3D robot in a fresh world). Default: only the first
+     *     walk after connecting or after ▶ 실행, so walks inside one program follow each other.
      */
-    async walk (gait, seconds, {policy = null, slow = 1} = {}) {
+    async walk (gait, seconds, {policy = null, slow = 1, prepare} = {}) {
         if (this.running) this.stop();
         await delay(0);
         const dev = this.device;
@@ -67,6 +70,17 @@ export class Walker {
         this.running = true;
         this.mode = policy ? 'policy' : 'gait';
         this._emit();
+        if (prepare === true || (prepare !== false && !dev.prepared)) {
+            try {
+                this.log('시작 준비: 오류 확인 → 토크 켜기 → 모든 관절 180°(바로 서기)…');
+                const r = await dev.prepareJoints(ids, {}, 2);
+                if (r.rebooted.length) this.log(`다이나믹셀 ${r.rebooted.join(', ')}: 오류가 있어 다시 시작했습니다.`, 'warn');
+            } catch (e) {
+                this.running = false;
+                this._emit();
+                throw e;
+            }
+        }
         if (tr && tr.physics) {
             try {
                 await this._walkSim(tr, g, seconds, policy, map);

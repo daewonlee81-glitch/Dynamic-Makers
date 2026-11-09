@@ -5,6 +5,7 @@ import {MAXE1_DEFAULT, MAXE1_JOINT_MAP, MODEL_VERSION, buildMJCF} from './maxe1-
 import {GAIT_PARAMS, defaultGait, gaitTargets} from './gait';
 import {GaitLearner, REWARDS, defaultRewards, score} from './learn';
 import {checkPolicy} from './policy';
+import {assetUrl} from '../asset-url';
 
 const el = (tag, cls, text) => {
     const e = document.createElement(tag);
@@ -49,7 +50,7 @@ const loadSimBundle = () => {
         simScript = new Promise((resolve, reject) => {
             if (window.DMSIM) return resolve(window.DMSIM);
             const s = document.createElement('script');
-            s.src = 'dm-sim.js';
+            s.src = assetUrl('dm-sim.js');
             s.onload = () => (window.DMSIM ? resolve(window.DMSIM) : reject(new Error('3D 시뮬레이터를 불러오지 못했습니다.')));
             s.onerror = () => reject(new Error('3D 시뮬레이터(dm-sim.js)를 불러오지 못했습니다.'));
             document.head.append(s);
@@ -85,7 +86,8 @@ export class SimPanel {
         // settings saved for an older robot model (other lengths) are not reused
         const sameModel = saved.modelVersion === MODEL_VERSION;
         this.params = Object.assign({}, MAXE1_DEFAULT, sameModel ? saved.params || {} : {});
-        this.jointMap = (saved.joints && saved.joints.length === MAXE1_JOINT_MAP.length ? saved.joints : MAXE1_JOINT_MAP)
+        // (v3 fixed the joint directions, so an older saved ID map is not reused either)
+        this.jointMap = (sameModel && saved.joints && saved.joints.length === MAXE1_JOINT_MAP.length ? saved.joints : MAXE1_JOINT_MAP)
             .map(j => Object.assign({}, j));
         this.weights = Object.assign(defaultRewards(), saved.weights || {});
         this.ranges = Object.fromEntries(GAIT_PARAMS.map(p => [p.key,
@@ -627,7 +629,8 @@ export class SimPanel {
             this.physics.reset();
             this.log(withPolicy ? '정책으로 8초 동안 걷습니다.' : '지금 걸음으로 8초 동안 걷습니다.');
             const start = this.physics.torso;
-            await this.walker.walk(withPolicy ? this.store.policy.gait : this.gait, 8, {policy: withPolicy ? this.store.policy : null});
+            await this.walker.walk(withPolicy ? this.store.policy.gait : this.gait, 8,
+                {policy: withPolicy ? this.store.policy : null, prepare: true});
             const t = this.physics.torso;
             this.log(`3D 로봇: ${((t.x - start.x) * 100).toFixed(0)} cm 앞으로, ${this.physics.fallen ? '넘어졌습니다' : '서 있습니다'}.`,
                 this.physics.fallen ? 'warn' : 'ok');

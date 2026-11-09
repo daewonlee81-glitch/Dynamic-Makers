@@ -12,7 +12,7 @@
       "id": 1,
       "joint": "R_shoulder_pitch",
       "name": "오른팔 앞뒤",
-      "sign": 1,
+      "sign": -1,
       "center": 180
     },
     {
@@ -26,21 +26,21 @@
       "id": 3,
       "joint": "L_shoulder_pitch",
       "name": "왼팔 앞뒤",
-      "sign": -1,
+      "sign": 1,
       "center": 180
     },
     {
       "id": 4,
       "joint": "L_shoulder_roll",
       "name": "왼팔 옆",
-      "sign": -1,
+      "sign": 1,
       "center": 180
     },
     {
       "id": 5,
       "joint": "R_hip_roll",
       "name": "오른쪽 엉덩이 옆",
-      "sign": 1,
+      "sign": -1,
       "center": 180
     },
     {
@@ -61,7 +61,7 @@
       "id": 8,
       "joint": "L_hip_pitch",
       "name": "왼쪽 엉덩이 앞뒤",
-      "sign": -1,
+      "sign": 1,
       "center": 180
     },
     {
@@ -82,14 +82,14 @@
       "id": 11,
       "joint": "L_knee",
       "name": "왼쪽 발목 앞뒤 (무릎 굽힘)",
-      "sign": -1,
+      "sign": 1,
       "center": 180
     },
     {
       "id": 12,
       "joint": "L_ankle_roll",
       "name": "왼쪽 발목 옆",
-      "sign": -1,
+      "sign": 1,
       "center": 180
     }
   ]

@@ -374,6 +374,41 @@ test('moveTogether ("모두 함께" block): after the first call only two SYNC W
     assert.equal(single, 0, 'no per-motor reads or writes while walking');
 });
 
+test('prepareJoints ("모든 다이나믹셀 준비하기"): reboots motors in error, then all on together and to 180°', async () => {
+    const dev = new CM550Device();
+    const bus = dualAxisBus();
+    const deg = d => Math.round(d / 360 * 4096);
+    bus.regs['1:132'] = deg(150);
+    bus.regs['2:132'] = deg(195);
+    bus.regs['3:132'] = deg(180);
+    bus.regs['2:70'] = 0x20; // ID 2: overload
+    const rebooted = [];
+    const syncs = [];
+    const responder = b => {
+        if (b[7] === P2.INST.REBOOT) {
+            rebooted.push(b[4]);
+            bus.regs[`${b[4]}:70`] = 0;
+            bus.regs[`${b[4]}:64`] = 0;
+            return statusPacket(b[4]);
+        }
+        if (b[4] === 0xFE && b[7] === P2.INST.SYNC_WRITE) {
+            syncs.push(b[8] | (b[9] << 8));
+            return null;
+        }
+        return bus.responder(b);
+    };
+    attach(dev, new FakeTransport(responder));
+    dev.setMotors([{id: 1, model: 1090}, {id: 2, model: 1090}, {id: 3, model: 1060}]);
+    const r = await dev.prepareJoints(null, {}, 0.2);
+    assert.deepEqual(r.rebooted, [2]);
+    assert.deepEqual(rebooted, [2]);
+    assert.deepEqual(r.ids, [1, 2, 3]);
+    assert.deepEqual(syncs, [64, 112, 116], 'torque on for all in one command, then speeds and goals');
+    const holds = bus.writes.filter(w => w[1] === 116).map(w => [w[0], w[2]]);
+    assert.deepEqual(holds, [[1, deg(150)], [2, deg(195)], [3, deg(180)]], 'each joint told to hold where it is first');
+    assert.equal(dev.prepared, true);
+});
+
 test('pose blocks store poses in the project list "로봇 자세"', async () => {
     const {createExtension} = require('../src/extension');
     const Cls = createExtension({

@@ -773,6 +773,9 @@ var require_python_generator = __commonJS({
           case "dxlGoal":
             this.line(`dxl.goal(${id()}, ${n("DEG")})`);
             break;
+          case "dxlPrepare":
+            this.line(`dxl.prepare(${n("SECS")})`);
+            break;
           case "dxlWheel":
             this.line(`dxl.wheel(${id()}, ${n("SPEED")})`);
             break;
@@ -1896,6 +1899,7 @@ var require_cm550 = __commonJS({
         this._velocityLimitCache = {};
         this._modeCache = {};
         this._ready = null;
+        this.prepared = false;
         this._lastGoal = null;
         this.onStateChange = null;
       }
@@ -1935,6 +1939,7 @@ var require_cm550 = __commonJS({
         this._velocityLimitCache = {};
         this._modeCache = {};
         this._ready = null;
+        this.prepared = false;
         this._lastGoal = null;
         this._modelCache = {};
         this.setMotors([]);
@@ -2395,6 +2400,64 @@ var require_cm550 = __commonJS({
         await this.syncWriteDXL(DXL2.GOAL_POSITION, items.map((it) => ({ id: it.id, value: degToTick(it.deg) })));
         for (const it of items) this._lastGoal.set(it.id, it.deg);
       }
+      /**
+       * 시작 준비 (block "모든 모터 준비하기"): put the motors in the same starting
+       * condition every time, the way the 3D robot starts each try in 걸음 학습 —
+       *   1. a motor reporting a hardware error (과부하, 과열, …) is rebooted, which
+       *      clears the error (it stays limp until step 3);
+       *   2. every joint is checked for position mode and told to hold where it is;
+       *   3. torque goes on for ALL joints in one command (one by one, the robot sags);
+       *   4. all joints move slowly together to the start pose (180° = straight).
+       * The 3D 가상 로봇 is instead put back on its feet in a fresh world.
+       * @param {number[]} [ids] default: every motor found by the last scan
+       * @param {Object<number, number>} [pose] {id: degrees}; missing IDs go to 180°
+       * @param {number} [seconds] time for the move to the start pose
+       * @returns {Promise<{rebooted: number[], ids: number[]}>}
+       */
+      async prepareJoints(ids, pose = {}, seconds = 2) {
+        const list = (ids && ids.length ? ids : this.motors.map((m) => m.id)).map(Number);
+        if (!list.length) throw new Error("준비할 다이나믹셀이 없습니다. 먼저 [다이나믹셀 검색]을 하세요.");
+        if (this.transport && this.transport.prepareWorld) await this.transport.prepareWorld();
+        const rebooted = [];
+        for (const id of list) {
+          let err = 0;
+          try {
+            err = await this.readDXL(id, DXL2.HARDWARE_ERROR);
+          } catch (e) {
+            err = 0;
+          }
+          if (err) rebooted.push(id);
+        }
+        for (const id of rebooted) {
+          delete this._modeCache[id];
+          try {
+            await this.request(id, P22.reboot(id));
+          } catch (e) {
+            await this.writeCM(CM.DXL_TORQUE, 3);
+            break;
+          }
+        }
+        if (rebooted.length) await delay4(800);
+        const here = [];
+        for (const id of list) {
+          const value = await this.readDXL(id, DXL2.PRESENT_POSITION);
+          await this.writeDXL(id, DXL2.GOAL_POSITION, value);
+          let mode = this._modeCache[id];
+          if (typeof mode === "undefined") mode = this._modeCache[id] = await this.readDXL(id, DXL2.OPERATING_MODE);
+          if (mode !== OP_MODE.POSITION && mode !== OP_MODE.EXTENDED_POSITION) {
+            await this.ensureMode(id, [OP_MODE.POSITION, OP_MODE.EXTENDED_POSITION]);
+          }
+          here.push({ id, value });
+        }
+        await this.syncWriteDXL(DXL2.TORQUE_ENABLE, list.map((id) => ({ id, value: 1 })));
+        this._ready = new Set(list);
+        this._lastGoal = new Map(here.map((h) => [h.id, tickToDeg(h.value)]));
+        const secs = clamp(Number(seconds) || 0, 0.2, 10);
+        await this.moveTogether(list.map((id) => ({ id, deg: pose[id] !== void 0 ? Number(pose[id]) : 180 })), secs);
+        await delay4(secs * 1e3 + 300);
+        this.prepared = true;
+        return { rebooted, ids: list };
+      }
       // ---- motion ----------------------------------------------------------
       playMotion(page) {
         return this.writeCM(CM.MOTION_INDEX, clamp(Math.round(page), 1, 65532));
@@ -2595,6 +2658,12 @@ var require_extension = __commonJS({
                   ID2: ARG_NUM(2, "dxlId"),
                   DEG2: ARG_NUM(180)
                 }
+              },
+              {
+                opcode: "dxlPrepare",
+                blockType: BlockType.COMMAND,
+                text: t("dxlPrepare", "모든 다이나믹셀 준비하기 (오류 지우기 · [SECS] 초 동안 180°로)"),
+                arguments: { SECS: ARG_NUM(2) }
               },
               {
                 opcode: "dxlTogether",
@@ -3157,6 +3226,18 @@ var require_extension = __commonJS({
               id,
               value: Math.round(degs[i] / 360 * 4096)
             })));
+          });
+        }
+        /**
+         * Same start every time (like each try in 걸음 학습): motors with an error are
+         * rebooted, all torques go on together, all joints move slowly to 180°.
+         */
+        dxlPrepare(args) {
+          return this._guard(async () => {
+            const r = await this.device.prepareJoints(null, {}, clamp(num3(args.SECS), 0.2, 10));
+            if (r.rebooted.length && typeof this.onInfo === "function") {
+              this.onInfo(`다이나믹셀 ${r.rebooted.join(", ")}: 오류가 있어 다시 시작했습니다.`);
+            }
           });
         }
         /**
@@ -3879,6 +3960,11 @@ var require_sim_robot = __commonJS({
         }
         return prev;
       }
+      /** "모든 다이나믹셀 준비하기" on the 3D robot: back on its feet in a fresh world, like each try in 걸음 학습. */
+      prepareWorld() {
+        if (this.physics) this.physics.reset();
+        return Promise.resolve();
+      }
       write(bytes) {
         if (!this.isOpen) return Promise.reject(new Error("가상 로봇이 연결되어 있지 않습니다."));
         const b = Array.from(bytes);
@@ -3889,6 +3975,12 @@ var require_sim_robot = __commonJS({
         const params = b.slice(8, 8 + len - 3);
         const relays = this._busAlive() && fault() !== "relay";
         const exists = (i) => i === CM_ID2 || this.ids.includes(i) && relays;
+        if (inst === P22.INST.REBOOT) {
+          if (!exists(id)) return Promise.resolve();
+          if (this.physics) this.physics.setTorque(id, 0);
+          this._reply(id);
+          return Promise.resolve();
+        }
         if (inst === P22.INST.PING) {
           const pong = (i) => this._reply(i, P22.le(this.regs.get(`${i}:0`) || 0, 2).concat([i === CM_ID2 ? 47 : 46]));
           if (id === P22.BROADCAST_ID) [CM_ID2, ...this.ids].filter(exists).forEach(pong);
@@ -4017,6 +4109,7 @@ var ROBOT_GROUPS = [
       "dxlMoveToWait",
       "dxlMoveTwo",
       "---",
+      "dxlPrepare",
       "dxlTogether",
       "dxlGoal",
       "---",
@@ -5344,6 +5437,12 @@ var TeachPanel = class {
   }
 };
 
+// src/asset-url.js
+var assetUrl = (name) => {
+  const v = window.DM_ASSETS && window.DM_ASSETS[name];
+  return v ? `${name}?v=${v}` : name;
+};
+
 // src/ai/sources.js
 var delay2 = (ms) => new Promise((r) => setTimeout(r, ms));
 var tfPromise = null;
@@ -5352,7 +5451,7 @@ var loadTF = () => {
     tfPromise = new Promise((resolve, reject) => {
       if (window.DMAI_TF) return resolve(window.DMAI_TF);
       const s = document.createElement("script");
-      s.src = "dm-ai.js";
+      s.src = assetUrl("dm-ai.js");
       s.onload = () => window.DMAI_TF ? resolve(window.DMAI_TF) : reject(new Error("AI 모듈을 불러오지 못했습니다."));
       s.onerror = () => reject(new Error("AI 모듈(dm-ai.js)을 불러오지 못했습니다."));
       document.head.append(s);
@@ -6832,8 +6931,11 @@ var Walker = class {
    * @param {object} [opts]
    * @param {object} [opts.policy] trained network (JSON from the Python kit)
    * @param {number} [opts.slow] 1 = as learned; 1.5 = 1.5× slower (safer on the real robot)
+   * @param {boolean} [opts.prepare] start from the same condition as 걸음 학습 (errors cleared,
+   *     torque on, standing straight; the 3D robot in a fresh world). Default: only the first
+   *     walk after connecting or after ▶ 실행, so walks inside one program follow each other.
    */
-  async walk(gait, seconds, { policy = null, slow = 1 } = {}) {
+  async walk(gait, seconds, { policy = null, slow = 1, prepare } = {}) {
     if (this.running) this.stop();
     await delay3(0);
     const dev = this.device;
@@ -6845,6 +6947,17 @@ var Walker = class {
     this.running = true;
     this.mode = policy ? "policy" : "gait";
     this._emit();
+    if (prepare === true || prepare !== false && !dev.prepared) {
+      try {
+        this.log("시작 준비: 오류 확인 → 토크 켜기 → 모든 관절 180°(바로 서기)…");
+        const r = await dev.prepareJoints(ids, {}, 2);
+        if (r.rebooted.length) this.log(`다이나믹셀 ${r.rebooted.join(", ")}: 오류가 있어 다시 시작했습니다.`, "warn");
+      } catch (e) {
+        this.running = false;
+        this._emit();
+        throw e;
+      }
+    }
     if (tr && tr.physics) {
       try {
         await this._walkSim(tr, g, seconds, policy, map);
@@ -8437,7 +8550,7 @@ var maxe1_cad_default = {
 };
 
 // src/sim3d/maxe1-model.js
-var MODEL_VERSION = 2;
+var MODEL_VERSION = 3;
 var MAXE1_DEFAULT = {
   extraMass: 0,
   // kg added to the torso (e.g. a sensor you mounted)
@@ -8449,18 +8562,18 @@ var MAXE1_DEFAULT = {
   friction: 1
 };
 var MAXE1_JOINT_MAP = [
-  { id: 1, joint: "R_shoulder_pitch", name: "오른팔 앞뒤", sign: 1, center: 180 },
+  { id: 1, joint: "R_shoulder_pitch", name: "오른팔 앞뒤", sign: -1, center: 180 },
   { id: 2, joint: "R_shoulder_roll", name: "오른팔 옆", sign: 1, center: 180 },
-  { id: 3, joint: "L_shoulder_pitch", name: "왼팔 앞뒤", sign: -1, center: 180 },
-  { id: 4, joint: "L_shoulder_roll", name: "왼팔 옆", sign: -1, center: 180 },
-  { id: 5, joint: "R_hip_roll", name: "오른쪽 엉덩이 옆", sign: 1, center: 180 },
+  { id: 3, joint: "L_shoulder_pitch", name: "왼팔 앞뒤", sign: 1, center: 180 },
+  { id: 4, joint: "L_shoulder_roll", name: "왼팔 옆", sign: 1, center: 180 },
+  { id: 5, joint: "R_hip_roll", name: "오른쪽 엉덩이 옆", sign: -1, center: 180 },
   { id: 6, joint: "R_hip_pitch", name: "오른쪽 엉덩이 앞뒤", sign: 1, center: 180 },
   { id: 7, joint: "L_hip_roll", name: "왼쪽 엉덩이 옆", sign: -1, center: 180 },
-  { id: 8, joint: "L_hip_pitch", name: "왼쪽 엉덩이 앞뒤", sign: -1, center: 180 },
+  { id: 8, joint: "L_hip_pitch", name: "왼쪽 엉덩이 앞뒤", sign: 1, center: 180 },
   { id: 9, joint: "R_knee", name: "오른쪽 발목 앞뒤 (무릎 굽힘)", sign: 1, center: 180 },
   { id: 10, joint: "R_ankle_roll", name: "오른쪽 발목 옆", sign: 1, center: 180 },
-  { id: 11, joint: "L_knee", name: "왼쪽 발목 앞뒤 (무릎 굽힘)", sign: -1, center: 180 },
-  { id: 12, joint: "L_ankle_roll", name: "왼쪽 발목 옆", sign: -1, center: 180 }
+  { id: 11, joint: "L_knee", name: "왼쪽 발목 앞뒤 (무릎 굽힘)", sign: 1, center: 180 },
+  { id: 12, joint: "L_ankle_roll", name: "왼쪽 발목 옆", sign: 1, center: 180 }
 ];
 var ACTUATED = MAXE1_JOINT_MAP.map((j) => j.joint);
 var f = (v) => Number(v.toFixed(5));
@@ -8731,7 +8844,7 @@ var loadSimBundle = () => {
     simScript = new Promise((resolve, reject) => {
       if (window.DMSIM) return resolve(window.DMSIM);
       const s = document.createElement("script");
-      s.src = "dm-sim.js";
+      s.src = assetUrl("dm-sim.js");
       s.onload = () => window.DMSIM ? resolve(window.DMSIM) : reject(new Error("3D 시뮬레이터를 불러오지 못했습니다."));
       s.onerror = () => reject(new Error("3D 시뮬레이터(dm-sim.js)를 불러오지 못했습니다."));
       document.head.append(s);
@@ -8765,7 +8878,7 @@ var SimPanel = class {
     const saved = load();
     const sameModel = saved.modelVersion === MODEL_VERSION;
     this.params = Object.assign({}, MAXE1_DEFAULT, sameModel ? saved.params || {} : {});
-    this.jointMap = (saved.joints && saved.joints.length === MAXE1_JOINT_MAP.length ? saved.joints : MAXE1_JOINT_MAP).map((j) => Object.assign({}, j));
+    this.jointMap = (sameModel && saved.joints && saved.joints.length === MAXE1_JOINT_MAP.length ? saved.joints : MAXE1_JOINT_MAP).map((j) => Object.assign({}, j));
     this.weights = Object.assign(defaultRewards(), saved.weights || {});
     this.ranges = Object.fromEntries(GAIT_PARAMS.map((p) => [
       p.key,
@@ -9333,7 +9446,11 @@ var SimPanel = class {
       this.physics.reset();
       this.log(withPolicy ? "정책으로 8초 동안 걷습니다." : "지금 걸음으로 8초 동안 걷습니다.");
       const start = this.physics.torso;
-      await this.walker.walk(withPolicy ? this.store.policy.gait : this.gait, 8, { policy: withPolicy ? this.store.policy : null });
+      await this.walker.walk(
+        withPolicy ? this.store.policy.gait : this.gait,
+        8,
+        { policy: withPolicy ? this.store.policy : null, prepare: true }
+      );
       const t = this.physics.torso;
       this.log(
         `3D 로봇: ${((t.x - start.x) * 100).toFixed(0)} cm 앞으로, ${this.physics.fallen ? "넘어졌습니다" : "서 있습니다"}.`,
@@ -9432,12 +9549,12 @@ var gaitProgramXML = (g, jointMap, { steps = 20, x = 40, y = 40 } = {}) => {
   const small = stepFrames(g, FRAMES, 0.5).map((t) => toDegrees(t, jointMap));
   const chain = (list, note, next) => list.reduceRight((acc, joints, i) => group(joints, timesSlow(dt), i === 0 ? note : "", acc), next);
   const repeat = `<block type="control_repeat">${comment(`걸음 학습으로 찾은 걸음 · ${steps}걸음`)}<value name="TIMES"><shadow type="math_whole_number"><field name="NUM">${steps}</field></shadow></value><statement name="SUBSTACK">${loop}</statement><next>${group(stance, timesSlow(0.5), "", group(straight, "", "똑바로 서기"))}</next></block>`;
-  const setSlow = `<block type="data_setvariableto">` + comment("실제 로봇은 1.5~2로 키워 천천히 시작하세요 (모든 시간에 곱해집니다).") + `<field name="VARIABLE" id="${VAR_ID}" variabletype="">${VAR_NAME}</field><value name="VALUE"><shadow type="text"><field name="TEXT">1</field></shadow></value><next>${group(
+  const setSlow = `<block type="data_setvariableto">` + comment("실제 로봇은 1.5~2로 키워 천천히 시작하세요 (모든 시간에 곱해집니다).") + `<field name="VARIABLE" id="${VAR_ID}" variabletype="">${VAR_NAME}</field><value name="VALUE"><shadow type="text"><field name="TEXT">1</field></shadow></value><next><block type="cm550_dxlPrepare">` + comment("걸음 학습과 같은 조건에서 시작: 오류가 난 모터는 다시 시작하고, 토크를 한 번에 켠 뒤 모두 180°(바로 서기)로.") + `<value name="SECS">${num2(2)}</value><next>${group(
     stance,
     timesSlow(1),
     "무릎을 굽힌 출발 자세",
     chain(small, "출발: 절반 크기로 한 걸음 (갑자기 크게 걸으면 넘어지기 쉽습니다)", repeat)
-  )}</next></block>`;
+  )}</next></block></next></block>`;
   const xml = `<xml><variables><variable type="" id="${VAR_ID}" islocal="false" iscloud="false">${VAR_NAME}</variable></variables><block type="event_whenflagclicked" x="${Math.round(x)}" y="${Math.round(y)}"><next>${setSlow}</next></block></xml>`;
   return { xml, frames: FRAMES, dt, steps, blocks: (2 * frames.length + 3) * (jointMap.length + 1) };
 };
@@ -9545,7 +9662,11 @@ var ext = new CM550Extension(vm.runtime);
     lastAt = now;
     log(`⚠ ${message}`, "err");
   };
+  ext.onInfo = (message) => log(message, "warn");
 }
+vm.runtime.on("PROJECT_START", () => {
+  ext.device.prepared = false;
+});
 {
   const em = vm.extensionManager;
   const serviceName = em._registerInternalExtension(ext);
