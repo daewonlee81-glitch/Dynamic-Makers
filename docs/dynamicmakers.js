@@ -44,7 +44,7 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // ../scratch-cm550/src/models.js
 var require_models = __commonJS({
   "../scratch-cm550/src/models.js"(exports, module) {
-    var MODELS2 = {
+    var MODELS = {
       1060: { name: "XL430-W250", short: "XL430", family: "xl430", volts: [6.5, 12] },
       1090: { name: "2XL430-W250", short: "2XL430", family: "xl430", dual: true, volts: [6.5, 12] },
       1070: { name: "XC430-W150", short: "XC430", family: "xc430", volts: [6.5, 14.8] },
@@ -66,10 +66,10 @@ var require_models = __commonJS({
     var INCOMPATIBLE = {
       350: "XL-320 (CM-550과 호환되지 않음)"
     };
-    var modelInfo2 = (model) => MODELS2[model] || null;
-    var modelName3 = (model) => MODELS2[model] ? MODELS2[model].name : INCOMPATIBLE[model] || (model === 450 ? "CM-550" : `모델 ${model}`);
+    var modelInfo2 = (model) => MODELS[model] || null;
+    var modelName3 = (model) => MODELS[model] ? MODELS[model].name : INCOMPATIBLE[model] || (model === 450 ? "CM-550" : `모델 ${model}`);
     var pairDualAxes = (motors) => {
-      const dual = motors.filter((m) => MODELS2[m.model] && MODELS2[m.model].dual).sort((x, y) => x.id - y.id);
+      const dual = motors.filter((m) => MODELS[m.model] && MODELS[m.model].dual).sort((x, y) => x.id - y.id);
       const pairs = [];
       for (let i = 0; i + 1 < dual.length; i++) {
         const a = dual[i];
@@ -91,7 +91,7 @@ var require_models = __commonJS({
       const warnings = [];
       const labels = {};
       for (const m of motors) {
-        const info = MODELS2[m.model];
+        const info = MODELS[m.model];
         const ax = axis[m.id];
         labels[m.id] = info ? `${info.short}${ax ? ` ${ax.axis}축` : ""}` : modelName3(m.model);
         if (!info) {
@@ -105,7 +105,7 @@ var require_models = __commonJS({
       if (dupes.length) warnings.push(`같은 ID를 가진 모터가 있습니다: ${[...new Set(dupes)].join(", ")}`);
       return { labels, pairs, axis, warnings };
     };
-    module.exports = { MODELS: MODELS2, INCOMPATIBLE, modelInfo: modelInfo2, modelName: modelName3, pairDualAxes, describeMotors };
+    module.exports = { MODELS, INCOMPATIBLE, modelInfo: modelInfo2, modelName: modelName3, pairDualAxes, describeMotors };
   }
 });
 
@@ -10518,12 +10518,326 @@ var SimPanel = class {
 // src/tutor.js
 init_motion_library();
 init_maxe1_motion_notes();
+
+// src/tutor-bench.js
+(function() {
+  "use strict";
+  if (typeof window === "undefined" || window.RMTutorBench) return;
+  const MODELS = {
+    light: { f16: "Qwen2.5-Coder-1.5B-Instruct-q4f16_1-MLC", f32: "Qwen2.5-Coder-1.5B-Instruct-q4f32_1-MLC", gb: 1.6, think: false },
+    rec: { f16: "Qwen3.5-2B-q4f16_1-MLC", f32: "Qwen3.5-2B-q4f32_1-MLC", gb: 2.2, think: true },
+    pro: { f16: "Qwen3.5-4B-q4f16_1-MLC", f32: "Qwen3.5-4B-q4f32_1-MLC", gb: 3.9, think: true },
+    old: { f16: "Qwen2.5-Coder-3B-Instruct-q4f16_1-MLC", f32: "Qwen2.5-Coder-3B-Instruct-q4f32_1-MLC", gb: 2.5, think: false, legacy: true }
+  };
+  const ALIAS2 = { small: "light", large: "old" };
+  const L = ["ko", "en", "ja", "zh-CN", "zh-TW", "es", "th"];
+  const norm = (lang) => {
+    lang = String(lang || "en");
+    if (L.includes(lang)) return lang;
+    if (/^zh[-_](tw|hk|hant)/i.test(lang)) return "zh-TW";
+    if (/^zh/i.test(lang)) return "zh-CN";
+    const b = lang.slice(0, 2).toLowerCase();
+    return L.includes(b) ? b : "en";
+  };
+  const TX = {
+    light: ["가벼운 모델 · Qwen 코더 1.5B (약 1.6 GB)", "Light · Qwen Coder 1.5B (about 1.6 GB)", "軽量 · Qwen Coder 1.5B（約1.6 GB）", "轻量 · Qwen Coder 1.5B（约 1.6 GB）", "輕量 · Qwen Coder 1.5B（約 1.6 GB）", "Ligero · Qwen Coder 1.5B (unos 1,6 GB)", "เบา · Qwen Coder 1.5B (ประมาณ 1.6 GB)"],
+    rec: ["추천 · Qwen3.5 2B (약 2.2 GB)", "Recommended · Qwen3.5 2B (about 2.2 GB)", "おすすめ · Qwen3.5 2B（約2.2 GB）", "推荐 · Qwen3.5 2B（约 2.2 GB）", "推薦 · Qwen3.5 2B（約 2.2 GB）", "Recomendado · Qwen3.5 2B (unos 2,2 GB)", "แนะนำ · Qwen3.5 2B (ประมาณ 2.2 GB)"],
+    pro: ["고성능 · Qwen3.5 4B (약 3.9 GB)", "High-end · Qwen3.5 4B (about 3.9 GB)", "高性能 · Qwen3.5 4B（約3.9 GB）", "高性能 · Qwen3.5 4B（约 3.9 GB）", "高效能 · Qwen3.5 4B（約 3.9 GB）", "Alto rendimiento · Qwen3.5 4B (unos 3,9 GB)", "ประสิทธิภาพสูง · Qwen3.5 4B (ประมาณ 3.9 GB)"],
+    old: ["예전 모델 · Qwen 코더 3B — 지워도 됩니다", "Old model · Qwen Coder 3B — safe to delete", "旧モデル · Qwen Coder 3B — 削除してかまいません", "旧模型 · Qwen Coder 3B — 可以删除", "舊模型 · Qwen Coder 3B — 可以刪除", "Modelo antiguo · Qwen Coder 3B — se puede borrar", "โมเดลเก่า · Qwen Coder 3B — ลบได้"],
+    lightD: ["그래픽 메모리가 적은 PC", "For PCs with little graphics memory", "グラフィックメモリが少ないPC向け", "适合显存较少的电脑", "適合顯示記憶體較少的電腦", "Para PC con poca memoria gráfica", "สำหรับคอมพิวเตอร์ที่หน่วยความจำกราฟิกน้อย"],
+    recD: ["한국어 등 여러 언어 설명이 좋아요", "Best at explaining in many languages", "多くの言語での説明が得意", "多语言讲解更好", "多語言講解更好", "Mejor explicando en varios idiomas", "อธิบายได้ดีหลายภาษา"],
+    proD: ["더 정확하지만 그래픽 메모리 4 GB 이상 필요", "More accurate, needs 4 GB+ graphics memory", "より正確・グラフィックメモリ4 GB以上が必要", "更准确,需要 4 GB 以上显存", "更準確,需要 4 GB 以上顯示記憶體", "Más preciso, necesita 4 GB+ de memoria gráfica", "แม่นยำกว่า ต้องมีหน่วยความจำกราฟิก 4 GB ขึ้นไป"],
+    bench: ["🧪 모델 비교 시험 (선생님용)", "🧪 Compare models (for teachers)", "🧪 モデル比較テスト（先生用）", "🧪 模型对比测试(教师用)", "🧪 模型比較測試(教師用)", "🧪 Comparar modelos (docentes)", "🧪 ทดสอบเปรียบเทียบโมเดล (สำหรับครู)"],
+    title: ["AI 튜터 모델 비교 시험", "AI tutor model comparison", "AIチューター モデル比較テスト", "AI 导师模型对比测试", "AI 導師模型比較測試", "Comparación de modelos del tutor IA", "ทดสอบเปรียบเทียบโมเดลติวเตอร์ AI"],
+    intro: [
+      "일부러 틀린 곳을 넣은 예제 {0}개를 설치된 모델마다 똑같이 묻습니다. 틀린 줄을 맞게 짚었는지와 걸린 시간은 자동으로 재고, 답이 자연스럽고 도움이 되는지는 선생님이 1~5점으로 매겨 주세요. 시험 중에는 인터넷이 필요 없습니다.",
+      "Each installed model gets the same {0} example programs with a planted mistake. Line accuracy and time are measured automatically; please rate each answer 1–5 for how natural and helpful it is. No internet is needed while testing.",
+      "わざと間違いを入れた例 {0} 個を、インストール済みの各モデルに同じように質問します。間違った行を当てたかと時間は自動で測り、答えが自然で役に立つかは先生が1〜5点で採点してください。テスト中はインターネット不要です。",
+      "用 {0} 个故意放了错误的示例,向每个已安装的模型提出同样的问题。是否指出正确的行和用时会自动测量,回答是否自然、有帮助请老师打 1~5 分。测试时不需要网络。",
+      "用 {0} 個故意放了錯誤的範例,向每個已安裝的模型提出同樣的問題。是否指出正確的行和用時會自動測量,回答是否自然、有幫助請老師打 1~5 分。測試時不需要網路。",
+      "Cada modelo instalado recibe los mismos {0} programas con un error a propósito. La línea acertada y el tiempo se miden solos; puntúa cada respuesta de 1 a 5 según lo natural y útil que sea. No hace falta internet durante la prueba.",
+      "ถามตัวอย่าง {0} ข้อที่ใส่จุดผิดไว้ กับทุกโมเดลที่ติดตั้ง เหมือนกันทุกตัว ระบบวัดเองว่าชี้บรรทัดถูกไหมและใช้เวลาเท่าไร ส่วนความเป็นธรรมชาติและประโยชน์ของคำตอบ ให้ครูให้คะแนน 1–5 ระหว่างทดสอบไม่ต้องใช้อินเทอร์เน็ต"
+    ],
+    pick: ["시험할 모델", "Models to test", "テストするモデル", "要测试的模型", "要測試的模型", "Modelos a probar", "โมเดลที่จะทดสอบ"],
+    none: ["설치된 모델이 없어요. 먼저 AI 튜터에서 모델을 하나 이상 설치해 주세요.", "No model is installed. Install at least one model in the AI tutor first.", "インストール済みのモデルがありません。先にAIチューターでモデルを入れてください。", "没有已安装的模型。请先在 AI 导师中安装至少一个模型。", "沒有已安裝的模型。請先在 AI 導師中安裝至少一個模型。", "No hay modelos instalados. Instala al menos uno en el tutor IA.", "ยังไม่มีโมเดลที่ติดตั้ง กรุณาติดตั้งอย่างน้อยหนึ่งโมเดลในติวเตอร์ AI ก่อน"],
+    start: ["▶ 시험 시작", "▶ Start test", "▶ テスト開始", "▶ 开始测试", "▶ 開始測試", "▶ Empezar", "▶ เริ่มทดสอบ"],
+    stop: ["■ 멈추기", "■ Stop", "■ 停止", "■ 停止", "■ 停止", "■ Parar", "■ หยุด"],
+    close: ["닫기", "Close", "閉じる", "关闭", "關閉", "Cerrar", "ปิด"],
+    loading: ["{0} 불러오는 중… {1}%", "Loading {0}… {1}%", "{0} を読み込み中… {1}%", "正在加载 {0}… {1}%", "正在載入 {0}… {1}%", "Cargando {0}… {1} %", "กำลังโหลด {0}… {1}%"],
+    asking: ["{0} · 문제 {1}/{2}", "{0} · case {1}/{2}", "{0} · 問題 {1}/{2}", "{0} · 第 {1}/{2} 题", "{0} · 第 {1}/{2} 題", "{0} · caso {1}/{2}", "{0} · ข้อ {1}/{2}"],
+    done: ["시험 끝 — 답을 읽고 점수를 매겨 주세요.", "Done — read the answers and rate them.", "終了 — 答えを読んで採点してください。", "完成 — 请阅读回答并打分。", "完成 — 請閱讀回答並評分。", "Terminado: lee las respuestas y puntúalas.", "เสร็จแล้ว — อ่านคำตอบแล้วให้คะแนน"],
+    model: ["모델", "Model", "モデル", "模型", "模型", "Modelo", "โมเดล"],
+    lines: ["줄 맞힘", "Right line", "行の正解", "指对行", "指對行", "Línea acertada", "ชี้บรรทัดถูก"],
+    first: ["첫 글자", "First word", "最初の文字", "首字", "首字", "Primera palabra", "คำแรก"],
+    total: ["전체 시간", "Total time", "全体の時間", "总用时", "總用時", "Tiempo total", "เวลาทั้งหมด"],
+    speed: ["속도", "Speed", "速度", "速度", "速度", "Velocidad", "ความเร็ว"],
+    score: ["선생님 점수", "Teacher score", "先生の点数", "教师评分", "教師評分", "Nota docente", "คะแนนครู"],
+    tps: ["토큰/초", "tok/s", "トークン/秒", "token/秒", "token/秒", "tok/s", "โทเคน/วินาที"],
+    expect: ["정답 줄", "Expected line", "正解の行", "正确的行", "正確的行", "Línea esperada", "บรรทัดที่ถูก"],
+    copy: ["📋 결과 복사", "📋 Copy results", "📋 結果をコピー", "📋 复制结果", "📋 複製結果", "📋 Copiar resultados", "📋 คัดลอกผล"],
+    copied: ["결과를 복사했습니다.", "Results copied.", "結果をコピーしました。", "已复制结果。", "已複製結果。", "Resultados copiados.", "คัดลอกผลแล้ว"],
+    useBest: ["이 모델 쓰기", "Use this model", "このモデルを使う", "使用此模型", "使用此模型", "Usar este modelo", "ใช้โมเดลนี้"],
+    err: ["오류: {0}", "Error: {0}", "エラー:{0}", "错误:{0}", "錯誤:{0}", "Error: {0}", "ข้อผิดพลาด: {0}"],
+    last: ["지난 시험 결과 ({0})", "Last results ({0})", "前回の結果（{0}）", "上次结果({0})", "上次結果({0})", "Últimos resultados ({0})", "ผลครั้งก่อน ({0})"],
+    note: ["※ 같은 PC에서 한 번에 한 모델씩 불러와 시험합니다. 큰 모델은 불러오는 데 1분 넘게 걸릴 수 있어요.", "※ Models are loaded one at a time on this PC. Large models can take over a minute to load.", "※ このPCで1つずつ読み込んでテストします。大きいモデルは読み込みに1分以上かかることがあります。", "※ 在这台电脑上一次加载一个模型测试。大模型加载可能超过 1 分钟。", "※ 在這台電腦上一次載入一個模型測試。大模型載入可能超過 1 分鐘。", "※ Los modelos se cargan de uno en uno en este PC. Los grandes pueden tardar más de un minuto.", "※ โหลดทีละโมเดลในเครื่องนี้ โมเดลใหญ่อาจใช้เวลาโหลดเกิน 1 นาที"]
+  };
+  const tx = (k, lang, ...a) => {
+    const row = TX[k];
+    if (!row) return k;
+    const s = row[L.indexOf(norm(lang))] || row[1];
+    return s.replace(/\{(\d)\}/g, (_, i) => a[i] !== void 0 ? a[i] : "");
+  };
+  const esc3 = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  const key = (k) => ALIAS2[k] || (MODELS[k] ? k : "rec");
+  const modelId = (k, f16) => {
+    const m = MODELS[key(k)];
+    return m ? m[f16 ? "f16" : "f32"] : null;
+  };
+  const genOpts = (k) => MODELS[key(k)]?.think ? { extra_body: { enable_thinking: false } } : {};
+  const stripThink = (s) => String(s).replace(/<think>[\s\S]*?(<\/think>|$)/g, "").trim();
+  const rows = (installed) => ["light", "rec", "pro", "old"].filter((k) => !MODELS[k].legacy || installed?.[k]);
+  function citedLines(text2) {
+    const out = /* @__PURE__ */ new Set();
+    for (const m of String(text2).matchAll(/\[\s*L(\d+)(?:\s*[-–~]\s*L?(\d+))?\s*\]/g)) {
+      const a = +m[1], b = +(m[2] || m[1]);
+      for (let i = Math.min(a, b); i <= Math.max(a, b) && i - a < 30; i++) out.add(i);
+    }
+    return [...out];
+  }
+  const hit = (text2, expect) => citedLines(text2).some((n) => expect.includes(n));
+  const STORE3 = "rm-tutor-bench";
+  let css = false;
+  function addCss() {
+    if (css) return;
+    css = true;
+    const st = document.createElement("style");
+    st.textContent = `
+.rmb-back{position:fixed;inset:0;z-index:400;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;padding:16px}
+.rmb{background:#fff;color:#1e293b;border-radius:14px;max-width:960px;width:100%;max-height:92vh;overflow:auto;padding:18px 20px;box-shadow:0 20px 60px rgba(0,0,0,.3);font-size:14px;line-height:1.5}
+.rmb h2{margin:0 0 6px;font-size:19px}.rmb p{margin:6px 0}.rmb small{color:#64748b}
+.rmb-pick{display:flex;flex-wrap:wrap;gap:8px 16px;margin:8px 0}
+.rmb-pick label{display:flex;gap:6px;align-items:center}
+.rmb button{height:32px;padding:0 12px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;font:inherit;font-weight:700;cursor:pointer}
+.rmb button.primary{background:#6B3FC2;border-color:#6B3FC2;color:#fff}
+.rmb button:disabled{opacity:.5;cursor:default}
+.rmb-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0}
+.rmb-state{flex:1;min-width:200px;color:#475569}
+.rmb table{border-collapse:collapse;width:100%;margin:8px 0}
+.rmb th,.rmb td{border:1px solid #e2e8f0;padding:6px 8px;text-align:left;vertical-align:top}
+.rmb th{background:#f8fafc;font-size:13px}
+.rmb td.num{text-align:right;white-space:nowrap}
+.rmb-case{border:1px solid #e2e8f0;border-radius:10px;margin:8px 0;padding:8px 10px}
+.rmb-case>b{display:block;margin-bottom:4px}
+.rmb-case pre{background:#f8fafc;border-radius:8px;padding:6px 8px;white-space:pre-wrap;font-size:12px;margin:4px 0;max-height:160px;overflow:auto}
+.rmb-ans{border-top:1px dashed #e2e8f0;padding:6px 0}
+.rmb-ans .who{font-weight:700}.rmb-ans .ok{color:#15803d}.rmb-ans .no{color:#b91c1c}
+.rmb-ans .txt{white-space:pre-wrap;background:#f5f3ff;border-radius:8px;padding:6px 8px;margin:4px 0}
+.rmb-rate button{height:26px;min-width:30px;padding:0 6px;margin-right:2px}
+.rmb-rate button.on{background:#6B3FC2;color:#fff;border-color:#6B3FC2}`;
+    document.head.appendChild(st);
+  }
+  function open(opts) {
+    addCss();
+    const lang = norm(opts.lang);
+    const T2 = (k, ...a) => tx(k, lang, ...a);
+    const cases = opts.cases || [];
+    const avail = rows(opts.installed).filter((k) => opts.installed?.[k]);
+    if (opts.chrome?.ok) avail.push("chrome");
+    const label2 = (k) => k === "chrome" ? opts.chrome.label : tx(k, lang);
+    let last = null;
+    try {
+      last = JSON.parse(localStorage.getItem(STORE3) || "null");
+    } catch (e) {
+      last = null;
+    }
+    let res = last && last.cases === cases.length ? last : null;
+    let stop = false;
+    let running = false;
+    const back = document.createElement("div");
+    back.className = "rmb-back";
+    back.innerHTML = `<div class="rmb" role="dialog" aria-modal="true">
+      <h2>${T2("title")}</h2>
+      <p>${T2("intro", cases.length)}</p>
+      ${avail.length ? `<div class="rmb-pick"><b>${T2("pick")}:</b>${avail.map((k) => `<label><input type="checkbox" value="${k}" checked> ${esc3(label2(k))}</label>`).join("")}</div>` : `<p class="no"><b>${T2("none")}</b></p>`}
+      <div class="rmb-bar"><button class="primary" data-a="start" ${avail.length ? "" : "disabled"}>${T2("start")}</button>
+        <button data-a="stop" hidden>${T2("stop")}</button><span class="rmb-state"></span>
+        <button data-a="copy">${T2("copy")}</button><button data-a="close">${T2("close")}</button></div>
+      <small>${T2("note")}</small>
+      <div class="rmb-out"></div></div>`;
+    document.body.appendChild(back);
+    const $2 = (s) => back.querySelector(s);
+    const state = (s) => $2(".rmb-state").textContent = s;
+    const keep = () => {
+      try {
+        localStorage.setItem(STORE3, JSON.stringify(res));
+      } catch (e) {
+      }
+    };
+    function summary(k) {
+      const a = (res.models[k]?.answers || []).filter(Boolean);
+      const avg = (f2) => {
+        const v = a.map(f2).filter((x) => typeof x === "number" && isFinite(x));
+        return v.length ? v.reduce((s, x) => s + x, 0) / v.length : null;
+      };
+      return { n: a.length, hits: a.filter((x) => x.hit).length, first: avg((x) => x.first), total: avg((x) => x.total), tps: avg((x) => x.tps), score: avg((x) => x.score) };
+    }
+    const sec = (ms) => ms == null ? "–" : (ms / 1e3).toFixed(1) + "s";
+    function render() {
+      const out = $2(".rmb-out");
+      if (!res) return out.innerHTML = "";
+      const ks = Object.keys(res.models);
+      const table = `<table><tr><th>${T2("model")}</th><th>${T2("lines")}</th><th>${T2("first")}</th><th>${T2("total")}</th><th>${T2("speed")}</th><th>${T2("score")}</th><th></th></tr>
+        ${ks.map((k) => {
+        const s = summary(k);
+        return `<tr><td>${esc3(label2(k) || k)}</td><td class="num">${s.hits}/${s.n}</td><td class="num">${sec(s.first)}</td><td class="num">${sec(s.total)}</td>
+            <td class="num">${s.tps == null ? "–" : s.tps.toFixed(1) + " " + T2("tps")}</td><td class="num">${s.score == null ? "–" : s.score.toFixed(1)}</td>
+            <td>${k !== "chrome" && opts.onUse ? `<button data-use="${k}">${T2("useBest")}</button>` : ""}</td></tr>`;
+      }).join("")}</table>`;
+      const detail = cases.map((c, i) => `<div class="rmb-case"><b>${i + 1}. ${esc3(c.title)}</b>
+        <small>${T2("expect")}: ${c.expect.map((n) => "[L" + n + "]").join(" ")} · ${esc3(c.question)}</small>
+        <pre>${esc3(c.listing)}</pre>
+        ${ks.map((k) => {
+        const a = res.models[k]?.answers?.[i];
+        if (!a) return "";
+        return `<div class="rmb-ans"><span class="who">${esc3(label2(k) || k)}</span> · <span class="${a.hit ? "ok" : "no"}">${a.hit ? "✅" : "❌"} ${citedLines(a.text).map((n) => "L" + n).join(" ") || "—"}</span>
+            <small> · ${sec(a.first)} / ${sec(a.total)}</small>
+            <div class="txt">${esc3(a.text || "")}</div>
+            <div class="rmb-rate">${T2("score")}: ${[1, 2, 3, 4, 5].map((v) => `<button data-rate="${k}|${i}|${v}" class="${a.score === v ? "on" : ""}">${v}</button>`).join("")}</div></div>`;
+      }).join("")}</div>`).join("");
+      out.innerHTML = (last && res === last && res.at ? `<p><small>${T2("last", new Date(res.at).toLocaleString())}</small></p>` : "") + table + detail;
+    }
+    async function run(selected) {
+      running = true;
+      stop = false;
+      $2("[data-a=start]").disabled = true;
+      $2("[data-a=stop]").hidden = false;
+      res = { at: Date.now(), cases: cases.length, models: {} };
+      last = null;
+      const sys = opts.systemPrompt(lang);
+      let lib = null;
+      let engine = null;
+      try {
+        await opts.before?.();
+        for (const k of selected) {
+          if (stop) break;
+          res.models[k] = { answers: [] };
+          let ask;
+          if (k === "chrome") {
+            ask = (user) => opts.chrome.ask(sys, user);
+          } else {
+            lib = lib || await opts.lib();
+            state(T2("loading", label2(k), 0));
+            engine?.unload?.();
+            engine = await lib.CreateMLCEngine(modelId(k, opts.f16), {
+              initProgressCallback: (r) => state(T2("loading", label2(k), Math.round((r.progress || 0) * 100)))
+            });
+            ask = async function* (user) {
+              const stream = await engine.chat.completions.create({
+                messages: [{ role: "system", content: sys }, { role: "user", content: user }],
+                stream: true,
+                stream_options: { include_usage: true },
+                temperature: 0.3,
+                max_tokens: 450,
+                ...genOpts(k)
+              });
+              for await (const c of stream) {
+                if (c.usage) yield { usage: c.usage };
+                const d = c.choices?.[0]?.delta?.content;
+                if (d) yield d;
+              }
+            };
+          }
+          for (let i = 0; i < cases.length && !stop; i++) {
+            state(T2("asking", label2(k), i + 1, cases.length));
+            const c = cases[i];
+            const user = `${c.question}
+
+${c.listing}`;
+            const t0 = performance.now();
+            let first = null;
+            let text2 = "";
+            let tps = null;
+            try {
+              for await (const p of ask(user)) {
+                if (stop) break;
+                if (typeof p === "object") {
+                  tps = p.usage?.extra?.decode_tokens_per_s ?? null;
+                  continue;
+                }
+                if (first == null && stripThink(text2 + p)) first = performance.now() - t0;
+                text2 += p;
+              }
+            } catch (e) {
+              text2 += "\n" + T2("err", e.message || e);
+            }
+            text2 = stripThink(text2);
+            res.models[k].answers[i] = { text: text2, first, total: performance.now() - t0, tps, hit: hit(text2, c.expect), score: null };
+            keep();
+            render();
+          }
+        }
+        state(stop ? "" : T2("done"));
+      } catch (e) {
+        state(T2("err", e.message || e));
+      } finally {
+        engine?.unload?.();
+        running = false;
+        $2("[data-a=start]").disabled = false;
+        $2("[data-a=stop]").hidden = true;
+        keep();
+        render();
+        await opts.after?.();
+      }
+    }
+    back.addEventListener("click", async (e) => {
+      const a = e.target.closest("[data-a]")?.dataset.a;
+      const rate = e.target.closest("[data-rate]")?.dataset.rate;
+      const use = e.target.closest("[data-use]")?.dataset.use;
+      if (rate && res) {
+        const [k, i, v] = rate.split("|");
+        const ans = res.models[k]?.answers?.[+i];
+        if (ans) {
+          ans.score = ans.score === +v ? null : +v;
+          keep();
+          render();
+        }
+        return;
+      }
+      if (use) {
+        back.remove();
+        opts.onUse?.(use);
+        return;
+      }
+      if (a === "start" && !running) {
+        const sel = [...back.querySelectorAll(".rmb-pick input:checked")].map((x) => x.value);
+        if (sel.length) run(sel);
+      } else if (a === "stop") {
+        stop = true;
+      } else if (a === "copy" && res) {
+        const lines = [T2("title") + " · " + new Date(res.at).toLocaleString(), [T2("model"), T2("lines"), T2("first"), T2("total"), T2("speed"), T2("score")].join("	")];
+        for (const k of Object.keys(res.models)) {
+          const s = summary(k);
+          lines.push([label2(k) || k, `${s.hits}/${s.n}`, sec(s.first), sec(s.total), s.tps == null ? "-" : s.tps.toFixed(1), s.score == null ? "-" : s.score.toFixed(1)].join("	"));
+        }
+        try {
+          await navigator.clipboard.writeText(lines.join("\n"));
+          opts.toast?.(T2("copied"));
+        } catch (err) {
+        }
+      } else if ((a === "close" || e.target === back) && !running) {
+        back.remove();
+      }
+    });
+    render();
+    return back;
+  }
+  window.RMTutorBench = { MODELS, key, modelId, genOpts, stripThink, rows, label: (k, lang) => tx(key(k), lang), desc: (k, lang) => TX[key(k) + "D"] ? tx(key(k) + "D", lang) : "", text: tx, citedLines, hit, open };
+})();
+
+// src/tutor.js
+var B2 = window.RMTutorBench;
 var STORE = "dm-tutor";
 var LANG = "ko";
-var MODELS = {
-  small: { f16: "Qwen2.5-Coder-1.5B-Instruct-q4f16_1-MLC", f32: "Qwen2.5-Coder-1.5B-Instruct-q4f32_1-MLC" },
-  large: { f16: "Qwen2.5-Coder-3B-Instruct-q4f16_1-MLC", f32: "Qwen2.5-Coder-3B-Instruct-q4f32_1-MLC" }
-};
 var WEBLLM_VERSION = "0.2.87";
 var webllmUrl = () => location.protocol === "file:" ? `https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@${WEBLLM_VERSION}/+esm` : new URL(`vendor/web-llm-${WEBLLM_VERSION}.js`, location.href).href;
 var T = {
@@ -10539,10 +10853,8 @@ var T = {
   loading: "AI 불러오는 중…",
   none: "AI 엔진을 아직 설치하지 않았어요. 🔍 코드 점검의 규칙 검사는 AI 없이도 됩니다. 아래에서 엔진을 한 번 설치하면 인터넷 없이 질문할 수 있어요.",
   setup: "⚙ AI 엔진 설치 · 선택",
-  webllm: "오픈 AI 모델 (Qwen 코더) — 추천",
+  webllm: "오픈 AI 모델 (Qwen)",
   webllmDesc: "모든 언어(한국어 포함). 처음 한 번 받으면 브라우저에 저장되어 인터넷 없이 씁니다. 그래픽(WebGPU)이 되는 Chrome·Edge 필요.",
-  small: "가벼운 모델 1.5B (약 1 GB)",
-  large: "똑똑한 모델 3B (약 2 GB)",
   installed: "설치됨",
   use: "사용",
   remove: "지우기",
@@ -10787,7 +11099,7 @@ var Open = {
   },
   async modelId(size) {
     const g = await this.gpu();
-    return g ? MODELS[size][g.f16 ? "f16" : "f32"] : null;
+    return g ? B2.modelId(size, g.f16) : null;
   },
   async installed(size) {
     const id = await this.modelId(size);
@@ -10807,6 +11119,12 @@ var Open = {
       initProgressCallback: (r) => progress(Math.round((r.progress || 0) * 100), r.text)
     });
     this.id = id;
+    this.size = size;
+  },
+  unload() {
+    if (this.engine && this.engine.unload) this.engine.unload();
+    this.engine = null;
+    this.id = null;
   },
   async remove(size) {
     const id = await this.modelId(size);
@@ -10822,18 +11140,83 @@ var Open = {
       messages: [{ role: "system", content: systemPrompt() }, { role: "user", content: user }],
       stream: true,
       temperature: 0.3,
-      max_tokens: 450
+      max_tokens: 450,
+      ...B2.genOpts(this.size)
     });
     for await (const c of stream) yield c.choices && c.choices[0] && c.choices[0].delta && c.choices[0].delta.content || "";
   }
 };
+var BENCH_CASES = [
+  {
+    title: "인사가 안 보여요 — 기다리지 않는 모션 재생",
+    question: "My robot should wave hello and then sit down, but it only sits down. Check my block program.",
+    expect: [2],
+    listing: `Robot: MAX-E1 — DYNAMIXEL IDs 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12
+
+Block program:
+[L1] 깃발 클릭했을 때
+[L2] 모션 [108] 번 재생
+[L3] 모션 [107] 번 재생
+
+Motions used (MAX-E1 official examples):
+- 107 앉기
+- 108 손 흔들어 인사`
+  },
+  {
+    title: "버스가 넘침 — 기다리기 없는 반복",
+    question: "The motor shakes and the connection often drops. Check my block program.",
+    expect: [2, 3],
+    listing: `Robot: CM-550 — DYNAMIXEL IDs 1
+
+Block program:
+[L1] 깃발 클릭했을 때
+[L2] 무한 반복하기
+[L3]   다이나믹셀 [1] 을(를) (기울기 [X] (°)) ° 로 이동 (속도 [50] %)`
+  },
+  {
+    title: "없는 모터 ID",
+    question: "Motor 13 does not move. Why?",
+    expect: [3],
+    listing: `Robot: CM-550 — DYNAMIXEL IDs 1, 2, 3, 4
+
+Block program:
+[L1] 깃발 클릭했을 때
+[L2] 모든 다이나믹셀 준비하기 (오류 지우기 · [1] 초 동안 180°로)
+[L3] 다이나믹셀 [13] 을(를) [90]° 로 이동 (속도 [30] %)`
+  },
+  {
+    title: "바퀴 모드에서 위치 블록",
+    question: "Motor 1 should go to 90 degrees, but it does not move. Which block is wrong?",
+    expect: [2, 3],
+    listing: `Robot: CM-550 — DYNAMIXEL IDs 1, 2
+
+Block program:
+[L1] 깃발 클릭했을 때
+[L2] 다이나믹셀 [1] 모드를 [바퀴(속도)] 로 설정
+[L3] 다이나믹셀 [1] 을(를) [90]° 로 이동 (속도 [30] %)`
+  },
+  {
+    title: "토크가 꺼져 있음",
+    question: "None of the motors move when I run my program. Check my block program.",
+    expect: [2],
+    listing: `Robot: CM-550 — DYNAMIXEL IDs 1, 2
+
+Block program:
+[L1] 깃발 클릭했을 때
+[L2] 모든 다이나믹셀 토크 [끄기]
+[L3] 다이나믹셀 [1] 을(를) [90]° 로 이동 (속도 [30] %)
+[L4] 다이나믹셀 [2] 을(를) [270]° 로 이동 (속도 [30] %)`
+  }
+];
 var initTutor = (ctx) => {
   const { workspace: workspace2, drawer, button: btn } = ctx;
-  let st = { open: false, engine: "", size: "small" };
+  let st = { open: false, engine: "", size: "rec" };
   try {
     st = { ...st, ...JSON.parse(localStorage.getItem(STORE) || "{}") };
   } catch (e) {
   }
+  st.size = B2.key(st.size);
+  let lastInst = {};
   const keep = () => {
     try {
       localStorage.setItem(STORE, JSON.stringify(st));
@@ -10908,8 +11291,11 @@ var initTutor = (ctx) => {
     const box = $2(".tt-setup");
     const chrome = await Chrome.state();
     const gpu = await Open.gpu();
-    const sizes = gpu ? await Promise.all(["small", "large"].map(async (k) => [k, await Open.installed(k)])) : [];
-    const name = active ? active === Chrome ? T.chrome : T[st.size] : "";
+    const inst = {};
+    if (gpu) for (const k of ["light", "rec", "pro", "old"]) inst[k] = await Open.installed(k);
+    lastInst = inst;
+    const sizes = gpu ? B2.rows(inst).map((k) => [k, inst[k]]) : [];
+    const name = active ? active === Chrome ? T.chrome : B2.label(st.size, LANG) : "";
     $2(".tt-status").textContent = active ? T.ready(name) : "";
     box.innerHTML = `
             ${active ? "" : `<p class="tt-none">${T.none}</p>`}
@@ -10917,7 +11303,7 @@ var initTutor = (ctx) => {
                 <summary>${T.setup}</summary>
                 <div class="tt-opt">
                     <b>${T.webllm}</b><small>${T.webllmDesc}</small>
-                    ${gpu ? sizes.map(([k, ok]) => `<div class="tt-row"><span>${T[k]}</span>
+                    ${gpu ? sizes.map(([k, ok]) => `<div class="tt-row"><span>${esc2(B2.label(k, LANG))}<small>${esc2(B2.desc(k, LANG))}</small></span>
                         ${ok ? `<em>${T.installed}</em><button type="button" data-use="webllm:${k}">${T.use}</button><button type="button" data-rm="${k}" title="${T.remove}">🗑</button>` : `<button type="button" class="primary" data-use="webllm:${k}">${T.install}</button>`}</div>`).join("") : `<small class="tt-bad">${T.noGpu}</small>`}
                 </div>
                 <div class="tt-opt">
@@ -10927,9 +11313,49 @@ var initTutor = (ctx) => {
                 </div>
                 <div class="tt-prog" hidden><i></i><span></span></div>
                 <small>${T.needNet}</small>
+                ${gpu || chrome.ok ? `<button type="button" class="tt-bench" data-bench="1">${esc2(B2.text("bench", LANG))}</button>` : ""}
             </details>`;
   };
+  const openBench = async () => {
+    const g = await Open.gpu();
+    const chrome = await Chrome.state();
+    B2.open({
+      lang: LANG,
+      cases: BENCH_CASES,
+      systemPrompt,
+      lib: () => Open.lib(),
+      f16: Boolean(g && g.f16),
+      installed: lastInst,
+      chrome: chrome.ok && chrome.installed ? {
+        ok: true,
+        label: T.chrome,
+        async *ask(system, user) {
+          const s = await self.LanguageModel.create({ ...Chrome.opts(), initialPrompts: [{ role: "system", content: system }] });
+          let prev = "";
+          for await (const chunk of s.promptStreaming(user)) {
+            const piece = chunk.startsWith(prev) && prev ? chunk.slice(prev.length) : chunk;
+            prev = chunk.startsWith(prev) ? chunk : prev + chunk;
+            yield piece;
+          }
+          if (s.destroy) s.destroy();
+        }
+      } : null,
+      before: () => {
+        if (active === Open) active = null;
+        Open.unload();
+      },
+      after: () => restore(),
+      onUse: (k) => {
+        st.size = k;
+        st.engine = "webllm";
+        keep();
+        restore();
+      },
+      toast: (m) => ctx.log(m, "ok")
+    });
+  };
   $2(".tt-setup").addEventListener("click", async (e) => {
+    if (e.target.closest("[data-bench]")) return openBench();
     const u = e.target.closest("[data-use]");
     const r = e.target.closest("[data-rm]");
     if (r) {
@@ -10960,7 +11386,7 @@ var initTutor = (ctx) => {
         st.engine = "webllm";
       }
       keep();
-      ctx.log(`🤖 AI 튜터 ${T.ready(use === "chrome" ? T.chrome : T[st.size])}`, "ok");
+      ctx.log(`🤖 AI 튜터 ${T.ready(use === "chrome" ? T.chrome : B2.label(st.size, LANG))}`, "ok");
     } catch (err) {
       addMsg("err", esc2(T.failed(err.message || err)));
     } finally {

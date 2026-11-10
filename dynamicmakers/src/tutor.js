@@ -3,19 +3,18 @@
 //  블록 → 번호 붙은 글 [L1]… (+ 파이썬) → AI → 「[L4]」 처럼 줄 번호로 답 → 그 블록을 노랗게 표시
 //
 //  엔진 (한 번 설치하면 인터넷 없이, 이 컴퓨터 안에서만):
-//    · 오픈 모델 (WebLLM + Qwen2.5 Coder) — vendor/web-llm, 모델은 처음 한 번 huggingface 에서 받아 브라우저에 저장
+//    · 오픈 모델 (WebLLM · 가벼움 Qwen2.5-Coder 1.5B / 추천 Qwen3.5 2B / 고성능 Qwen3.5 4B) — vendor/web-llm, 모델은 처음 한 번 huggingface 에서 받아 브라우저에 저장
 //    · Chrome 내장 AI (Prompt API · Gemini Nano) — 이 언어를 지원할 때만
 //  규칙 점검은 AI 없이도 항상 동작합니다 (떨어진 블록, 기다리기 없는 반복, 겹치는 모션, 없는 모터 ID …).
 
 import {currentMotions, isBuiltIn} from './sim3d/motion-library';
 import {motionNote} from './sim3d/maxe1-motion-notes';
+import './tutor-bench'; // window.RMTutorBench — 모델 목록 · 비교 시험 (Robomakers_APP 와 같은 파일)
+
+const B = window.RMTutorBench;
 
 const STORE = 'dm-tutor';
 const LANG = 'ko';
-const MODELS = {
-    small: {f16: 'Qwen2.5-Coder-1.5B-Instruct-q4f16_1-MLC', f32: 'Qwen2.5-Coder-1.5B-Instruct-q4f32_1-MLC'},
-    large: {f16: 'Qwen2.5-Coder-3B-Instruct-q4f16_1-MLC', f32: 'Qwen2.5-Coder-3B-Instruct-q4f32_1-MLC'}
-};
 const WEBLLM_VERSION = '0.2.87';
 // the one-file build opens from file://, where a module file next to it cannot load
 const webllmUrl = () => (location.protocol === 'file:' ?
@@ -35,10 +34,8 @@ const T = {
     loading: 'AI 불러오는 중…',
     none: 'AI 엔진을 아직 설치하지 않았어요. 🔍 코드 점검의 규칙 검사는 AI 없이도 됩니다. 아래에서 엔진을 한 번 설치하면 인터넷 없이 질문할 수 있어요.',
     setup: '⚙ AI 엔진 설치 · 선택',
-    webllm: '오픈 AI 모델 (Qwen 코더) — 추천',
+    webllm: '오픈 AI 모델 (Qwen)',
     webllmDesc: '모든 언어(한국어 포함). 처음 한 번 받으면 브라우저에 저장되어 인터넷 없이 씁니다. 그래픽(WebGPU)이 되는 Chrome·Edge 필요.',
-    small: '가벼운 모델 1.5B (약 1 GB)',
-    large: '똑똑한 모델 3B (약 2 GB)',
     installed: '설치됨',
     use: '사용',
     remove: '지우기',
@@ -305,7 +302,7 @@ const Open = {
     },
     async modelId (size) {
         const g = await this.gpu();
-        return g ? MODELS[size][g.f16 ? 'f16' : 'f32'] : null;
+        return g ? B.modelId(size, g.f16) : null;
     },
     async installed (size) {
         const id = await this.modelId(size);
@@ -325,6 +322,12 @@ const Open = {
             initProgressCallback: r => progress(Math.round((r.progress || 0) * 100), r.text)
         });
         this.id = id;
+        this.size = size;
+    },
+    unload () {
+        if (this.engine && this.engine.unload) this.engine.unload();
+        this.engine = null;
+        this.id = null;
     },
     async remove (size) {
         const id = await this.modelId(size);
@@ -338,11 +341,76 @@ const Open = {
     async *ask (user) {
         const stream = await this.engine.chat.completions.create({
             messages: [{role: 'system', content: systemPrompt()}, {role: 'user', content: user}],
-            stream: true, temperature: 0.3, max_tokens: 450
+            stream: true, temperature: 0.3, max_tokens: 450, ...B.genOpts(this.size)
         });
         for await (const c of stream) yield (c.choices && c.choices[0] && c.choices[0].delta && c.choices[0].delta.content) || '';
     }
 };
+
+
+// ───────────── model comparison cases (one planted mistake each · expect = lines to point at) ─────────────
+const BENCH_CASES = [
+    {
+        title: '인사가 안 보여요 — 기다리지 않는 모션 재생',
+        question: 'My robot should wave hello and then sit down, but it only sits down. Check my block program.',
+        expect: [2],
+        listing: `Robot: MAX-E1 — DYNAMIXEL IDs 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12
+
+Block program:
+[L1] 깃발 클릭했을 때
+[L2] 모션 [108] 번 재생
+[L3] 모션 [107] 번 재생
+
+Motions used (MAX-E1 official examples):
+- 107 앉기
+- 108 손 흔들어 인사`
+    },
+    {
+        title: '버스가 넘침 — 기다리기 없는 반복',
+        question: 'The motor shakes and the connection often drops. Check my block program.',
+        expect: [2, 3],
+        listing: `Robot: CM-550 — DYNAMIXEL IDs 1
+
+Block program:
+[L1] 깃발 클릭했을 때
+[L2] 무한 반복하기
+[L3]   다이나믹셀 [1] 을(를) (기울기 [X] (°)) ° 로 이동 (속도 [50] %)`
+    },
+    {
+        title: '없는 모터 ID',
+        question: 'Motor 13 does not move. Why?',
+        expect: [3],
+        listing: `Robot: CM-550 — DYNAMIXEL IDs 1, 2, 3, 4
+
+Block program:
+[L1] 깃발 클릭했을 때
+[L2] 모든 다이나믹셀 준비하기 (오류 지우기 · [1] 초 동안 180°로)
+[L3] 다이나믹셀 [13] 을(를) [90]° 로 이동 (속도 [30] %)`
+    },
+    {
+        title: '바퀴 모드에서 위치 블록',
+        question: 'Motor 1 should go to 90 degrees, but it does not move. Which block is wrong?',
+        expect: [2, 3],
+        listing: `Robot: CM-550 — DYNAMIXEL IDs 1, 2
+
+Block program:
+[L1] 깃발 클릭했을 때
+[L2] 다이나믹셀 [1] 모드를 [바퀴(속도)] 로 설정
+[L3] 다이나믹셀 [1] 을(를) [90]° 로 이동 (속도 [30] %)`
+    },
+    {
+        title: '토크가 꺼져 있음',
+        question: 'None of the motors move when I run my program. Check my block program.',
+        expect: [2],
+        listing: `Robot: CM-550 — DYNAMIXEL IDs 1, 2
+
+Block program:
+[L1] 깃발 클릭했을 때
+[L2] 모든 다이나믹셀 토크 [끄기]
+[L3] 다이나믹셀 [1] 을(를) [90]° 로 이동 (속도 [30] %)
+[L4] 다이나믹셀 [2] 을(를) [270]° 로 이동 (속도 [30] %)`
+    }
+];
 
 // ───────────── 화면 ─────────────
 /**
@@ -358,10 +426,12 @@ const Open = {
  */
 export const initTutor = ctx => {
     const {workspace, drawer, button: btn} = ctx;
-    let st = {open: false, engine: '', size: 'small'};
+    let st = {open: false, engine: '', size: 'rec'};
     try {
         st = {...st, ...JSON.parse(localStorage.getItem(STORE) || '{}')};
     } catch (e) { /* defaults */ }
+    st.size = B.key(st.size); // old names small/large → light/old
+    let lastInst = {};
     const keep = () => {
         try {
             localStorage.setItem(STORE, JSON.stringify(st));
@@ -444,8 +514,11 @@ export const initTutor = ctx => {
         const box = $('.tt-setup');
         const chrome = await Chrome.state();
         const gpu = await Open.gpu();
-        const sizes = gpu ? await Promise.all(['small', 'large'].map(async k => [k, await Open.installed(k)])) : [];
-        const name = active ? (active === Chrome ? T.chrome : T[st.size]) : '';
+        const inst = {};
+        if (gpu) for (const k of ['light', 'rec', 'pro', 'old']) inst[k] = await Open.installed(k);
+        lastInst = inst;
+        const sizes = gpu ? B.rows(inst).map(k => [k, inst[k]]) : [];
+        const name = active ? (active === Chrome ? T.chrome : B.label(st.size, LANG)) : '';
         $('.tt-status').textContent = active ? T.ready(name) : '';
         box.innerHTML = `
             ${active ? '' : `<p class="tt-none">${T.none}</p>`}
@@ -453,7 +526,7 @@ export const initTutor = ctx => {
                 <summary>${T.setup}</summary>
                 <div class="tt-opt">
                     <b>${T.webllm}</b><small>${T.webllmDesc}</small>
-                    ${gpu ? sizes.map(([k, ok]) => `<div class="tt-row"><span>${T[k]}</span>
+                    ${gpu ? sizes.map(([k, ok]) => `<div class="tt-row"><span>${esc(B.label(k, LANG))}<small>${esc(B.desc(k, LANG))}</small></span>
                         ${ok ? `<em>${T.installed}</em><button type="button" data-use="webllm:${k}">${T.use}</button><button type="button" data-rm="${k}" title="${T.remove}">🗑</button>` :
         `<button type="button" class="primary" data-use="webllm:${k}">${T.install}</button>`}</div>`).join('') :
         `<small class="tt-bad">${T.noGpu}</small>`}
@@ -466,9 +539,50 @@ export const initTutor = ctx => {
                 </div>
                 <div class="tt-prog" hidden><i></i><span></span></div>
                 <small>${T.needNet}</small>
+                ${gpu || chrome.ok ? `<button type="button" class="tt-bench" data-bench="1">${esc(B.text('bench', LANG))}</button>` : ''}
             </details>`;
     };
+    // 🧪 model comparison test (for teachers — the same screen as Robomakers_APP)
+    const openBench = async () => {
+        const g = await Open.gpu();
+        const chrome = await Chrome.state();
+        B.open({
+            lang: LANG,
+            cases: BENCH_CASES,
+            systemPrompt,
+            lib: () => Open.lib(),
+            f16: Boolean(g && g.f16),
+            installed: lastInst,
+            chrome: chrome.ok && chrome.installed ? {
+                ok: true,
+                label: T.chrome,
+                async *ask (system, user) {
+                    const s = await self.LanguageModel.create({...Chrome.opts(), initialPrompts: [{role: 'system', content: system}]});
+                    let prev = '';
+                    for await (const chunk of s.promptStreaming(user)) {
+                        const piece = chunk.startsWith(prev) && prev ? chunk.slice(prev.length) : chunk;
+                        prev = chunk.startsWith(prev) ? chunk : prev + chunk;
+                        yield piece;
+                    }
+                    if (s.destroy) s.destroy();
+                }
+            } : null,
+            before: () => {
+                if (active === Open) active = null;
+                Open.unload();
+            },
+            after: () => restore(),
+            onUse: k => {
+                st.size = k;
+                st.engine = 'webllm';
+                keep();
+                restore();
+            },
+            toast: m => ctx.log(m, 'ok')
+        });
+    };
     $('.tt-setup').addEventListener('click', async e => {
+        if (e.target.closest('[data-bench]')) return openBench();
         const u = e.target.closest('[data-use]');
         const r = e.target.closest('[data-rm]');
         if (r) {
@@ -499,7 +613,7 @@ export const initTutor = ctx => {
                 st.engine = 'webllm';
             }
             keep();
-            ctx.log(`🤖 AI 튜터 ${T.ready(use === 'chrome' ? T.chrome : T[st.size])}`, 'ok');
+            ctx.log(`🤖 AI 튜터 ${T.ready(use === 'chrome' ? T.chrome : B.label(st.size, LANG))}`, 'ok');
         } catch (err) {
             addMsg('err', esc(T.failed(err.message || err)));
         } finally {
