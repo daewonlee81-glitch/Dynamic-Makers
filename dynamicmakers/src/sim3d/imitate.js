@@ -288,18 +288,31 @@ export const kpsAt = (log, t) => {
     return best.k ? best.k.map(q => ({x: q[0], y: q[1], score: q[2]})) : null;
 };
 
-/** Draw the frame and the skeleton (not mirrored: as the video shows it). */
-export const drawSkeleton = (canvas, video, kps, {mirror = false} = {}) => {
+/**
+ * Draw the frame and the skeleton (not mirrored: as the video shows it); with `robot` also the
+ * robot's pose on top (green), lined up with the person: same shoulder centre, same torso length,
+ * seen from the front (flipped left-right in mirror mode, so the arm that copies lies on the arm it copies).
+ * @returns {{R: number, L: number}|null} how far apart the arms point in the picture (degrees, person's R / L)
+ */
+export const drawSkeleton = (canvas, video, kps, {mirror = false, robot = null, robotMirror = true} = {}) => {
     const ctx = canvas.getContext('2d');
     const W = canvas.width;
     const H = canvas.height;
+    let diff = null;
     ctx.save();
     if (mirror) {
         ctx.translate(W, 0);
         ctx.scale(-1, 1);
     }
-    if (video && video.readyState >= 2) ctx.drawImage(video, 0, 0, W, H);
-    else ctx.clearRect(0, 0, W, H);
+    if (video && video.readyState >= 2) {
+        ctx.drawImage(video, 0, 0, W, H);
+        if (robot) {
+            ctx.fillStyle = 'rgba(15, 20, 35, .35)'; // dim the picture so both skeletons stand out
+            ctx.fillRect(0, 0, W, H);
+        }
+    } else {
+        ctx.clearRect(0, 0, W, H);
+    }
     if (kps) {
         const Q = i => ({x: kps[i].x * W, y: kps[i].y * H, ok: kps[i].score >= MIN_SCORE});
         ctx.lineWidth = Math.max(3, W / 110);
@@ -315,8 +328,58 @@ export const drawSkeleton = (canvas, video, kps, {mirror = false} = {}) => {
             ctx.lineTo(q.x, q.y);
             ctx.stroke();
         }
+        const lS = Q(K.lSh);
+        const rS = Q(K.rSh);
+        if (robot && lS.ok && rS.ok) {
+            // person: shoulder centre and torso length in pixels
+            const sm = {x: (lS.x + rS.x) / 2, y: (lS.y + rS.y) / 2};
+            const lH = Q(K.lHip);
+            const rH = Q(K.rHip);
+            const tPix = lH.ok && rH.ok ? Math.min(Math.hypot(((lH.x + rH.x) / 2) - sm.x, ((lH.y + rH.y) / 2) - sm.y),
+                Math.hypot(lS.x - rS.x, lS.y - rS.y) * 1.8) : Math.hypot(lS.x - rS.x, lS.y - rS.y) * 1.5;
+            // robot: seen from the front, its right side on the picture's left (like the person)
+            const r = robot;
+            const rm = [(r.rSh[0] + r.lSh[0]) / 2, (r.rSh[1] + r.lSh[1]) / 2, (r.rSh[2] + r.lSh[2]) / 2];
+            const hipZ = (r.rHip[2] + r.lHip[2]) / 2;
+            const k = tPix / Math.max(0.01, rm[2] - hipZ);
+            const flip = robotMirror ? -1 : 1;
+            const X = p => ({x: sm.x + (flip * (p[1] - rm[1]) * k), y: sm.y - ((p[2] - rm[2]) * k)});
+            const seg = [['neck', 'head'], ['rSh', 'lSh'], ['rSh', 'rHand'], ['lSh', 'lHand'], ['rSh', 'rHip'], ['lSh', 'lHip'],
+                ['rHip', 'lHip'], ['rHip', 'rKnee'], ['rKnee', 'rAnkle'], ['lHip', 'lKnee'], ['lKnee', 'lAnkle']];
+            ctx.strokeStyle = 'rgba(60, 230, 120, .85)';
+            ctx.lineWidth = Math.max(5, W / 60);
+            for (const [a, b] of seg) {
+                const p = X(r[a]);
+                const q = X(r[b]);
+                ctx.beginPath();
+                ctx.moveTo(p.x, p.y);
+                ctx.lineTo(q.x, q.y);
+                ctx.stroke();
+            }
+            // which robot arm lies on which of the person's arms in the picture
+            const ang = (a, b) => Math.atan2(b.y - a.y, b.x - a.x);
+            const gap = (h1, h2, r1, r2) => {
+                if (!h1.ok || !h2.ok) return null;
+                let dd = Math.abs(ang(h1, h2) - ang(X(r[r1]), X(r[r2]))) * DEG;
+                if (dd > 180) dd = 360 - dd;
+                return Math.round(dd);
+            };
+            const pr = robotMirror ? ['lSh', 'lHand'] : ['rSh', 'rHand']; // robot arm drawn over the person's right arm
+            const pl = robotMirror ? ['rSh', 'rHand'] : ['lSh', 'lHand'];
+            const hand = (w, e) => (w.ok ? w : e);
+            diff = {R: gap(rS, hand(Q(K.rWr), Q(K.rEl)), ...pr), L: gap(lS, hand(Q(K.lWr), Q(K.lEl)), ...pl)};
+        }
     }
     ctx.restore();
+    if (robot) {
+        ctx.font = `bold ${Math.max(11, Math.round(W / 26))}px sans-serif`;
+        ctx.fillStyle = 'rgba(0, 0, 0, .55)';
+        ctx.fillRect(0, 0, W, Math.max(18, Math.round(W / 15)));
+        ctx.fillStyle = '#fff';
+        const txt = diff ? `팔 방향 차이 · 사람 오른팔 ${diff.R === null ? '-' : `${diff.R}°`} · 왼팔 ${diff.L === null ? '-' : `${diff.L}°`}` : '사람을 찾는 중';
+        ctx.fillText(`초록 = 로봇  ${txt}`, 6, Math.max(13, Math.round(W / 21)));
+    }
+    return diff;
 };
 
 /**
@@ -328,6 +391,7 @@ export const drawSkeleton = (canvas, video, kps, {mirror = false} = {}) => {
  * @param {number} [o.fps] frames analysed per second of video
  * @param {number} [o.maxSeconds] longest part of the video used
  * @param {HTMLCanvasElement} [o.canvas] preview
+ * @param {(deg: object) => object} [o.robotAt] the robot's joint positions for a frame (overlay)
  * @param {(p: number, text: string) => void} [o.onProgress]
  * @param {() => boolean} [o.cancelled]
  * @returns {Promise<object>} recording {page, label, ids, frames, seconds, fromVideo, seen}
@@ -351,8 +415,8 @@ export const analyzeVideo = async (file, tracker, o) => {
         if (!(dur > 0.3)) throw new Error('영상이 너무 짧습니다.');
         const aspect = video.videoWidth / video.videoHeight;
         if (o.canvas) {
-            o.canvas.width = 320;
-            o.canvas.height = Math.round(320 / aspect);
+            o.canvas.width = 480;
+            o.canvas.height = Math.round(480 / aspect);
         }
         const st = newImitation(o.opts);
         const frames = [];
@@ -380,7 +444,10 @@ export const analyzeVideo = async (file, tracker, o) => {
                 if (r.seen) found++;
             }
             if (deg) frames.push(toFrame(t, smooth(st, deg, 1 / fps)));
-            if (o.canvas) drawSkeleton(o.canvas, video, kps);
+            if (o.canvas) {
+                const diff = drawSkeleton(o.canvas, video, kps, {robot: o.robotAt ? o.robotAt(frames.length ? frames[frames.length - 1].deg : null) : null, robotMirror: st.mirror});
+                if (diff && o.onDiff) o.onDiff(diff);
+            }
             if (o.onProgress) o.onProgress(Math.round(((i + 1) / n) * 100), `${t.toFixed(1)} / ${dur.toFixed(1)}초`);
         }
         if (!found) throw new Error('영상에서 사람을 찾지 못했습니다. 온몸(적어도 어깨·팔)이 보이는 영상을 쓰세요.');

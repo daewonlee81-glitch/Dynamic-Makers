@@ -229,7 +229,14 @@ export class SimPanel {
         this.imMirror.type = 'checkbox';
         this.imMirror.checked = true;
         mir.append(this.imMirror, document.createTextNode(' 거울처럼 (사람 오른팔 → 로봇 왼팔)'));
-        ri.append(vidFile, this.imVideoBtn, this.imLiveBtn, this.imLegs, mir);
+        const ov = el('label', 'sim-im-mirror');
+        this.imOverlay = el('input', 'sim-im-overlay');
+        this.imOverlay.type = 'checkbox';
+        this.imOverlay.checked = true;
+        ov.title = '사람 뼈대 위에 로봇 동작(초록)을 같은 크기로 겹쳐 그려, 어디가 다른지 바로 봅니다';
+        ov.append(this.imOverlay, document.createTextNode(' 로봇 동작 겹쳐 보기'));
+        this.imOverlay.addEventListener('change', () => this._imBigToggle());
+        ri.append(vidFile, this.imVideoBtn, this.imLiveBtn, this.imLegs, mir, ov);
         ci.append(ri);
         this.imCanvas = el('canvas', 'sim-im-canvas');
         this.imCanvas.width = 320;
@@ -254,8 +261,14 @@ export class SimPanel {
             '연결된 실제 로봇(USB/블루투스)이 따라 한 동작을 그대로 움직입니다');
         this.imBlocksBtn = button('tp-btn', '블록으로 만들기', () => this.motionBlocks({speed: this._imSpeed()}), '자세 블록으로 넣어 프로그램에서 쓰거나 고칠 수 있습니다');
         this.imSaveBtn = button('tp-btn', '저장', () => this.saveMotion());
+        this.imBigBtn = button('tp-btn', '⛶ 크게 보기', () => {
+            const c = this.imCanvas;
+            if (c.hidden) return;
+            if (document.fullscreenElement) document.exitFullscreen();
+            else if (c.requestFullscreen) c.requestFullscreen().catch(() => {});
+        }, '영상·사람 뼈대·로봇 동작을 겹친 화면을 전체 화면으로 봅니다');
         this.imBlocksBtn.title = '고른 재생 속도로 자세 블록을 만듭니다';
-        ri2.append(spl, this.imReplayBtn, this.imRobotBtn, this.imBlocksBtn, this.imSaveBtn);
+        ri2.append(spl, this.imReplayBtn, this.imRobotBtn, this.imBlocksBtn, this.imSaveBtn, this.imBigBtn);
         ci.append(ri2);
         body.append(ci);
 
@@ -902,7 +915,10 @@ export class SimPanel {
         this.imInfo.textContent = '관절 인식 모델을 불러오는 중… (처음 한 번, 6 MB)';
         try {
             const old = this.motionRec && this.motionRec.video;
+            await this._imOverlayReady();
             const rec = await analyzeVideo(file, this.tracker, {
+                robotAt: deg => this._imRobotAt(deg),
+                onDiff: diff => { this.imDiff = diff; },
                 opts: this._imOpts(),
                 canvas: this.imCanvas,
                 onProgress: (p, text) => { this.imInfo.textContent = `영상 분석 중 ${p}% · ${text}`; }
@@ -919,6 +935,42 @@ export class SimPanel {
         }
         this.imBusy = false;
         this._status();
+    }
+
+    /** The robot's joint positions for a pose (motor degrees, 180 = straight), for the overlay. */
+    _imRobotAt (deg) {
+        if (!deg || !this.physics || !this.imOverlay || !this.imOverlay.checked) return null;
+        const full = {};
+        for (const id of IM_IDS) full[id] = deg[id] === undefined ? 180 : deg[id];
+        return this.physics.skeleton(toJointRad(full, this.jointMap));
+    }
+
+    async _imOverlayReady () {
+        if (this.imOverlay && this.imOverlay.checked && !this.physics) {
+            try {
+                await this._ensureSim(); // the overlay works out the robot's pose with the 3D model
+            } catch (e) { /* overlay off */ }
+        }
+    }
+
+    _imDraw (canvas, video, kps, deg, opts = {}) {
+        const diff = drawSkeleton(canvas, video, kps, {...opts, robot: this._imRobotAt(deg), robotMirror: this.imMirror.checked});
+        if (diff) this.imDiff = diff;
+        return diff;
+    }
+
+    _imBigToggle () {
+        // redraw the still preview with / without the robot
+        const rec = this.motionRec;
+        if (this._imPlayback || this.liveIm || !rec || !rec.video || this.imCanvas.hidden) return;
+        const t = rec.seconds;
+        const v = document.createElement('video');
+        v.muted = true;
+        v.src = rec.video.url;
+        v.addEventListener('loadeddata', () => {
+            v.currentTime = Math.max(0, t - 0.05);
+        }, {once: true});
+        v.addEventListener('seeked', () => this._imDraw(this.imCanvas, v, kpsAt(rec.video.kps, t), poseAt(rec, t)), {once: true});
     }
 
     _imSpeed () {
@@ -940,11 +992,11 @@ export class SimPanel {
         video.playbackRate = speed;
         const cv = this.imCanvas;
         cv.hidden = false;
-        cv.width = 320;
-        cv.height = Math.round(320 / (v.aspect || (4 / 3)));
+        cv.width = 480;
+        cv.height = Math.round(480 / (v.aspect || (4 / 3)));
         const pb = {video, raf: 0, started: false};
         const draw = () => {
-            drawSkeleton(cv, video, kpsAt(v.kps, video.currentTime));
+            this._imDraw(cv, video, kpsAt(v.kps, video.currentTime), poseAt(rec, video.currentTime));
             pb.raf = requestAnimationFrame(draw);
         };
         pb.raf = requestAnimationFrame(draw);
@@ -1035,6 +1087,7 @@ export class SimPanel {
         try {
             this.imInfo.textContent = '카메라와 관절 인식 모델을 켜는 중…';
             await this.tracker.acquire('imitate');
+            await this._imOverlayReady();
             const target = await this._imPrepare();
             const st = newImitation(this._imOpts());
             const lv = {st, target, frames: [], n: 0, seen: 0, last: 0, sending: false};
@@ -1046,13 +1099,13 @@ export class SimPanel {
                 lv.last = now;
                 const v = tr.video;
                 const aspect = v.videoWidth && v.videoHeight ? v.videoWidth / v.videoHeight : 4 / 3;
-                if (this.imCanvas.width !== 320) this.imCanvas.width = 320;
-                this.imCanvas.height = Math.round(320 / aspect);
-                drawSkeleton(this.imCanvas, v, tr.keypoints, {mirror: true});
+                if (this.imCanvas.width !== 480) this.imCanvas.width = 480;
+                this.imCanvas.height = Math.round(480 / aspect);
                 const r = retarget(tr.keypoints, aspect, st);
                 lv.n++;
                 if (r.seen) lv.seen++;
                 const f = toFrame(now, smooth(st, r.deg, dt));
+                this._imDraw(this.imCanvas, v, tr.keypoints, f.deg, {mirror: true});
                 if (lv.frames.length < 600) lv.frames.push(f); // last 60 s are kept as a motion
                 this.imInfo.textContent = `실시간 따라 하기 · ${target === 'robot' ? '실제 로봇' : '3D 로봇'} · ` +
                     `오른팔 ${Math.round(f.deg[1] - 180)}°/${Math.round(f.deg[2] - 180)}° · 왼팔 ${Math.round(180 - f.deg[3])}°/${Math.round(f.deg[4] - 180)}°` +

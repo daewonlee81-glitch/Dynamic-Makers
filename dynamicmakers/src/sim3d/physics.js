@@ -226,6 +226,39 @@ export class PhysicsSim {
         return t.map(v => v / n);
     }
 
+    /**
+     * Joint positions of the robot standing upright in a pose (only the kinematics: the robot in the
+     * simulation is not moved). Metres in the torso frame: x forward, y left, z up.
+     * @param {object} q model joint angles (rad) by joint name; joints not given are 0
+     */
+    skeleton (q) {
+        const mj = this.mj;
+        const m = this.model;
+        const d = this.data;
+        const keep = Float64Array.from(d.qpos);
+        for (let i = 0; i < 7; i++) d.qpos[i] = i === 3 ? 1 : 0; // torso at the origin, upright
+        for (const j of ACTUATED) d.qpos[this.qadr[j]] = q[j] || 0;
+        mj.mj_kinematics(m, d);
+        const at = (body, local = [0, 0, 0]) => {
+            const b = mj.mj_name2id(m, mj.mjtObj.mjOBJ_BODY.value, body);
+            const R = d.xmat;
+            return [0, 1, 2].map(i => d.xpos[(b * 3) + i] + (R[(b * 9) + (i * 3)] * local[0]) +
+                (R[(b * 9) + (i * 3) + 1] * local[1]) + (R[(b * 9) + (i * 3) + 2] * local[2]));
+        };
+        const pts = {
+            head: at('torso', [0, 0, 0.07]),
+            neck: at('torso', [0, 0, 0.025]),
+            rSh: at('R_shoulder'), lSh: at('L_shoulder'),
+            rHand: at('R_arm', [0, -0.03662, -0.13668]), lHand: at('L_arm', [0, 0.03662, -0.13668]),
+            rHip: at('R_thigh'), lHip: at('L_thigh'),
+            rKnee: at('R_shin'), lKnee: at('L_shin'),
+            rAnkle: at('R_ankle_frame'), lAnkle: at('L_ankle_frame')
+        };
+        d.qpos.set(keep);
+        mj.mj_kinematics(m, d);
+        return pts;
+    }
+
     get torso () {
         const q = this.data.qpos;
         return {x: q[0], y: q[1], z: q[2], up: this.data.xmat[9 + 8]}; // body 1 = torso

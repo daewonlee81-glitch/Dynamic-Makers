@@ -11218,17 +11218,25 @@ var kpsAt = (log2, t) => {
   }
   return best.k ? best.k.map((q) => ({ x: q[0], y: q[1], score: q[2] })) : null;
 };
-var drawSkeleton = (canvas, video, kps, { mirror = false } = {}) => {
+var drawSkeleton = (canvas, video, kps, { mirror = false, robot = null, robotMirror = true } = {}) => {
   const ctx = canvas.getContext("2d");
   const W = canvas.width;
   const H = canvas.height;
+  let diff = null;
   ctx.save();
   if (mirror) {
     ctx.translate(W, 0);
     ctx.scale(-1, 1);
   }
-  if (video && video.readyState >= 2) ctx.drawImage(video, 0, 0, W, H);
-  else ctx.clearRect(0, 0, W, H);
+  if (video && video.readyState >= 2) {
+    ctx.drawImage(video, 0, 0, W, H);
+    if (robot) {
+      ctx.fillStyle = "rgba(15, 20, 35, .35)";
+      ctx.fillRect(0, 0, W, H);
+    }
+  } else {
+    ctx.clearRect(0, 0, W, H);
+  }
   if (kps) {
     const Q = (i) => ({ x: kps[i].x * W, y: kps[i].y * H, ok: kps[i].score >= MIN_SCORE2 });
     ctx.lineWidth = Math.max(3, W / 110);
@@ -11244,8 +11252,68 @@ var drawSkeleton = (canvas, video, kps, { mirror = false } = {}) => {
       ctx.lineTo(q.x, q.y);
       ctx.stroke();
     }
+    const lS = Q(K2.lSh);
+    const rS = Q(K2.rSh);
+    if (robot && lS.ok && rS.ok) {
+      const sm = { x: (lS.x + rS.x) / 2, y: (lS.y + rS.y) / 2 };
+      const lH = Q(K2.lHip);
+      const rH = Q(K2.rHip);
+      const tPix = lH.ok && rH.ok ? Math.min(
+        Math.hypot((lH.x + rH.x) / 2 - sm.x, (lH.y + rH.y) / 2 - sm.y),
+        Math.hypot(lS.x - rS.x, lS.y - rS.y) * 1.8
+      ) : Math.hypot(lS.x - rS.x, lS.y - rS.y) * 1.5;
+      const r = robot;
+      const rm = [(r.rSh[0] + r.lSh[0]) / 2, (r.rSh[1] + r.lSh[1]) / 2, (r.rSh[2] + r.lSh[2]) / 2];
+      const hipZ = (r.rHip[2] + r.lHip[2]) / 2;
+      const k = tPix / Math.max(0.01, rm[2] - hipZ);
+      const flip = robotMirror ? -1 : 1;
+      const X = (p) => ({ x: sm.x + flip * (p[1] - rm[1]) * k, y: sm.y - (p[2] - rm[2]) * k });
+      const seg = [
+        ["neck", "head"],
+        ["rSh", "lSh"],
+        ["rSh", "rHand"],
+        ["lSh", "lHand"],
+        ["rSh", "rHip"],
+        ["lSh", "lHip"],
+        ["rHip", "lHip"],
+        ["rHip", "rKnee"],
+        ["rKnee", "rAnkle"],
+        ["lHip", "lKnee"],
+        ["lKnee", "lAnkle"]
+      ];
+      ctx.strokeStyle = "rgba(60, 230, 120, .85)";
+      ctx.lineWidth = Math.max(5, W / 60);
+      for (const [a, b] of seg) {
+        const p = X(r[a]);
+        const q = X(r[b]);
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y);
+        ctx.lineTo(q.x, q.y);
+        ctx.stroke();
+      }
+      const ang = (a, b) => Math.atan2(b.y - a.y, b.x - a.x);
+      const gap = (h1, h2, r12, r2) => {
+        if (!h1.ok || !h2.ok) return null;
+        let dd = Math.abs(ang(h1, h2) - ang(X(r[r12]), X(r[r2]))) * DEG3;
+        if (dd > 180) dd = 360 - dd;
+        return Math.round(dd);
+      };
+      const pr = robotMirror ? ["lSh", "lHand"] : ["rSh", "rHand"];
+      const pl = robotMirror ? ["rSh", "rHand"] : ["lSh", "lHand"];
+      const hand = (w, e) => w.ok ? w : e;
+      diff = { R: gap(rS, hand(Q(K2.rWr), Q(K2.rEl)), ...pr), L: gap(lS, hand(Q(K2.lWr), Q(K2.lEl)), ...pl) };
+    }
   }
   ctx.restore();
+  if (robot) {
+    ctx.font = `bold ${Math.max(11, Math.round(W / 26))}px sans-serif`;
+    ctx.fillStyle = "rgba(0, 0, 0, .55)";
+    ctx.fillRect(0, 0, W, Math.max(18, Math.round(W / 15)));
+    ctx.fillStyle = "#fff";
+    const txt = diff ? `팔 방향 차이 · 사람 오른팔 ${diff.R === null ? "-" : `${diff.R}°`} · 왼팔 ${diff.L === null ? "-" : `${diff.L}°`}` : "사람을 찾는 중";
+    ctx.fillText(`초록 = 로봇  ${txt}`, 6, Math.max(13, Math.round(W / 21)));
+  }
+  return diff;
 };
 var analyzeVideo = async (file, tracker, o) => {
   const fps = o.fps || 10;
@@ -11266,8 +11334,8 @@ var analyzeVideo = async (file, tracker, o) => {
     if (!(dur > 0.3)) throw new Error("영상이 너무 짧습니다.");
     const aspect = video.videoWidth / video.videoHeight;
     if (o.canvas) {
-      o.canvas.width = 320;
-      o.canvas.height = Math.round(320 / aspect);
+      o.canvas.width = 480;
+      o.canvas.height = Math.round(480 / aspect);
     }
     const st = newImitation(o.opts);
     const frames = [];
@@ -11295,7 +11363,10 @@ var analyzeVideo = async (file, tracker, o) => {
         if (r.seen) found++;
       }
       if (deg2) frames.push(toFrame(t, smooth(st, deg2, 1 / fps)));
-      if (o.canvas) drawSkeleton(o.canvas, video, kps);
+      if (o.canvas) {
+        const diff = drawSkeleton(o.canvas, video, kps, { robot: o.robotAt ? o.robotAt(frames.length ? frames[frames.length - 1].deg : null) : null, robotMirror: st.mirror });
+        if (diff && o.onDiff) o.onDiff(diff);
+      }
       if (o.onProgress) o.onProgress(Math.round((i + 1) / n * 100), `${t.toFixed(1)} / ${dur.toFixed(1)}초`);
     }
     if (!found) throw new Error("영상에서 사람을 찾지 못했습니다. 온몸(적어도 어깨·팔)이 보이는 영상을 쓰세요.");
@@ -11545,7 +11616,14 @@ var SimPanel = class {
     this.imMirror.type = "checkbox";
     this.imMirror.checked = true;
     mir.append(this.imMirror, document.createTextNode(" 거울처럼 (사람 오른팔 → 로봇 왼팔)"));
-    ri.append(vidFile, this.imVideoBtn, this.imLiveBtn, this.imLegs, mir);
+    const ov = el5("label", "sim-im-mirror");
+    this.imOverlay = el5("input", "sim-im-overlay");
+    this.imOverlay.type = "checkbox";
+    this.imOverlay.checked = true;
+    ov.title = "사람 뼈대 위에 로봇 동작(초록)을 같은 크기로 겹쳐 그려, 어디가 다른지 바로 봅니다";
+    ov.append(this.imOverlay, document.createTextNode(" 로봇 동작 겹쳐 보기"));
+    this.imOverlay.addEventListener("change", () => this._imBigToggle());
+    ri.append(vidFile, this.imVideoBtn, this.imLiveBtn, this.imLegs, mir, ov);
     ci.append(ri);
     this.imCanvas = el5("canvas", "sim-im-canvas");
     this.imCanvas.width = 320;
@@ -11578,8 +11656,15 @@ var SimPanel = class {
     );
     this.imBlocksBtn = button3("tp-btn", "블록으로 만들기", () => this.motionBlocks({ speed: this._imSpeed() }), "자세 블록으로 넣어 프로그램에서 쓰거나 고칠 수 있습니다");
     this.imSaveBtn = button3("tp-btn", "저장", () => this.saveMotion());
+    this.imBigBtn = button3("tp-btn", "⛶ 크게 보기", () => {
+      const c = this.imCanvas;
+      if (c.hidden) return;
+      if (document.fullscreenElement) document.exitFullscreen();
+      else if (c.requestFullscreen) c.requestFullscreen().catch(() => {
+      });
+    }, "영상·사람 뼈대·로봇 동작을 겹친 화면을 전체 화면으로 봅니다");
     this.imBlocksBtn.title = "고른 재생 속도로 자세 블록을 만듭니다";
-    ri2.append(spl, this.imReplayBtn, this.imRobotBtn, this.imBlocksBtn, this.imSaveBtn);
+    ri2.append(spl, this.imReplayBtn, this.imRobotBtn, this.imBlocksBtn, this.imSaveBtn, this.imBigBtn);
     ci.append(ri2);
     body.append(ci);
     const c2 = el5("section", "mon-card");
@@ -12244,7 +12329,12 @@ var SimPanel = class {
     this.imInfo.textContent = "관절 인식 모델을 불러오는 중… (처음 한 번, 6 MB)";
     try {
       const old = this.motionRec && this.motionRec.video;
+      await this._imOverlayReady();
       const rec = await analyzeVideo(file, this.tracker, {
+        robotAt: (deg2) => this._imRobotAt(deg2),
+        onDiff: (diff) => {
+          this.imDiff = diff;
+        },
         opts: this._imOpts(),
         canvas: this.imCanvas,
         onProgress: (p, text2) => {
@@ -12262,6 +12352,38 @@ var SimPanel = class {
     }
     this.imBusy = false;
     this._status();
+  }
+  /** The robot's joint positions for a pose (motor degrees, 180 = straight), for the overlay. */
+  _imRobotAt(deg2) {
+    if (!deg2 || !this.physics || !this.imOverlay || !this.imOverlay.checked) return null;
+    const full = {};
+    for (const id of IDS) full[id] = deg2[id] === void 0 ? 180 : deg2[id];
+    return this.physics.skeleton(toJointRad(full, this.jointMap));
+  }
+  async _imOverlayReady() {
+    if (this.imOverlay && this.imOverlay.checked && !this.physics) {
+      try {
+        await this._ensureSim();
+      } catch (e) {
+      }
+    }
+  }
+  _imDraw(canvas, video, kps, deg2, opts = {}) {
+    const diff = drawSkeleton(canvas, video, kps, { ...opts, robot: this._imRobotAt(deg2), robotMirror: this.imMirror.checked });
+    if (diff) this.imDiff = diff;
+    return diff;
+  }
+  _imBigToggle() {
+    const rec = this.motionRec;
+    if (this._imPlayback || this.liveIm || !rec || !rec.video || this.imCanvas.hidden) return;
+    const t = rec.seconds;
+    const v = document.createElement("video");
+    v.muted = true;
+    v.src = rec.video.url;
+    v.addEventListener("loadeddata", () => {
+      v.currentTime = Math.max(0, t - 0.05);
+    }, { once: true });
+    v.addEventListener("seeked", () => this._imDraw(this.imCanvas, v, kpsAt(rec.video.kps, t), poseAt(rec, t)), { once: true });
   }
   _imSpeed() {
     return Number(this.imSpeed && this.imSpeed.value) || 1;
@@ -12281,11 +12403,11 @@ var SimPanel = class {
     video.playbackRate = speed;
     const cv = this.imCanvas;
     cv.hidden = false;
-    cv.width = 320;
-    cv.height = Math.round(320 / (v.aspect || 4 / 3));
+    cv.width = 480;
+    cv.height = Math.round(480 / (v.aspect || 4 / 3));
     const pb = { video, raf: 0, started: false };
     const draw = () => {
-      drawSkeleton(cv, video, kpsAt(v.kps, video.currentTime));
+      this._imDraw(cv, video, kpsAt(v.kps, video.currentTime), poseAt(rec, video.currentTime));
       pb.raf = requestAnimationFrame(draw);
     };
     pb.raf = requestAnimationFrame(draw);
@@ -12377,6 +12499,7 @@ var SimPanel = class {
     try {
       this.imInfo.textContent = "카메라와 관절 인식 모델을 켜는 중…";
       await this.tracker.acquire("imitate");
+      await this._imOverlayReady();
       const target = await this._imPrepare();
       const st = newImitation(this._imOpts());
       const lv = { st, target, frames: [], n: 0, seen: 0, last: 0, sending: false };
@@ -12388,13 +12511,13 @@ var SimPanel = class {
         lv.last = now;
         const v = tr.video;
         const aspect = v.videoWidth && v.videoHeight ? v.videoWidth / v.videoHeight : 4 / 3;
-        if (this.imCanvas.width !== 320) this.imCanvas.width = 320;
-        this.imCanvas.height = Math.round(320 / aspect);
-        drawSkeleton(this.imCanvas, v, tr.keypoints, { mirror: true });
+        if (this.imCanvas.width !== 480) this.imCanvas.width = 480;
+        this.imCanvas.height = Math.round(480 / aspect);
         const r = retarget(tr.keypoints, aspect, st);
         lv.n++;
         if (r.seen) lv.seen++;
         const f2 = toFrame(now, smooth(st, r.deg, dt));
+        this._imDraw(this.imCanvas, v, tr.keypoints, f2.deg, { mirror: true });
         if (lv.frames.length < 600) lv.frames.push(f2);
         this.imInfo.textContent = `실시간 따라 하기 · ${target === "robot" ? "실제 로봇" : "3D 로봇"} · 오른팔 ${Math.round(f2.deg[1] - 180)}°/${Math.round(f2.deg[2] - 180)}° · 왼팔 ${Math.round(180 - f2.deg[3])}°/${Math.round(f2.deg[4] - 180)}°${r.seen ? "" : " · 사람이 보이지 않습니다"}`;
         if (lv.sending) return;

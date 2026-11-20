@@ -199,6 +199,16 @@ const check = (c, m) => { console.log(`${c ? 'ok' : 'FAIL'} - ${m}`); if (!c) fa
             return !c.hidden && lit > 100;
         });
         check(canvasOk, 'preview shows the video frame with the skeleton');
+        // overlay: the robot's pose (green) drawn on the person, lined up; the arms point the same way
+        const ovl = await p.evaluate(() => {
+            const c = document.querySelector('.simp .sim-im-canvas');
+            const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+            let green = 0;
+            for (let i = 0; i < d.length; i += 4) if (d[i + 1] > 180 && d[i] < 120 && d[i + 2] < 160) green++;
+            return {green, diff: window.dynamicmakers.simPanel.imDiff};
+        });
+        check(ovl.green > 300 && ovl.diff && ovl.diff.R !== null && ovl.diff.R < 20 && ovl.diff.L < 20,
+            `overlay: robot pose drawn over the person (${ovl.green} green px), arms ${ovl.diff && ovl.diff.R}° / ${ovl.diff && ovl.diff.L}° apart`);
         const r0 = ((await out()).match(/3D 재생 끝/g) || []).length;
         await p.selectOption('.simp .sim-im-speed', '0.5');
         await p.click('.simp .sim-imitate button:has-text("3D로 재생")');
