@@ -12,11 +12,83 @@
  *
  * Conventions taken from the official motions: ID1 + = right arm forward/up
  * (90 forward, 170 up), ID3 the same with −; ID2/ID4 + = arm out to the side;
- * squat = ID6, ID8, ID9, ID11 all −a (motion 107 sits at −70).
+ * squat = ID6, ID8, ID9, ID11 all −a (motion 107 sits at −70): the thigh tilts forward by a and the
+ * shin stays upright, so the robot's knee bends by a — the same angle as the person's knee.
+ * Arms: the shoulder pitch axis is turned 15° and the arm hangs 15° out, so the angles are solved
+ * from that geometry (armIK) — copying the person's angles straight across misses by 11-15°.
  */
 import {BONES} from '../ai/pose';
+import {MAXE1_JOINT_MAP} from './maxe1-model';
+import CAD from './maxe1-cad.json';
 
 export const IDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+// ---- the MAX-E1 shoulder, as built (sim/maxe1.xml): the pitch axis is turned 15° by the angled
+// shoulder bracket, and the arm hangs 15° out from the body at 0°. So "arm straight up" is NOT
+// pitch 180°, and "arm out to the side" is NOT roll 90° — solve it from the real geometry.
+const TILT = (CAD.dims.shoulderTilt * Math.PI) / 180; // 15°
+const SIGN = Object.fromEntries(MAXE1_JOINT_MAP.map(j => [j.id, j.sign]));
+const rot = (a, th, v) => { // Rodrigues: v rotated by th about unit axis a
+    const c = Math.cos(th);
+    const s = Math.sin(th);
+    const d = (a[0] * v[0]) + (a[1] * v[1]) + (a[2] * v[2]);
+    const x = [(a[1] * v[2]) - (a[2] * v[1]), (a[2] * v[0]) - (a[0] * v[2]), (a[0] * v[1]) - (a[1] * v[0])];
+    return [0, 1, 2].map(i => (v[i] * c) + (x[i] * s) + (a[i] * d * (1 - c)));
+};
+const ARM = {
+    R: {axis: [0, Math.cos(TILT), -Math.sin(TILT)], rest: [0, -Math.sin(TILT), -Math.cos(TILT)], ids: [1, 2]},
+    L: {axis: [0, Math.cos(TILT), Math.sin(TILT)], rest: [0, Math.sin(TILT), -Math.cos(TILT)], ids: [3, 4]}
+};
+/** Arm direction of the model for joint angles (rad): pitch about the tilted axis, then roll about x. */
+export const armForward = (side, pitch, roll) => rot(ARM[side].axis, pitch, rot([1, 0, 0], roll, ARM[side].rest));
+
+/**
+ * Joint angles that point the robot's arm along u (torso frame: x forward, y left, z up).
+ * Two answers usually exist; the one with the smaller roll (closest to the last pitch when equal) wins.
+ * @returns {{pitch: number, roll: number}} model joint angles (rad)
+ */
+export const armIK = (side, u, prevPitch = 0) => {
+    const A = ARM[side];
+    const wx = th => rot(A.axis, -th, u)[0]; // the roll motor cannot move the arm along x: must be 0
+    const cands = [];
+    const N = 180;
+    const S = -Math.PI - 0.0123; // start a little before −180° so a root at ±180° is not missed
+    let t0 = S;
+    let f0 = wx(t0);
+    for (let i = 1; i <= N + 1; i++) {
+        const t1 = S + ((2 * Math.PI * i) / N);
+        const f1 = wx(t1);
+        if (f0 === 0 || f0 * f1 < 0) {
+            let lo = t0;
+            let hi = t1;
+            for (let k = 0; k < 30; k++) {
+                const mid = (lo + hi) / 2;
+                if (wx(lo) * wx(mid) <= 0) hi = mid;
+                else lo = mid;
+            }
+            const r = (lo + hi) / 2;
+            cands.push(Math.atan2(Math.sin(r), Math.cos(r)));
+        }
+        t0 = t1;
+        f0 = f1;
+    }
+    if (!cands.length) cands.push(prevPitch);
+    const angYZ = v => Math.atan2(v[2], v[1]);
+    let best = null;
+    for (const th of cands) {
+        const w = rot(A.axis, -th, u);
+        let roll = angYZ(w) - angYZ(A.rest);
+        roll = Math.atan2(Math.sin(roll), Math.cos(roll));
+        const cost = Math.abs(roll) + (0.3 * Math.abs(th - prevPitch)) + (Math.abs(roll) > 1.7 ? 10 : 0);
+        if (!best || cost < best.cost) best = {pitch: th, roll, cost};
+    }
+    return {pitch: best.pitch, roll: best.roll};
+};
+/** model joint angles (rad) → motor degrees from the centre for that arm's two IDs */
+const armToMotor = (side, a) => {
+    const [ip, ir] = ARM[side].ids;
+    return {[ip]: (a.pitch * 180 / Math.PI) * SIGN[ip], [ir]: (a.roll * 180 / Math.PI) * SIGN[ir]};
+};
+
 const MIN_SCORE = 0.3;
 const DEG = 180 / Math.PI;
 const K = {lSh: 5, rSh: 6, lEl: 7, rEl: 8, lWr: 9, rWr: 10, lHip: 11, rHip: 12, lKn: 13, rKn: 14, lAn: 15, rAn: 16};
@@ -85,32 +157,30 @@ export const retarget = (kps, aspect, st) => {
         const down = v.y / L;
         let fwd = Math.sqrt(Math.max(0, 1 - (out * out) - (down * down)));
         fwd = Math.max(0, fwd - 0.15) / 0.85; // foreshortening noise
-        let pitch = Math.atan2(fwd, down) * DEG; // 0 down, 90 forward, 180 up
-        let roll = Math.asin(clamp(out, -1, 1)) * DEG; // + out to the side
-        // arm straight out to the side: the pitch motor only twists the arm and its angle is
-        // just noise — keep the last one instead of letting the arm spin
-        const w = clamp((Math.abs(out) - 0.75) / 0.2, 0, 1);
-        const was = st.pitch[side];
-        if (was !== undefined) pitch = (pitch * (1 - w)) + (was * w);
-        else if (w > 0) pitch *= 1 - w;
-        st.pitch[side] = pitch;
-        pitch = clamp(pitch, -30, 175);
-        roll = clamp(roll, pitch < 40 ? 0 : -15, 95);
-        return {pitch, roll};
+        // direction in "outward / forward / up" terms; turned into the robot's frame per robot side below
+        return {fwd, out: clamp(out, -1, 1), up: -down};
     };
     const pr = arm('R', K.rSh, K.rEl, K.rWr);
     const pl = arm('L', K.lSh, K.lEl, K.lWr);
     // mirror: the person's right arm moves the robot's left arm (like facing a mirror)
     const toRight = st.mirror ? pl : pr;
     const toLeft = st.mirror ? pr : pl;
+    const solve = (side, a) => {
+        const n = Math.hypot(a.fwd, a.out, a.up) || 1;
+        const u = [a.fwd / n, (side === 'R' ? -a.out : a.out) / n, a.up / n];
+        const q = armIK(side, u, st.pitch[side] || 0);
+        // keep the arm off the body: while the arm is down it may roll in only until it hangs straight
+        const inward = side === 'R' ? q.roll > 0 : q.roll < 0; // + roll on the right arm (model) = toward the body
+        if (inward && Math.abs(q.pitch) < 0.7) q.roll = Math.sign(q.roll) * Math.min(Math.abs(q.roll), TILT);
+        st.pitch[side] = q.pitch;
+        return armToMotor(side, q);
+    };
     if (toRight) {
-        d[1] = toRight.pitch;
-        d[2] = toRight.roll;
+        Object.assign(d, solve('R', toRight));
         seen++;
     }
     if (toLeft) {
-        d[3] = -toLeft.pitch;
-        d[4] = toLeft.roll;
+        Object.assign(d, solve('L', toLeft));
         seen++;
     }
 
@@ -127,8 +197,24 @@ export const retarget = (kps, aspect, st) => {
             return n ? 180 - (Math.acos(clamp(((v1[0] * v2[0]) + (v1[1] * v2[1])) / n, -1, 1)) * DEG) : null;
         };
         const bs = [bend(K.lHip, K.lKn, K.lAn), bend(K.rHip, K.rKn, K.rAn)].filter(v => v !== null);
-        if (bs.length) {
-            const a = clamp((bs.reduce((s, v) => s + v, 0) / bs.length) * 0.75, 10, 65);
+        // seen from the front, bent knees point at the camera and look straighter than they are:
+        // also judge the bend by how much shorter the legs look than when standing
+        let byHeight = null;
+        if (ok(K.lHip, K.rHip, K.lAn, K.rAn)) {
+            // hip → ankle length of the straighter leg: bent knees pointing at the camera make it
+            // shorter; feet apart (a wide stance) or one lifted foot do not
+            const h = Math.max(dist(P(K.lHip), P(K.lAn)), dist(P(K.rHip), P(K.rAn))) / T;
+            st.leg = Math.max((st.leg || 0) * 0.9995, h);
+            const ratio = h / Math.max(st.leg, 1.3); // (legs are ≈ 1.3-1.8 torso lengths, children shorter)
+            byHeight = 2 * Math.acos(clamp(ratio / 0.96, 0, 1)) * DEG;
+        }
+        if (bs.length || byHeight !== null) {
+            // the robot's knee bends by the same angle (its shin stays upright, like motion 107: hip
+            // pitch and knee both −a); the 2D angle and the hip-height guess: whichever sees more bend
+            // the robot bends both knees together: copy the straighter leg (standing on one bent leg —
+            // a lifted knee — is not a squat, and the robot cannot stand on one leg)
+            const flat = bs.length ? Math.min(...bs) : 0;
+            const a = clamp(Math.max(flat, byHeight || 0), 10, 65);
             d[6] = d[8] = d[9] = d[11] = -a;
             seen++;
         }

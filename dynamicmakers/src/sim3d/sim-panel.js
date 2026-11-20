@@ -10,7 +10,7 @@ import {posesProgramXML} from './gait-blocks';
 import {parseMtn3, findChains, toRecording, callSeconds} from './mtn3';
 import {builtInMotions, setMotions} from './motion-library';
 import {motionNote} from './maxe1-motion-notes';
-import {LEG_MODES, IDS as IM_IDS, SWAY_LEFT, analyzeVideo, newImitation, retarget, smooth, toFrame, drawSkeleton, kpsAt} from './imitate';
+import {LEG_MODES, IDS as IM_IDS, SWAY_LEFT, armIK, armForward, analyzeVideo, newImitation, retarget, smooth, toFrame, drawSkeleton, kpsAt} from './imitate';
 
 const {DXL} = require('../../../scratch-cm550/src/cm550');
 import {assetUrl} from '../asset-url';
@@ -104,7 +104,7 @@ export class SimPanel {
         if (!['race', 'watch', 'fast'].includes(this.search.mode)) this.search.mode = this.search.watch === false ? 'fast' : 'race';
         if (!this.search.speed) this.search.speed = 1;
         this.visible = false;
-        this.imitateLib = {retarget, newImitation, smooth, SWAY_LEFT}; // for tests
+        this.imitateLib = {retarget, newImitation, smooth, SWAY_LEFT, armIK, armForward}; // for tests
         this._build();
         this.walker.onUpdate(() => this._status());
     }

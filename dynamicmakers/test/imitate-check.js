@@ -38,8 +38,9 @@ const check = (c, m) => { console.log(`${c ? 'ok' : 'FAIL'} - ${m}`); if (!c) fa
             set(10, 0.42 + rWr[0], 0.3 + rWr[1]); set(9, 0.58 + lWr[0], 0.3 + lWr[1]);
             set(8, 0.42 + (rWr[0] / 2), 0.3 + (rWr[1] / 2)); set(7, 0.58 + (lWr[0] / 2), 0.3 + (lWr[1] / 2));
             const kn = knee * Math.PI / 180;
-            set(14, 0.44, 0.67); set(13, 0.56, 0.67);
-            set(16, 0.44 + (0.12 * Math.sin(kn)), 0.67 + (0.12 * Math.cos(kn))); set(15, 0.56 + (0.12 * Math.sin(kn)), 0.67 + (0.12 * Math.cos(kn)));
+            // legs ≈ 1.6 torso lengths; the shins swing back by the knee bend (seen from the side)
+            set(14, 0.44, 0.75); set(13, 0.56, 0.75);
+            set(16, 0.44 + (0.2 * Math.sin(kn)), 0.75 + (0.2 * Math.cos(kn))); set(15, 0.56 + (0.2 * Math.sin(kn)), 0.75 + (0.2 * Math.cos(kn)));
             return k;
         };
         const L = 0.26; // straight arm
@@ -51,22 +52,84 @@ const check = (c, m) => { console.log(`${c ? 'ok' : 'FAIL'} - ${m}`); if (!c) fa
             rightUp: run(body([0, -L], [0, L])),
             rightUpMirror: run(body([0, -L], [0, L]), true),
             squat: run(body([0, L], [0, L], 80)),
-            lean: run(body([0, L], [0, L], 0, 0.06))
+            lean: run(body([0, L], [0, L], 0, 0.06)),
+            // seen from the front: knees bend toward the camera, the legs only look shorter
+            frontSquat: (() => {
+                const st = newImitation({legs: 'squat', mirror: false});
+                retarget(body([0, L], [0, L]), 1, st); // standing first: the legs' full length
+                const k = body([0, L], [0, L]);
+                k[14] = {x: 0.44, y: 0.66, score: 0.9}; k[13] = {x: 0.56, y: 0.66, score: 0.9};
+                k[16] = {x: 0.44, y: 0.78, score: 0.9}; k[15] = {x: 0.56, y: 0.78, score: 0.9};
+                return retarget(k, 1, st).deg;
+            })()
         };
     });
     const near = (v, w, tol = 12) => Math.abs(v - w) <= tol;
-    check(near(r.down[1], 0) && near(r.down[3], 0) && near(r.down[2], 0, 6), `arms down → ID1/3 ≈ 0 (${r.down[1].toFixed(0)}, ${r.down[3].toFixed(0)})`);
-    check(near(r.out[2], 90, 15) && near(r.out[4], 90, 15), `arms out to the sides → ID2/4 ≈ 90 like motion 109 (${r.out[2].toFixed(0)}, ${r.out[4].toFixed(0)})`);
-    check(near(r.up[1], 175) && near(r.up[3], -175), `arms up → ID1 ≈ 170, ID3 ≈ −170 like motion 109 (${r.up[1].toFixed(0)}, ${r.up[3].toFixed(0)})`);
-    check(r.rightUp[1] > 150 && near(r.rightUp[3], 0), `person's right arm up → robot right arm (ID1) up (${r.rightUp[1].toFixed(0)}, ${r.rightUp[3].toFixed(0)})`);
-    check(r.rightUpMirror[3] < -150 && near(r.rightUpMirror[1], 0), `mirror: person's right arm up → robot left arm (ID3) up (${r.rightUpMirror[3].toFixed(0)})`);
-    check(r.squat[6] < -40 && r.squat[6] === r.squat[9] && r.squat[8] === r.squat[11], `knees bent → squat like motion 107 (ID6/8/9/11 = ${r.squat[6].toFixed(0)})`);
+    check(r.squat[6] <= -60 && r.squat[6] === r.squat[9] && r.squat[8] === r.squat[11], `knees bent 80° → the robot bends its knees as far as it safely can, like motion 107 (ID6/8/9/11 = ${r.squat[6].toFixed(0)})`);
+    check(near(r.rightUp[1], 180, 5) && r.rightUpMirror[3] < -170, `person's right arm up → robot right arm (ID1 ${r.rightUp[1].toFixed(0)}), mirrored → robot left arm (ID3 ${r.rightUpMirror[3].toFixed(0)})`);
     check(r.down[6] === -10 && r.down[5] === 0, 'standing → knees slightly bent, no sway');
+    check(r.frontSquat[6] < -40, `squat seen from the front (legs look shorter) → the robot squats (ID6 ${r.frontSquat[6].toFixed(0)})`);
     check(Math.abs(r.lean[5]) >= 1.5 && r.lean[5] === r.lean[10], `leaning → hips/ankles sway together (ID5/7/10/12 = ${r.lean[5].toFixed(1)})`);
 
-    // ---- the sway sign: + on SWAY_LEFT moves the 3D robot to its own left (+y)
     await p.click('.simp button:has-text("3D 가상 로봇 연결")');
     await p.waitForFunction(() => document.getElementById('console-lines').textContent.includes('12개 인식'), null, {timeout: 60000});
+    // ---- the robot's arm really points where the person's arm points (measured on the 3D model)
+    const armErr = await p.evaluate(() => {
+        const s = window.dynamicmakers.simPanel;
+        const ph = s.physics;
+        const {armIK} = s.imitateLib;
+        const D = Math.PI / 180;
+        const n = v => { const l = Math.hypot(...v); return v.map(x => x / l); };
+        const dirs = {'아래': [0, 0, -1], '앞': [1, 0, 0], '옆': [0, 1, 0], '위': [0, 0, 1], '옆 위': [0, 1, 1], '앞 옆': [1, 1, 0], '앞 위': [1, 0, 1], '앞 아래': [1, 0, -1], '옆 아래': [0, 1, -1]};
+        let worst = 0;
+        let naive = 0;
+        for (const c of Object.values(dirs)) {
+            const [f, o, up] = n(c);
+            for (const side of ['R', 'L']) {
+                const u = [f, side === 'R' ? -o : o, up];
+                const q = armIK(side, u, 0);
+                const d = ph.armDirection(side, q.pitch, q.roll);
+                worst = Math.max(worst, Math.acos(Math.min(1, (d[0] * u[0]) + (d[1] * u[1]) + (d[2] * u[2]))) / D);
+                // copying the person's angles straight across (ignores the 15° shoulder tilt)
+                const pitch = Math.atan2(f, -up);
+                const roll = Math.asin(o);
+                const g = ph.armDirection(side, side === 'R' ? -pitch : -pitch, side === 'R' ? -roll : roll);
+                naive = Math.max(naive, Math.acos(Math.min(1, (g[0] * u[0]) + (g[1] * u[1]) + (g[2] * u[2]))) / D);
+            }
+        }
+        return {worst, naive};
+    });
+    check(armErr.worst < 2, `arm directions solved from the model's shoulder geometry: worst miss ${armErr.worst.toFixed(1)}° (copying the person's angles straight across: ${armErr.naive.toFixed(0)}°)`);
+    const skel = await p.evaluate(() => {
+        const s = window.dynamicmakers.simPanel;
+        const {retarget, newImitation} = s.imitateLib;
+        const ph = s.physics;
+        const D = Math.PI / 180;
+        const body = (rWr, lWr) => {
+            const k = Array.from({length: 17}, () => ({x: 0.5, y: 0.2, score: 0.9}));
+            const set = (i, x, y) => { k[i] = {x, y, score: 0.9}; };
+            set(6, 0.42, 0.3); set(5, 0.58, 0.3); set(12, 0.44, 0.55); set(11, 0.56, 0.55);
+            set(10, 0.42 + rWr[0], 0.3 + rWr[1]); set(9, 0.58 + lWr[0], 0.3 + lWr[1]);
+            set(8, 0.42 + (rWr[0] / 2), 0.3 + (rWr[1] / 2)); set(7, 0.58 + (lWr[0] / 2), 0.3 + (lWr[1] / 2));
+            set(14, 0.44, 0.75); set(13, 0.56, 0.75); set(16, 0.44, 0.95); set(15, 0.56, 0.95);
+            return k;
+        };
+        const L = 0.27;
+        const res = {};
+        // person's right arm out to their side (image left), left arm up — not mirrored
+        const deg = retarget(body([-L, 0], [0, -L]), 1, newImitation({legs: 'stand', mirror: false})).deg;
+        const j = id => s.jointMap.find(x => x.id === id);
+        const rad = id => j(id).sign * deg[id] * D;
+        const dR = ph.armDirection('R', rad(1), rad(2));
+        const dL = ph.armDirection('L', rad(3), rad(4));
+        res.R = dR.map(v => v.toFixed(2)).join(',');
+        res.L = dL.map(v => v.toFixed(2)).join(',');
+        res.ok = dR[1] < -0.95 && dL[2] > 0.95;
+        return res;
+    });
+    check(skel.ok, `skeleton → robot: right arm out to the side (${skel.R}), left arm straight up (${skel.L})`);
+
+    // ---- the sway sign: + on SWAY_LEFT moves the 3D robot to its own left (+y)
     const sway = await p.evaluate(async () => {
         const s = window.dynamicmakers.simPanel;
         const ph = s.physics;
@@ -95,7 +158,7 @@ const check = (c, m) => { console.log(`${c ? 'ok' : 'FAIL'} - ${m}`); if (!c) fa
         });
         check(rec.n >= 25 && rec.seen > 0.8, `video analysed: ${rec.n} poses over ${rec.secs.toFixed(1)} s, person found in ${(rec.seen * 100).toFixed(0)}% ("${info}")`);
         check(rec.d[2] - 180 > 60 && rec.d[4] - 180 > 60, `arms out like the person in the video (ID2 ${(rec.d[2] - 180).toFixed(0)}°, ID4 ${(rec.d[4] - 180).toFixed(0)}°)`);
-        check(rec.d[6] - 180 < -10, `the person's bent knee → the robot bends its knees (ID6 ${(rec.d[6] - 180).toFixed(0)}°)`);
+        check(rec.d[6] - 180 > -20, `the person bends one knee, the other leg straight → the robot does not squat (it bends both knees together) (ID6 ${(rec.d[6] - 180).toFixed(0)}°)`);
         const canvasOk = await p.evaluate(() => {
             const c = document.querySelector('.simp .sim-im-canvas');
             const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;

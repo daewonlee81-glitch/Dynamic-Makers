@@ -191,6 +191,41 @@ export class PhysicsSim {
         return v === undefined ? 0 : Math.round(v * 100);
     }
 
+    /**
+     * Where an arm points (unit vector in the torso frame: x forward, y left, z up), from the
+     * model's own geometry (shoulder → end of the arm). With angles given (rad, model joints),
+     * only the kinematics is worked out: the robot is put back as it was.
+     * @param {'R'|'L'} side
+     * @param {number} [pitch] rad
+     * @param {number} [roll] rad
+     */
+    armDirection (side, pitch, roll) {
+        const mj = this.mj;
+        const m = this.model;
+        const d = this.data;
+        const qp = this.qadr[`${side}_shoulder_pitch`];
+        const qr = this.qadr[`${side}_shoulder_roll`];
+        const keep = [d.qpos[qp], d.qpos[qr]];
+        if (pitch !== undefined) {
+            d.qpos[qp] = pitch;
+            d.qpos[qr] = roll;
+            mj.mj_kinematics(m, d);
+        }
+        const b = mj.mj_name2id(m, mj.mjtObj.mjOBJ_BODY.value, `${side}_arm`);
+        const R = d.xmat.slice(b * 9, (b * 9) + 9);
+        const T = d.xmat.slice(9, 18); // torso
+        const end = [0, side === 'R' ? -0.03662 : 0.03662, -0.13668];
+        const w = [0, 1, 2].map(i => (R[i * 3] * end[0]) + (R[(i * 3) + 1] * end[1]) + (R[(i * 3) + 2] * end[2]));
+        const t = [0, 1, 2].map(i => (T[i] * w[0]) + (T[3 + i] * w[1]) + (T[6 + i] * w[2])); // torsoᵀ · w
+        const n = Math.hypot(...t);
+        if (pitch !== undefined) {
+            d.qpos[qp] = keep[0];
+            d.qpos[qr] = keep[1];
+            mj.mj_kinematics(m, d);
+        }
+        return t.map(v => v / n);
+    }
+
     get torso () {
         const q = this.data.qpos;
         return {x: q[0], y: q[1], z: q[2], up: this.data.xmat[9 + 8]}; // body 1 = torso
