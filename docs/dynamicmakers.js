@@ -11099,7 +11099,9 @@ var retarget = (kps, aspect, st) => {
   const d = { ...prev };
   let seen = 0;
   if (ok(K2.lSh, K2.rSh, K2.lHip, K2.rHip)) {
-    const t = dist(mid(P(K2.lSh), P(K2.rSh)), mid(P(K2.lHip), P(K2.rHip)));
+    let t = dist(mid(P(K2.lSh), P(K2.rSh)), mid(P(K2.lHip), P(K2.rHip)));
+    t = Math.min(t, dist(P(K2.lSh), P(K2.rSh)) * 1.8);
+    if (st.torso) t = clamp(t, st.torso * 0.75, st.torso * 1.3);
     st.torso = st.torso ? st.torso * 0.9 + t * 0.1 : t;
   } else if (ok(K2.lSh, K2.rSh) && !st.torso) {
     st.torso = dist(P(K2.lSh), P(K2.rSh)) * 1.5;
@@ -11113,12 +11115,13 @@ var retarget = (kps, aspect, st) => {
     const k = ok(wr) ? 1 : 2;
     const v = { x: (e.x - s.x) * k, y: (e.y - s.y) * k };
     const len = Math.hypot(v.x, v.y) / T2;
-    st.arm[side] = Math.max(st.arm[side] * 0.9995, len);
+    st.arm[side] = Math.max(st.arm[side] * 0.998, Math.min(len, 1.35));
     const L = Math.max(st.arm[side], 0.9) * T2;
     const out = (side === "R" ? -v.x : v.x) / L;
     const down = v.y / L;
-    let fwd = Math.sqrt(Math.max(0, 1 - out * out - down * down));
-    fwd = Math.max(0, fwd - 0.15) / 0.85;
+    const r = Math.min(1, Math.hypot(out, down) / 0.92);
+    let fwd = Math.sqrt(Math.max(0, 1 - r * r));
+    fwd = Math.max(0, fwd - 0.35) / 0.65;
     return { fwd, out: clamp(out, -1, 1), up: -down };
   };
   const pr = arm("R", K2.rSh, K2.rEl, K2.rWr);

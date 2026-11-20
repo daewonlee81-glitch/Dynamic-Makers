@@ -134,7 +134,11 @@ export const retarget = (kps, aspect, st) => {
 
     // torso length: shoulders → hips (shoulder width × 1.5 when the hips are out of the picture)
     if (ok(K.lSh, K.rSh, K.lHip, K.rHip)) {
-        const t = dist(mid(P(K.lSh), P(K.rSh)), mid(P(K.lHip), P(K.rHip)));
+        let t = dist(mid(P(K.lSh), P(K.rSh)), mid(P(K.lHip), P(K.rHip)));
+        // hips guessed at the bottom edge of a close-up make the torso look too long, and then every
+        // arm looks short (= pointing at the camera = raised forward): cap by the shoulder width
+        t = Math.min(t, dist(P(K.lSh), P(K.rSh)) * 1.8);
+        if (st.torso) t = clamp(t, st.torso * 0.75, st.torso * 1.3); // one bad frame cannot jump it
         st.torso = st.torso ? (st.torso * 0.9) + (t * 0.1) : t;
     } else if (ok(K.lSh, K.rSh) && !st.torso) {
         st.torso = dist(P(K.lSh), P(K.rSh)) * 1.5;
@@ -150,13 +154,18 @@ export const retarget = (kps, aspect, st) => {
         const k = ok(wr) ? 1 : 2;
         const v = {x: (e.x - s.x) * k, y: (e.y - s.y) * k};
         const len = Math.hypot(v.x, v.y) / T;
-        st.arm[side] = Math.max(st.arm[side] * 0.9995, len);
-        const L = Math.max(st.arm[side], 0.9) * T; // the longest arm seen (a straight arm is ≈ 1.1 torso lengths)
+        // the longest arm seen = the real arm length (a straight arm is ≈ 1.1 torso lengths); a
+        // wrongly placed wrist cannot make it longer than 1.35, and it is forgotten slowly
+        st.arm[side] = Math.max(st.arm[side] * 0.998, Math.min(len, 1.35));
+        const L = Math.max(st.arm[side], 0.9) * T;
         // the person faces the camera: their right arm is on the image's left
         const out = (side === 'R' ? -v.x : v.x) / L;
         const down = v.y / L;
-        let fwd = Math.sqrt(Math.max(0, 1 - (out * out) - (down * down)));
-        fwd = Math.max(0, fwd - 0.15) / 0.85; // foreshortening noise
+        // an arm pointing at the camera looks short. Only a clearly short arm counts as forward: elbows
+        // bent a little, sleeves and wobbly points make a hanging arm look 10-20 % short as well
+        const r = Math.min(1, Math.hypot(out, down) / 0.92);
+        let fwd = Math.sqrt(Math.max(0, 1 - (r * r)));
+        fwd = Math.max(0, fwd - 0.35) / 0.65;
         // direction in "outward / forward / up" terms; turned into the robot's frame per robot side below
         return {fwd, out: clamp(out, -1, 1), up: -down};
     };

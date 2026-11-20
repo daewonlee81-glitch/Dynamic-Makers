@@ -1,7 +1,8 @@
 // 영상으로 따라 하기: retargeting rules, a video file → robot motion → 3D, webcam (fake camera) live mode.
 // Usage: node test/imitate-check.js http://localhost:8700/index.html
 // Test video: a person with both arms out to the sides (tfjs-models test image), made with ffmpeg into
-// /tmp/testmedia (IM_DIR) — the video parts are skipped when it is not there. To make them:
+// /tmp/testmedia (IM_DIR) — the video parts are skipped when it is not there. stand.webm: a man standing
+// (OpenPose examples/media/COCO_val2014_000000000241.jpg, right 70 %). To make pose.webm / pose.y4m:
 //   curl -o pose.jpg https://raw.githubusercontent.com/tensorflow/tfjs-models/master/pose-detection/test_data/pose.jpg
 //   ffmpeg -loop 1 -i pose.jpg -t 3 -r 15 -vf scale=640:-2,format=yuv420p -c:v libvpx-vp9 pose.webm
 //   ffmpeg -loop 1 -i pose.jpg -t 4 -r 15 -vf scale=640:-2,pad=640:480:(ow-iw)/2:(oh-ih)/2,format=yuv420p pose.y4m
@@ -129,6 +130,37 @@ const check = (c, m) => { console.log(`${c ? 'ok' : 'FAIL'} - ${m}`); if (!c) fa
     });
     check(skel.ok, `skeleton → robot: right arm out to the side (${skel.R}), left arm straight up (${skel.L})`);
 
+    // ---- arms hanging down stay down even when they look a bit short (sleeves, slightly bent
+    // elbows, wobbly points) or when the hips are guessed far too low in a close-up
+    const hang = await p.evaluate(() => {
+        const s = window.dynamicmakers.simPanel;
+        const {retarget, newImitation} = s.imitateLib;
+        const ph = s.physics;
+        const D = Math.PI / 180;
+        const body = (armLen, hipY = 0.55) => {
+            const k = Array.from({length: 17}, () => ({x: 0.5, y: 0.2, score: 0.9}));
+            const set = (i, x, y) => { k[i] = {x, y, score: 0.9}; };
+            set(6, 0.42, 0.3); set(5, 0.58, 0.3); set(12, 0.44, hipY); set(11, 0.56, hipY);
+            set(10, 0.415, 0.3 + armLen); set(9, 0.585, 0.3 + armLen); set(8, 0.418, 0.3 + (armLen / 2)); set(7, 0.582, 0.3 + (armLen / 2));
+            set(14, 0.44, hipY + 0.2); set(13, 0.56, hipY + 0.2); set(16, 0.44, hipY + 0.4); set(15, 0.56, hipY + 0.4);
+            return k;
+        };
+        const tilt = deg => {
+            const j = id => s.jointMap.find(x => x.id === id);
+            const rad = id => j(id).sign * deg[id] * D;
+            const dR = ph.armDirection('R', rad(1), rad(2));
+            const dL = ph.armDirection('L', rad(3), rad(4));
+            return Math.max(Math.acos(-dR[2]), Math.acos(-dL[2])) / D; // degrees away from straight down
+        };
+        const st = newImitation({legs: 'stand'});
+        retarget(body(0.27), 1, st); // full length once
+        const short = tilt(retarget(body(0.23), 1, st).deg); // 15 % shorter
+        const st2 = newImitation({legs: 'stand'});
+        const closeUp = tilt(retarget(body(0.27, 0.95), 1, st2).deg); // hips guessed at the bottom
+        return {short, closeUp};
+    });
+    check(hang.short < 15 && hang.closeUp < 15, `arms hanging down stay down: looking 15 % short → ${hang.short.toFixed(0)}° off, hips guessed too low → ${hang.closeUp.toFixed(0)}° off`);
+
     // ---- the sway sign: + on SWAY_LEFT moves the 3D robot to its own left (+y)
     const sway = await p.evaluate(async () => {
         const s = window.dynamicmakers.simPanel;
@@ -188,6 +220,23 @@ const check = (c, m) => { console.log(`${c ? 'ok' : 'FAIL'} - ${m}`); if (!c) fa
         check(/0\.5배 속도/.test(xmlText + title), 'blocks are made at the chosen speed (0.5×)');
     } else {
         console.log(`# skipped the video file part (no ${VIDEO})`);
+    }
+
+    const STAND = path.join(DIR, 'stand.webm'); // a real photo: a man standing, one arm hanging, the other holding a remote
+    if (fs.existsSync(STAND)) {
+        const n1 = ((await out()).match(/로봇 동작으로 바꿨습니다/g) || []).length;
+        await p.setInputFiles('.simp .sim-vid-file', STAND);
+        await p.waitForFunction(n => (document.getElementById('console-lines').textContent.match(/로봇 동작으로 바꿨습니다|영상으로 따라 하기:/g) || []).length > n, n1, {timeout: 180000});
+        const real = await p.evaluate(() => {
+            const s = window.dynamicmakers.simPanel;
+            const f = s.motionRec.frames[s.motionRec.frames.length - 1].deg;
+            const D = Math.PI / 180;
+            const j = id => s.jointMap.find(x => x.id === id);
+            const rad = id => j(id).sign * (f[id] - 180) * D;
+            const dR = s.physics.armDirection('R', rad(1), rad(2)); // mirrored: the person's hanging left arm
+            return {off: Math.acos(-dR[2]) / D, ids: [1, 2, 3, 4].map(i => Math.round(f[i] - 180)).join(' ')};
+        });
+        check(real.off < 20, `real photo: the person's hanging arm → the robot's arm hangs down (${real.off.toFixed(0)}° off; ID1-4 ${real.ids})`);
     }
 
     if (fs.existsSync(CAM)) {
