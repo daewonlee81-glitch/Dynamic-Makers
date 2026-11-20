@@ -489,13 +489,13 @@ export const initTutor = ctx => {
         const a = e.target.closest('[data-ids]');
         if (!a) return;
         e.preventDefault();
-        glow(a.dataset.ids.split(',').filter(Boolean));
+        glow(a.dataset.ids.split(' ').filter(Boolean)); // (block ids may contain commas, never spaces)
     });
     const linkify = s => esc(s).replace(/\[L(\d+)(?:\s*[-–~]\s*L?(\d+))?\]/g, (m, a, b) => {
         const from = Number(a);
         const to = Number(b || a);
         const ids = lineMap.filter(l => l.n >= from && l.n <= to).map(l => l.id);
-        return ids.length ? `<a href="#" class="tt-ln" data-ids="${ids.join(',')}">${b ? `${a}–${b}` : a}</a>` : m;
+        return ids.length ? `<a href="#" class="tt-ln" data-ids="${esc(ids.join(' '))}">${b ? `${a}–${b}` : a}</a>` : m;
     })
         .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
         .replace(/\n/g, '<br>');
@@ -658,7 +658,7 @@ export const initTutor = ctx => {
                 return;
             }
             addMsg('rule', `<b>${T.rules}</b><br>${shown.length ?
-                shown.map(r => `<a href="#" class="tt-rule lv-${r.level}" data-ids="${r.ids.join(',')}">${r.level === 'error' ? '⛔' : r.level === 'warn' ? '⚠' : 'ℹ️'} ${esc(r.msg)}</a>`).join('<br>') :
+                shown.map(r => `<a href="#" class="tt-rule lv-${r.level}" data-ids="${esc(r.ids.join(' '))}">${r.level === 'error' ? '⛔' : r.level === 'warn' ? '⚠' : 'ℹ️'} ${esc(r.msg)}</a>`).join('<br>') :
                 esc(T.noIssue)}`);
         }
         if (!active) {

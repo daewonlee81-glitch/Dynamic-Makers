@@ -108,6 +108,19 @@ export class PoseTracker {
         if (!this.users.size) this._stop();
     }
 
+    /** Load MoveNet (once). */
+    async loadModel () {
+        if (this.model) return;
+        const {tf, loadMoveNet} = await loadTF();
+        this.tf = tf;
+        this.model = await loadMoveNet();
+    }
+
+    /** 17 points for one frame of any video / image element (e.g. a video file). */
+    estimateOn (el) {
+        return this._estimate(el);
+    }
+
     async _start () {
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
             throw new Error('이 브라우저에서는 카메라를 쓸 수 없습니다. Chrome이나 Edge를 사용하세요.');
@@ -180,8 +193,7 @@ export class PoseTracker {
     }
 
     /** MoveNet on a letterboxed (square) frame; returns 17 {x, y, score} in image fractions. */
-    async _estimate () {
-        const v = this.video;
+    async _estimate (v = this.video) {
         if (!this.model || v.readyState < 2 || !v.videoWidth) return null;
         const tf = this.tf;
         const W = v.videoWidth;

@@ -480,3 +480,8 @@ body.dm-resizing iframe, body.dm-resizing #blocks { pointer-events: none; }
 .tt-ask input { flex: 1; min-width: 0; height: 34px; border: 1px solid var(--line); border-radius: 8px; padding: 0 10px; font: inherit; font-size: 13.5px; }
 .tt-ask button { height: 34px; }
 .tt-note { margin: 0; padding: 0 12px 8px; font-size: 11px; color: var(--muted); }
+.sim-imitate .tp-row { flex-wrap: wrap; }
+.sim-im-legs { height: 32px; border: 1px solid var(--line); border-radius: 8px; font: inherit; font-size: 13px; padding: 0 6px; }
+.sim-im-mirror { font-size: 13px; display: inline-flex; align-items: center; gap: 4px; }
+.sim-im-canvas { display: block; width: 320px; max-width: 100%; margin: 8px 0 4px; border-radius: 10px; background: #1b2233; }
+.sim-im-canvas[hidden] { display: none; }

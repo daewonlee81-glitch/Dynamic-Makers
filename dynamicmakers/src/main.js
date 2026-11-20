@@ -756,6 +756,7 @@ simPanel = window.dynamicmakers.simPanel = new SimPanel({
     log: (t, k) => log(t, k),
     device: ext.device,
     walker,
+    tracker: poseTracker,
     store: simStore,
     onStoreChange: () => scheduleAutosave(),
     makeTransport: physics => new SimTransport(text => log(`🤖 ${text}`, 'sim'), {physics}),

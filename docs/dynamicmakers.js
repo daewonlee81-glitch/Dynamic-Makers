@@ -1858,7 +1858,7 @@ var require_cm550 = __commonJS({
       LED_RED_BRIGHT: { base: 494, stride: 1, size: 1, ports: 2, category: MODULE.LED_RED_BRIGHT },
       LED_BLUE_BRIGHT: { base: 499, stride: 1, size: 1, ports: 2, category: MODULE.LED_BLUE_BRIGHT }
     };
-    var DXL3 = {
+    var DXL4 = {
       MODEL_NUMBER: { addr: 0, size: 2 },
       ID: { addr: 7, size: 1 },
       // 1 velocity, 3 position, 4 extended position, 16 PWM (XL-330: 0 current, 5 current-based position)
@@ -1892,7 +1892,7 @@ var require_cm550 = __commonJS({
     var OP_MODE = { CURRENT: 0, VELOCITY: 1, POSITION: 3, EXTENDED_POSITION: 4, CURRENT_POSITION: 5, PWM: 16 };
     var DUAL_AXIS_MODELS = /* @__PURE__ */ new Set([1090, 1160]);
     var MOTION_STOP = { NOW: 65533, KEYFRAME: 65534, UNIT: 65535 };
-    var clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+    var clamp2 = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
     var degToTick = (deg2) => Math.round(deg2 / 360 * 4096);
     var tickToDeg2 = (tick) => tick / 4096 * 360;
     var delay4 = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -2165,7 +2165,7 @@ var require_cm550 = __commonJS({
       /** Model number of `id` (cached; read from the motor once). Rejects unsupported models. */
       async requireModel(id) {
         if (typeof this._modelCache[id] === "undefined") {
-          this._modelCache[id] = await this.readDXL(id, DXL3.MODEL_NUMBER);
+          this._modelCache[id] = await this.readDXL(id, DXL4.MODEL_NUMBER);
         }
         const model = this._modelCache[id];
         if (!modelInfo2(model)) {
@@ -2198,7 +2198,7 @@ var require_cm550 = __commonJS({
         return this.read(id, reg.addr, reg.size, Boolean(reg.signed));
       }
       writeDXL(id, reg, value) {
-        if (reg === DXL3.GOAL_POSITION && this._lastGoal) this._lastGoal.delete(id);
+        if (reg === DXL4.GOAL_POSITION && this._lastGoal) this._lastGoal.delete(id);
         return this.write(id, reg.addr, value, reg.size);
       }
       ping(id) {
@@ -2223,13 +2223,13 @@ var require_cm550 = __commonJS({
         await delay4(50);
       }
       async readPort(spec, port) {
-        port = clamp(Math.round(port), 1, spec.ports);
+        port = clamp2(Math.round(port), 1, spec.ports);
         await this.ensurePortCategory(port, spec.category);
         const addr = spec.base + (port - 1) * spec.stride;
         return this.read(CM550_ID, addr, spec.size, Boolean(spec.signed));
       }
       async writePort(spec, port, value) {
-        port = clamp(Math.round(port), 1, spec.ports);
+        port = clamp2(Math.round(port), 1, spec.ports);
         await this.ensurePortCategory(port, spec.category);
         const addr = spec.base + (port - 1) * spec.stride;
         return this.write(CM550_ID, addr, value, spec.size);
@@ -2252,29 +2252,29 @@ var require_cm550 = __commonJS({
         }
         let current2 = this._modeCache[id];
         if (typeof current2 === "undefined") {
-          current2 = await this.readDXL(id, DXL3.OPERATING_MODE);
+          current2 = await this.readDXL(id, DXL4.OPERATING_MODE);
           this._modeCache[id] = current2;
         }
         if (accepted.includes(current2)) {
-          await this.writeDXL(id, DXL3.TORQUE_ENABLE, 1);
+          await this.writeDXL(id, DXL4.TORQUE_ENABLE, 1);
           return;
         }
-        const torque = await this.readDXL(id, DXL3.TORQUE_ENABLE);
-        if (torque) await this.writeDXL(id, DXL3.TORQUE_ENABLE, 0);
+        const torque = await this.readDXL(id, DXL4.TORQUE_ENABLE);
+        if (torque) await this.writeDXL(id, DXL4.TORQUE_ENABLE, 0);
         try {
-          await this.writeDXL(id, DXL3.OPERATING_MODE, target);
+          await this.writeDXL(id, DXL4.OPERATING_MODE, target);
         } catch (e) {
           if (!/접근 오류|Access/.test(e.message)) throw e;
           const ok = await this._withSiblingTorqueOff(
             id,
-            () => this.writeDXL(id, DXL3.OPERATING_MODE, target)
+            () => this.writeDXL(id, DXL4.OPERATING_MODE, target)
           );
           if (!ok) {
             throw new Error(`다이나믹셀 ${id}: 모드를 바꿀 수 없습니다. 같은 모듈(2XL430 등)의 다른 축이나 이 모터의 토크를 끈 뒤 다시 시도하세요.`);
           }
         }
         this._modeCache[id] = target;
-        await this.writeDXL(id, DXL3.TORQUE_ENABLE, 1);
+        await this.writeDXL(id, DXL4.TORQUE_ENABLE, 1);
       }
       /** Back-compat name used by blocks: switch to exactly `mode`. */
       setOperatingMode(id, mode) {
@@ -2292,26 +2292,26 @@ var require_cm550 = __commonJS({
           if (n < 0 || n > 252) continue;
           let model;
           try {
-            model = await this.readDXL(n, DXL3.MODEL_NUMBER);
+            model = await this.readDXL(n, DXL4.MODEL_NUMBER);
           } catch (e) {
             continue;
           }
           if (!DUAL_AXIS_MODELS.has(model)) continue;
-          const t = await this.readDXL(n, DXL3.TORQUE_ENABLE);
-          if (t) await this.writeDXL(n, DXL3.TORQUE_ENABLE, 0);
+          const t = await this.readDXL(n, DXL4.TORQUE_ENABLE);
+          if (t) await this.writeDXL(n, DXL4.TORQUE_ENABLE, 0);
           try {
             await fn();
             return true;
           } catch (e) {
           } finally {
-            if (t) await this.writeDXL(n, DXL3.TORQUE_ENABLE, 1);
+            if (t) await this.writeDXL(n, DXL4.TORQUE_ENABLE, 1);
           }
         }
         return false;
       }
       async getVelocityLimit(id) {
         if (!this._velocityLimitCache[id]) {
-          this._velocityLimitCache[id] = await this.readDXL(id, DXL3.VELOCITY_LIMIT);
+          this._velocityLimitCache[id] = await this.readDXL(id, DXL4.VELOCITY_LIMIT);
         }
         return this._velocityLimitCache[id];
       }
@@ -2326,10 +2326,10 @@ var require_cm550 = __commonJS({
         await this.ensureMode(id, [OP_MODE.POSITION, OP_MODE.EXTENDED_POSITION]);
         if (typeof speedPercent === "number" && !Number.isNaN(speedPercent)) {
           const limit = await this.getVelocityLimit(id);
-          const pv = Math.round(limit * clamp(speedPercent, 0, 100) / 100);
-          await this.writeDXL(id, DXL3.PROFILE_VELOCITY, pv);
+          const pv = Math.round(limit * clamp2(speedPercent, 0, 100) / 100);
+          await this.writeDXL(id, DXL4.PROFILE_VELOCITY, pv);
         }
-        await this.writeDXL(id, DXL3.GOAL_POSITION, degToTick(degrees));
+        await this.writeDXL(id, DXL4.GOAL_POSITION, degToTick(degrees));
       }
       /**
        * Current-based position (grippers): move toward `degrees` but push with at
@@ -2337,21 +2337,21 @@ var require_cm550 = __commonJS({
        */
       async grip(id, degrees, forcePercent) {
         await this.ensureMode(id, [OP_MODE.CURRENT_POSITION]);
-        const limit = await this.readDXL(id, DXL3.CURRENT_LIMIT);
-        await this.writeDXL(id, DXL3.GOAL_CURRENT, Math.round(limit * clamp(forcePercent, 0, 100) / 100));
-        await this.writeDXL(id, DXL3.GOAL_POSITION, degToTick(degrees));
+        const limit = await this.readDXL(id, DXL4.CURRENT_LIMIT);
+        await this.writeDXL(id, DXL4.GOAL_CURRENT, Math.round(limit * clamp2(forcePercent, 0, 100) / 100));
+        await this.writeDXL(id, DXL4.GOAL_POSITION, degToTick(degrees));
       }
       async setWheelSpeed(id, percent) {
         await this.setOperatingMode(id, OP_MODE.VELOCITY);
         const limit = await this.getVelocityLimit(id);
-        const v = Math.round(limit * clamp(percent, -100, 100) / 100);
-        await this.writeDXL(id, DXL3.GOAL_VELOCITY, v);
+        const v = Math.round(limit * clamp2(percent, -100, 100) / 100);
+        await this.writeDXL(id, DXL4.GOAL_VELOCITY, v);
       }
       async waitUntilStopped(id, timeoutMs = 1e4) {
         const start = Date.now();
         await delay4(30);
         while (Date.now() - start < timeoutMs) {
-          const moving = await this.readDXL(id, DXL3.MOVING);
+          const moving = await this.readDXL(id, DXL4.MOVING);
           if (!moving) return;
           await delay4(30);
         }
@@ -2369,7 +2369,7 @@ var require_cm550 = __commonJS({
       async readPose(ids) {
         const pose = {};
         for (const id of this.poseIds(ids)) {
-          const tick = await this.readDXL(id, DXL3.PRESENT_POSITION);
+          const tick = await this.readDXL(id, DXL4.PRESENT_POSITION);
           pose[id] = Math.round(tickToDeg2(tick) * 10) / 10;
         }
         return pose;
@@ -2383,14 +2383,14 @@ var require_cm550 = __commonJS({
       async setJointsTorque(ids, on) {
         for (const id of this.poseIds(ids)) {
           if (!on) {
-            await this.writeDXL(id, DXL3.TORQUE_ENABLE, 0);
+            await this.writeDXL(id, DXL4.TORQUE_ENABLE, 0);
             continue;
           }
-          const hold = await this.readDXL(id, DXL3.PRESENT_POSITION);
-          await this.writeDXL(id, DXL3.GOAL_POSITION, hold);
+          const hold = await this.readDXL(id, DXL4.PRESENT_POSITION);
+          await this.writeDXL(id, DXL4.GOAL_POSITION, hold);
           await this.ensureMode(id, [OP_MODE.POSITION, OP_MODE.EXTENDED_POSITION]);
-          const now = await this.readDXL(id, DXL3.PRESENT_POSITION);
-          await this.writeDXL(id, DXL3.GOAL_POSITION, now);
+          const now = await this.readDXL(id, DXL4.PRESENT_POSITION);
+          await this.writeDXL(id, DXL4.GOAL_POSITION, now);
         }
       }
       /**
@@ -2401,12 +2401,12 @@ var require_cm550 = __commonJS({
        * @returns {Promise<number[]>} IDs that were moved
        */
       async movePose(pose, seconds) {
-        const secs = clamp(Number(seconds) || 0, 0.1, 30);
+        const secs = clamp2(Number(seconds) || 0, 0.1, 30);
         const ids = Object.keys(pose).map(Number);
         const plan = [];
         for (const id of ids) {
           await this.ensureMode(id, [OP_MODE.POSITION, OP_MODE.EXTENDED_POSITION]);
-          const cur = tickToDeg2(await this.readDXL(id, DXL3.PRESENT_POSITION));
+          const cur = tickToDeg2(await this.readDXL(id, DXL4.PRESENT_POSITION));
           const target = Number(pose[id]);
           const degPerSec = Math.abs(target - cur) / secs;
           let pv = Math.max(1, Math.ceil(degPerSec / 6 / 0.229));
@@ -2414,8 +2414,8 @@ var require_cm550 = __commonJS({
           if (limit) pv = Math.min(pv, limit);
           plan.push({ id, pv, goal: degToTick(target) });
         }
-        for (const p of plan) await this.writeDXL(p.id, DXL3.PROFILE_VELOCITY, p.pv);
-        for (const p of plan) await this.writeDXL(p.id, DXL3.GOAL_POSITION, p.goal);
+        for (const p of plan) await this.writeDXL(p.id, DXL4.PROFILE_VELOCITY, p.pv);
+        for (const p of plan) await this.writeDXL(p.id, DXL4.GOAL_POSITION, p.goal);
         return ids;
       }
       /**
@@ -2426,15 +2426,15 @@ var require_cm550 = __commonJS({
        * @param {Array<{id: number, deg: number}>} items
        */
       async moveTogether(items, seconds) {
-        const secs = clamp(Number(seconds) || 0, 0.02, 30);
+        const secs = clamp2(Number(seconds) || 0, 0.02, 30);
         if (!this._ready) this._ready = /* @__PURE__ */ new Set();
         if (!this._lastGoal) this._lastGoal = /* @__PURE__ */ new Map();
         const fresh = items.filter((it) => !this._ready.has(it.id));
         if (fresh.length) {
           const here = [];
-          for (const it of fresh) here.push({ id: it.id, value: await this.readDXL(it.id, DXL3.PRESENT_POSITION) });
-          await this.syncWriteDXL(DXL3.GOAL_POSITION, here);
-          await this.syncWriteDXL(DXL3.TORQUE_ENABLE, fresh.map((it) => ({ id: it.id, value: 1 })));
+          for (const it of fresh) here.push({ id: it.id, value: await this.readDXL(it.id, DXL4.PRESENT_POSITION) });
+          await this.syncWriteDXL(DXL4.GOAL_POSITION, here);
+          await this.syncWriteDXL(DXL4.TORQUE_ENABLE, fresh.map((it) => ({ id: it.id, value: 1 })));
           for (const it of fresh) {
             await this.ensureMode(it.id, [OP_MODE.POSITION, OP_MODE.EXTENDED_POSITION]);
             this._ready.add(it.id);
@@ -2442,14 +2442,14 @@ var require_cm550 = __commonJS({
           for (const h of here) this._lastGoal.set(h.id, tickToDeg2(h.value));
         }
         for (const it of items) {
-          if (!this._lastGoal.has(it.id)) this._lastGoal.set(it.id, tickToDeg2(await this.readDXL(it.id, DXL3.PRESENT_POSITION)));
+          if (!this._lastGoal.has(it.id)) this._lastGoal.set(it.id, tickToDeg2(await this.readDXL(it.id, DXL4.PRESENT_POSITION)));
         }
-        await this.syncWriteDXL(DXL3.PROFILE_VELOCITY, items.map((it) => ({
+        await this.syncWriteDXL(DXL4.PROFILE_VELOCITY, items.map((it) => ({
           id: it.id,
           // 0.229 rpm units; 1 rpm = 6 deg/s
-          value: clamp(Math.ceil(Math.abs(it.deg - this._lastGoal.get(it.id)) / secs / 6 / 0.229), 1, 32767)
+          value: clamp2(Math.ceil(Math.abs(it.deg - this._lastGoal.get(it.id)) / secs / 6 / 0.229), 1, 32767)
         })));
-        await this.syncWriteDXL(DXL3.GOAL_POSITION, items.map((it) => ({ id: it.id, value: degToTick(it.deg) })));
+        await this.syncWriteDXL(DXL4.GOAL_POSITION, items.map((it) => ({ id: it.id, value: degToTick(it.deg) })));
         for (const it of items) this._lastGoal.set(it.id, it.deg);
       }
       /**
@@ -2474,7 +2474,7 @@ var require_cm550 = __commonJS({
         for (const id of list) {
           let err = 0;
           try {
-            err = await this.readDXL(id, DXL3.HARDWARE_ERROR);
+            err = await this.readDXL(id, DXL4.HARDWARE_ERROR);
           } catch (e) {
             err = 0;
           }
@@ -2492,19 +2492,19 @@ var require_cm550 = __commonJS({
         if (rebooted.length) await delay4(800);
         const here = [];
         for (const id of list) {
-          const value = await this.readDXL(id, DXL3.PRESENT_POSITION);
-          await this.writeDXL(id, DXL3.GOAL_POSITION, value);
+          const value = await this.readDXL(id, DXL4.PRESENT_POSITION);
+          await this.writeDXL(id, DXL4.GOAL_POSITION, value);
           let mode = this._modeCache[id];
-          if (typeof mode === "undefined") mode = this._modeCache[id] = await this.readDXL(id, DXL3.OPERATING_MODE);
+          if (typeof mode === "undefined") mode = this._modeCache[id] = await this.readDXL(id, DXL4.OPERATING_MODE);
           if (mode !== OP_MODE.POSITION && mode !== OP_MODE.EXTENDED_POSITION) {
             await this.ensureMode(id, [OP_MODE.POSITION, OP_MODE.EXTENDED_POSITION]);
           }
           here.push({ id, value });
         }
-        await this.syncWriteDXL(DXL3.TORQUE_ENABLE, list.map((id) => ({ id, value: 1 })));
+        await this.syncWriteDXL(DXL4.TORQUE_ENABLE, list.map((id) => ({ id, value: 1 })));
         this._ready = new Set(list);
         this._lastGoal = new Map(here.map((h) => [h.id, tickToDeg2(h.value)]));
-        const secs = clamp(Number(seconds) || 0, 0.2, 10);
+        const secs = clamp2(Number(seconds) || 0, 0.2, 10);
         await this.moveTogether(list.map((id) => ({ id, deg: pose[id] !== void 0 ? Number(pose[id]) : 180 })), secs);
         await delay4(secs * 1e3 + 300);
         this.prepared = true;
@@ -2512,7 +2512,7 @@ var require_cm550 = __commonJS({
       }
       // ---- motion ----------------------------------------------------------
       playMotion(page) {
-        return this.writeCM(CM2.MOTION_INDEX, clamp(Math.round(page), 1, 65532));
+        return this.writeCM(CM2.MOTION_INDEX, clamp2(Math.round(page), 1, 65532));
       }
       /**
        * Play motion pages stored in the CM-550 one after another without a stop,
@@ -2575,11 +2575,11 @@ var require_cm550 = __commonJS({
       }
       // ---- buzzer ----------------------------------------------------------
       async playNote(index, seconds) {
-        await this.writeCM(CM2.BUZZER_INDEX, clamp(Math.round(index), 0, 51));
-        await this.writeCM(CM2.BUZZER_TIME, clamp(Math.round(seconds * 10), 1, 50));
+        await this.writeCM(CM2.BUZZER_INDEX, clamp2(Math.round(index), 0, 51));
+        await this.writeCM(CM2.BUZZER_TIME, clamp2(Math.round(seconds * 10), 1, 50));
       }
       async playMelody(index) {
-        await this.writeCM(CM2.BUZZER_INDEX, clamp(Math.round(index), 0, 25));
+        await this.writeCM(CM2.BUZZER_INDEX, clamp2(Math.round(index), 0, 25));
         await this.writeCM(CM2.BUZZER_TIME, 255);
       }
     };
@@ -2589,12 +2589,12 @@ var require_cm550 = __commonJS({
       CM: CM2,
       MODULE,
       PORT: PORT2,
-      DXL: DXL3,
+      DXL: DXL4,
       OP_MODE,
       MOTION_STOP,
       degToTick,
       tickToDeg: tickToDeg2,
-      clamp,
+      clamp: clamp2,
       delay: delay4
     };
   }
@@ -2645,11 +2645,11 @@ var require_extension = __commonJS({
       CM550Device,
       CM: CM2,
       PORT: PORT2,
-      DXL: DXL3,
+      DXL: DXL4,
       OP_MODE,
       MOTION_STOP,
       tickToDeg: tickToDeg2,
-      clamp,
+      clamp: clamp2,
       delay: delay4
     } = require_cm550();
     var icons = require_icons();
@@ -3262,7 +3262,7 @@ var require_extension = __commonJS({
             await this.device.stopMotion(MOTION_STOP.NOW);
             for (const id of Object.keys(this.device._modeCache)) {
               if (this.device._modeCache[id] === OP_MODE.VELOCITY) {
-                await this.device.writeDXL(Number(id), DXL3.GOAL_VELOCITY, 0);
+                await this.device.writeDXL(Number(id), DXL4.GOAL_VELOCITY, 0);
               }
             }
           } catch (e) {
@@ -3307,7 +3307,7 @@ var require_extension = __commonJS({
         dxlTorque(args) {
           const id = num3(args.ID);
           return this._guard(async () => {
-            await this.device.writeDXL(id, DXL3.TORQUE_ENABLE, this._onOff(args.ONOFF));
+            await this.device.writeDXL(id, DXL4.TORQUE_ENABLE, this._onOff(args.ONOFF));
           });
         }
         dxlMoveTo(args) {
@@ -3327,7 +3327,7 @@ var require_extension = __commonJS({
             for (const id of ids) {
               await this.device.ensureMode(id, [OP_MODE.POSITION, OP_MODE.EXTENDED_POSITION]);
             }
-            await this.device.syncWriteDXL(DXL3.GOAL_POSITION, ids.map((id, i) => ({
+            await this.device.syncWriteDXL(DXL4.GOAL_POSITION, ids.map((id, i) => ({
               id,
               value: Math.round(degs[i] / 360 * 4096)
             })));
@@ -3339,7 +3339,7 @@ var require_extension = __commonJS({
          */
         dxlPrepare(args) {
           return this._guard(async () => {
-            const r = await this.device.prepareJoints(null, {}, clamp(num3(args.SECS), 0.2, 10));
+            const r = await this.device.prepareJoints(null, {}, clamp2(num3(args.SECS), 0.2, 10));
             if (r.rebooted.length && typeof this.onInfo === "function") {
               this.onInfo(`다이나믹셀 ${r.rebooted.join(", ")}: 오류가 있어 다시 시작했습니다.`);
             }
@@ -3361,7 +3361,7 @@ var require_extension = __commonJS({
           f2.dmGroup = false;
           const items = this._groups.get(util.thread) || [];
           this._groups.delete(util.thread);
-          const secs = clamp(num3(args.SECS), 0, 30);
+          const secs = clamp2(num3(args.SECS), 0, 30);
           const t0 = Date.now();
           return this._guard(async () => {
             if (items.length) await this.device.moveTogether(items, secs);
@@ -3390,9 +3390,9 @@ var require_extension = __commonJS({
             for (let i = 0; i < 2; i++) {
               await this.device.setOperatingMode(ids[i], OP_MODE.VELOCITY);
               const limit = await this.device.getVelocityLimit(ids[i]);
-              items.push({ id: ids[i], value: limit * clamp(speeds[i], -100, 100) / 100 });
+              items.push({ id: ids[i], value: limit * clamp2(speeds[i], -100, 100) / 100 });
             }
-            await this.device.syncWriteDXL(DXL3.GOAL_VELOCITY, items);
+            await this.device.syncWriteDXL(DXL4.GOAL_VELOCITY, items);
           });
         }
         dxlStop(args) {
@@ -3400,10 +3400,10 @@ var require_extension = __commonJS({
           return this._guard(async () => {
             const mode = this.device._modeCache[id];
             if (mode === OP_MODE.VELOCITY) {
-              await this.device.writeDXL(id, DXL3.GOAL_VELOCITY, 0);
+              await this.device.writeDXL(id, DXL4.GOAL_VELOCITY, 0);
             } else {
-              const pos = await this.device.readDXL(id, DXL3.PRESENT_POSITION);
-              await this.device.writeDXL(id, DXL3.GOAL_POSITION, pos);
+              const pos = await this.device.readDXL(id, DXL4.PRESENT_POSITION);
+              await this.device.writeDXL(id, DXL4.GOAL_POSITION, pos);
             }
           });
         }
@@ -3413,7 +3413,7 @@ var require_extension = __commonJS({
           return this._guard(() => this.device.setOperatingMode(num3(args.ID), mode));
         }
         dxlLed(args) {
-          return this._guard(() => this.device.writeDXL(num3(args.ID), DXL3.LED, this._onOff(args.ONOFF)));
+          return this._guard(() => this.device.writeDXL(num3(args.ID), DXL4.LED, this._onOff(args.ONOFF)));
         }
         dxlAllTorque(args) {
           return this._guard(async () => {
@@ -3426,33 +3426,33 @@ var require_extension = __commonJS({
           return this._guard(async () => {
             switch (args.PROP) {
               case "velocity": {
-                const v = await this.device.readDXL(id, DXL3.PRESENT_VELOCITY);
+                const v = await this.device.readDXL(id, DXL4.PRESENT_VELOCITY);
                 return Math.round(v * 0.229 * 100) / 100;
               }
               case "load": {
-                const v = await this.device.readDXL(id, DXL3.PRESENT_LOAD);
+                const v = await this.device.readDXL(id, DXL4.PRESENT_LOAD);
                 return v / 10;
               }
               case "temperature":
-                return this.device.readDXL(id, DXL3.PRESENT_TEMPERATURE);
+                return this.device.readDXL(id, DXL4.PRESENT_TEMPERATURE);
               case "voltage": {
-                const v = await this.device.readDXL(id, DXL3.PRESENT_INPUT_VOLTAGE);
+                const v = await this.device.readDXL(id, DXL4.PRESENT_INPUT_VOLTAGE);
                 return v / 10;
               }
               case "model":
-                return this.device.readDXL(id, DXL3.MODEL_NUMBER);
+                return this.device.readDXL(id, DXL4.MODEL_NUMBER);
               case "error":
-                return this.device.readDXL(id, DXL3.HARDWARE_ERROR);
+                return this.device.readDXL(id, DXL4.HARDWARE_ERROR);
               case "position":
               default: {
-                const v = await this.device.readDXL(id, DXL3.PRESENT_POSITION);
+                const v = await this.device.readDXL(id, DXL4.PRESENT_POSITION);
                 return Math.round(tickToDeg2(v) * 10) / 10;
               }
             }
           }, 0);
         }
         dxlIsMoving(args) {
-          return this._guard(async () => Boolean(await this.device.readDXL(num3(args.ID), DXL3.MOVING)), false);
+          return this._guard(async () => Boolean(await this.device.readDXL(num3(args.ID), DXL4.MOVING)), false);
         }
         dxlScan() {
           return this._guard(async () => {
@@ -3527,7 +3527,7 @@ var require_extension = __commonJS({
         async playPose(n, seconds, wait = true) {
           const pose = this.getPoses()[Math.floor(n) - 1];
           if (!pose || !poseSize2(pose)) throw new Error(`${Math.floor(n)}번 자세가 기록되어 있지 않습니다.`);
-          const secs = clamp(Number(seconds) || 1, 0.1, 30);
+          const secs = clamp2(Number(seconds) || 1, 0.1, 30);
           await this.device.movePose(pose, secs);
           if (wait) await delay4(secs * 1e3 + 100);
         }
@@ -3579,7 +3579,7 @@ var require_extension = __commonJS({
           return this._guard(() => this.device.writeCM(reg, this._onOff(args.ONOFF)));
         }
         cmBuzzerNote(args) {
-          const secs = clamp(num3(args.SECS), 0.1, 5);
+          const secs = clamp2(num3(args.SECS), 0.1, 5);
           return this._guard(async () => {
             await this.device.playNote(num3(args.NOTE), secs);
             await delay4(secs * 1e3);
@@ -3651,12 +3651,12 @@ var require_extension = __commonJS({
           return this._guard(() => this.device.writePort(PORT2.LED, num3(args.PORT), typeof v === "number" ? v : 3));
         }
         portServo(args) {
-          const deg2 = clamp(num3(args.DEG), 0, 300);
+          const deg2 = clamp2(num3(args.DEG), 0, 300);
           const value = Math.round(deg2 / 300 * 1023);
           return this._guard(() => this.device.writePort(PORT2.SERVO_POSITION, num3(args.PORT), value));
         }
         portMotor(args) {
-          const pct = clamp(num3(args.SPEED), -100, 100);
+          const pct = clamp2(num3(args.SPEED), -100, 100);
           const mag = Math.round(Math.abs(pct) / 100 * 1023);
           const value = pct >= 0 ? 1024 + mag : mag;
           return this._guard(() => this.device.writePort(PORT2.WHEEL, num3(args.PORT), value));
@@ -3672,7 +3672,7 @@ var require_extension = __commonJS({
           return this._guard(() => this.device.playMotionChain(
             num3(args.START),
             num3(args.LOOP),
-            clamp(num3(args.SECS), 0, 600),
+            clamp2(num3(args.SECS), 0, 600),
             num3(args.END),
             { seconds: true }
           ));
@@ -3688,10 +3688,10 @@ var require_extension = __commonJS({
           return this._guard(() => this.device.stopMotion(how));
         }
         motionSpeed(args) {
-          return this._guard(() => this.device.writeCM(CM2.MOTION_SPEED, clamp(num3(args.PERCENT), 20, 200)));
+          return this._guard(() => this.device.writeCM(CM2.MOTION_SPEED, clamp2(num3(args.PERCENT), 20, 200)));
         }
         motionNext(args) {
-          return this._guard(() => this.device.writeCM(CM2.MOTION_NEXT_PAGE, clamp(num3(args.PAGE), 0, 65535)));
+          return this._guard(() => this.device.writeCM(CM2.MOTION_NEXT_PAGE, clamp2(num3(args.PAGE), 0, 65535)));
         }
         motionIsPlaying() {
           return this._guard(async () => Boolean(await this.device.readCM(CM2.MOTION_STATUS)), false);
@@ -6320,6 +6320,17 @@ var PoseTracker = class {
     this.users.delete(who);
     if (!this.users.size) this._stop();
   }
+  /** Load MoveNet (once). */
+  async loadModel() {
+    if (this.model) return;
+    const { tf, loadMoveNet } = await loadTF();
+    this.tf = tf;
+    this.model = await loadMoveNet();
+  }
+  /** 17 points for one frame of any video / image element (e.g. a video file). */
+  estimateOn(el6) {
+    return this._estimate(el6);
+  }
   async _start() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       throw new Error("이 브라우저에서는 카메라를 쓸 수 없습니다. Chrome이나 Edge를 사용하세요.");
@@ -6389,8 +6400,7 @@ var PoseTracker = class {
     }
   }
   /** MoveNet on a letterboxed (square) frame; returns 17 {x, y, score} in image fractions. */
-  async _estimate() {
-    const v = this.video;
+  async _estimate(v = this.video) {
     if (!this.model || v.readyState < 2 || !v.videoWidth) return null;
     const tf = this.tf;
     const W = v.videoWidth;
@@ -9430,6 +9440,44 @@ var keyPoses = (rec, step = 0.12) => {
   }
   return out;
 };
+var simplifyPoses = (rec, tol = 4, minGap = 0.15) => {
+  const F = rec.frames;
+  const ids = rec.ids;
+  const keys = [0];
+  let a = 0;
+  for (let b = a + 2; b < F.length; b++) {
+    let bad = false;
+    for (let i = a + 1; i < b && !bad; i++) {
+      const k = (F[i].t - F[a].t) / Math.max(1e-6, F[b].t - F[a].t);
+      for (const id of ids) {
+        const v = F[a].deg[id] + (F[b].deg[id] - F[a].deg[id]) * k;
+        if (Math.abs(v - F[i].deg[id]) > tol) {
+          bad = true;
+          break;
+        }
+      }
+    }
+    if (bad && F[b - 1].t - F[a].t >= minGap) {
+      a = b - 1;
+      keys.push(a);
+    }
+  }
+  if (keys[keys.length - 1] !== F.length - 1) keys.push(F.length - 1);
+  const out = [];
+  let last = null;
+  let prevT = F[0].t;
+  for (const i of keys) {
+    const f2 = F[i];
+    const joints = ids.filter((id) => !last || Math.abs(f2.deg[id] - last[id]) > 1).map((id) => ({ id, deg: Math.round(f2.deg[id] * 10) / 10 }));
+    const secs = Math.round(Math.max(0.1, f2.t - prevT) * 1e3) / 1e3;
+    if (joints.length) {
+      out.push({ secs, joints });
+      prevT = f2.t;
+      last = { ...last || {}, ...f2.deg };
+    }
+  }
+  return out;
+};
 
 // src/sim3d/gait-blocks.js
 var FRAMES = 8;
@@ -9493,6 +9541,236 @@ var posesProgramXML = (poses, { x = 40, y = 40, title = "" } = {}) => {
 init_mtn3();
 init_motion_library();
 init_maxe1_motion_notes();
+
+// src/sim3d/imitate.js
+var IDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+var MIN_SCORE2 = 0.3;
+var DEG3 = 180 / Math.PI;
+var K2 = { lSh: 5, rSh: 6, lEl: 7, rEl: 8, lWr: 9, rWr: 10, lHip: 11, rHip: 12, lKn: 13, rKn: 14, lAn: 15, rAn: 16 };
+var clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+var LEG_MODES = {
+  stand: "다리는 그대로 (팔만 따라 하기)",
+  squat: "팔 + 앉기 · 옆으로 기울기"
+};
+var SWAY_LEFT = 1;
+var newImitation = (opts = {}) => ({
+  legs: opts.legs || "squat",
+  mirror: opts.mirror !== false,
+  pitch: {},
+  // last arm pitch per side
+  arm: { R: 0, L: 0 },
+  // longest arm seen, in torso lengths (straight arm in the image plane)
+  torso: 0,
+  last: null,
+  out: null
+});
+var retarget = (kps, aspect, st) => {
+  const ok = (...ids) => ids.every((i) => kps[i] && kps[i].score >= MIN_SCORE2);
+  const P = (i) => ({ x: kps[i].x * aspect, y: kps[i].y });
+  const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+  const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  const prev = st.last || { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: -10, 7: 0, 8: -10, 9: -10, 10: 0, 11: -10, 12: 0 };
+  const d = { ...prev };
+  let seen = 0;
+  if (ok(K2.lSh, K2.rSh, K2.lHip, K2.rHip)) {
+    const t = dist(mid(P(K2.lSh), P(K2.rSh)), mid(P(K2.lHip), P(K2.rHip)));
+    st.torso = st.torso ? st.torso * 0.9 + t * 0.1 : t;
+  } else if (ok(K2.lSh, K2.rSh) && !st.torso) {
+    st.torso = dist(P(K2.lSh), P(K2.rSh)) * 1.5;
+  }
+  const T2 = st.torso;
+  if (!T2) return { deg: d, seen: 0 };
+  const arm = (side, sh, el6, wr) => {
+    if (!ok(sh) || !(ok(wr) || ok(el6))) return null;
+    const s = P(sh);
+    const e = ok(wr) ? P(wr) : P(el6);
+    const k = ok(wr) ? 1 : 2;
+    const v = { x: (e.x - s.x) * k, y: (e.y - s.y) * k };
+    const len = Math.hypot(v.x, v.y) / T2;
+    st.arm[side] = Math.max(st.arm[side] * 0.9995, len);
+    const L = Math.max(st.arm[side], 0.9) * T2;
+    const out = (side === "R" ? -v.x : v.x) / L;
+    const down = v.y / L;
+    let fwd = Math.sqrt(Math.max(0, 1 - out * out - down * down));
+    fwd = Math.max(0, fwd - 0.15) / 0.85;
+    let pitch = Math.atan2(fwd, down) * DEG3;
+    let roll = Math.asin(clamp(out, -1, 1)) * DEG3;
+    const w = clamp((Math.abs(out) - 0.75) / 0.2, 0, 1);
+    const was = st.pitch[side];
+    if (was !== void 0) pitch = pitch * (1 - w) + was * w;
+    else if (w > 0) pitch *= 1 - w;
+    st.pitch[side] = pitch;
+    pitch = clamp(pitch, -30, 175);
+    roll = clamp(roll, pitch < 40 ? 0 : -15, 95);
+    return { pitch, roll };
+  };
+  const pr = arm("R", K2.rSh, K2.rEl, K2.rWr);
+  const pl = arm("L", K2.lSh, K2.lEl, K2.lWr);
+  const toRight = st.mirror ? pl : pr;
+  const toLeft = st.mirror ? pr : pl;
+  if (toRight) {
+    d[1] = toRight.pitch;
+    d[2] = toRight.roll;
+    seen++;
+  }
+  if (toLeft) {
+    d[3] = -toLeft.pitch;
+    d[4] = toLeft.roll;
+    seen++;
+  }
+  if (st.legs === "squat") {
+    const bend = (h, kn, an) => {
+      if (!ok(h, kn, an)) return null;
+      const a = P(h);
+      const b = P(kn);
+      const c = P(an);
+      const v1 = [a.x - b.x, a.y - b.y];
+      const v2 = [c.x - b.x, c.y - b.y];
+      const n = Math.hypot(...v1) * Math.hypot(...v2);
+      return n ? 180 - Math.acos(clamp((v1[0] * v2[0] + v1[1] * v2[1]) / n, -1, 1)) * DEG3 : null;
+    };
+    const bs = [bend(K2.lHip, K2.lKn, K2.lAn), bend(K2.rHip, K2.rKn, K2.rAn)].filter((v) => v !== null);
+    if (bs.length) {
+      const a = clamp(bs.reduce((s, v) => s + v, 0) / bs.length * 0.75, 10, 65);
+      d[6] = d[8] = d[9] = d[11] = -a;
+      seen++;
+    }
+    if (ok(K2.lSh, K2.rSh, K2.lHip, K2.rHip)) {
+      const top = mid(P(K2.lSh), P(K2.rSh));
+      const bot = mid(P(K2.lHip), P(K2.rHip));
+      const lean = Math.atan2(top.x - bot.x, bot.y - top.y) * DEG3;
+      const toRobotLeft = st.mirror ? -lean : lean;
+      const r = clamp(toRobotLeft * 0.5, -10, 10);
+      const v = Math.abs(r) < 1.5 ? 0 : r * SWAY_LEFT;
+      d[5] = d[7] = d[10] = d[12] = v;
+      seen++;
+    }
+  } else {
+    d[5] = d[7] = d[10] = d[12] = 0;
+    d[6] = d[8] = d[9] = d[11] = -10;
+  }
+  st.last = d;
+  return { deg: d, seen };
+};
+var smooth = (st, deg2, dt) => {
+  const prev = st.out;
+  if (!prev) {
+    st.out = { ...deg2 };
+    return st.out;
+  }
+  const out = {};
+  for (const id of IDS) {
+    const legs = id >= 5;
+    const maxStep = (legs ? 90 : 300) * dt;
+    const a = legs ? 0.35 : 0.6;
+    const target = prev[id] + (deg2[id] - prev[id]) * a;
+    out[id] = prev[id] + clamp(target - prev[id], -maxStep, maxStep);
+  }
+  st.out = out;
+  return out;
+};
+var toFrame = (t, deg2) => {
+  const f2 = { t, deg: {} };
+  for (const id of IDS) f2.deg[id] = Math.round((180 + deg2[id]) * 10) / 10;
+  return f2;
+};
+var drawSkeleton = (canvas, video, kps, { mirror = false } = {}) => {
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width;
+  const H = canvas.height;
+  ctx.save();
+  if (mirror) {
+    ctx.translate(W, 0);
+    ctx.scale(-1, 1);
+  }
+  if (video && video.readyState >= 2) ctx.drawImage(video, 0, 0, W, H);
+  else ctx.clearRect(0, 0, W, H);
+  if (kps) {
+    const Q = (i) => ({ x: kps[i].x * W, y: kps[i].y * H, ok: kps[i].score >= MIN_SCORE2 });
+    ctx.lineWidth = Math.max(3, W / 110);
+    ctx.lineCap = "round";
+    for (const [a, b] of BONES) {
+      const p = Q(a);
+      const q = Q(b);
+      if (!p.ok || !q.ok) continue;
+      ctx.strokeStyle = a % 2 === 1 || b % 2 === 1 ? "#ffb347" : "#5ec8ff";
+      if (a <= 4 && b <= 4) ctx.strokeStyle = "#ffffff";
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(q.x, q.y);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+};
+var analyzeVideo = async (file, tracker, o) => {
+  const fps = o.fps || 10;
+  await tracker.loadModel();
+  const video = document.createElement("video");
+  video.muted = true;
+  video.playsInline = true;
+  video.preload = "auto";
+  const url = URL.createObjectURL(file);
+  try {
+    video.src = url;
+    await new Promise((resolve, reject) => {
+      video.onloadeddata = resolve;
+      video.onerror = () => reject(new Error("이 영상 형식은 브라우저에서 열 수 없습니다 (mp4·webm 권장)."));
+    });
+    const dur = Math.min(video.duration || 0, o.maxSeconds || 60);
+    if (!(dur > 0.3)) throw new Error("영상이 너무 짧습니다.");
+    const aspect = video.videoWidth / video.videoHeight;
+    if (o.canvas) {
+      o.canvas.width = 320;
+      o.canvas.height = Math.round(320 / aspect);
+    }
+    const st = newImitation(o.opts);
+    const frames = [];
+    let found = 0;
+    const n = Math.floor(dur * fps) + 1;
+    for (let i = 0; i < n; i++) {
+      if (o.cancelled && o.cancelled()) throw new Error("취소했습니다.");
+      const t = i / fps;
+      await new Promise((resolve) => {
+        const done = () => {
+          video.removeEventListener("seeked", done);
+          resolve();
+        };
+        video.addEventListener("seeked", done);
+        video.currentTime = Math.min(t, video.duration - 1e-3);
+        setTimeout(done, 1500);
+      });
+      const kps = await tracker.estimateOn(video);
+      let deg2 = st.last;
+      if (kps) {
+        const r = retarget(kps, aspect, st);
+        deg2 = r.deg;
+        if (r.seen) found++;
+      }
+      if (deg2) frames.push(toFrame(t, smooth(st, deg2, 1 / fps)));
+      if (o.canvas) drawSkeleton(o.canvas, video, kps);
+      if (o.onProgress) o.onProgress(Math.round((i + 1) / n * 100), `${t.toFixed(1)} / ${dur.toFixed(1)}초`);
+    }
+    if (!found) throw new Error("영상에서 사람을 찾지 못했습니다. 온몸(적어도 어깨·팔)이 보이는 영상을 쓰세요.");
+    const name = (file.name || "영상").replace(/\.[^.]+$/, "");
+    return {
+      page: name,
+      label: `영상 「${name}」`,
+      ids: IDS.slice(),
+      frames,
+      seconds: frames[frames.length - 1].t,
+      fromVideo: true,
+      seen: found / n,
+      truncated: (video.duration || 0) > dur + 0.05
+    };
+  } finally {
+    URL.revokeObjectURL(url);
+    video.removeAttribute("src");
+  }
+};
+
+// src/sim3d/sim-panel.js
+var { DXL: DXL3 } = require_cm550();
 var el5 = (tag, cls, text2) => {
   const e = document.createElement(tag);
   if (cls) e.className = cls;
@@ -9579,6 +9857,7 @@ var SimPanel = class {
     if (!["race", "watch", "fast"].includes(this.search.mode)) this.search.mode = this.search.watch === false ? "fast" : "race";
     if (!this.search.speed) this.search.speed = 1;
     this.visible = false;
+    this.imitateLib = { retarget, newImitation, smooth, SWAY_LEFT };
     this._build();
     this.walker.onUpdate(() => this._status());
   }
@@ -9686,6 +9965,57 @@ var SimPanel = class {
     this.recTable = el5("table", "sim-table");
     cm.append(this.recInfo, this.recTable);
     body.append(cm);
+    const ci = el5("section", "mon-card sim-imitate");
+    ci.append(el5("h3", "", "영상으로 따라 하기 (사람 동작 → 로봇)"));
+    ci.append(el5("p", "mon-note", "사람이 움직이는 영상(온몸 또는 상반신이 정면으로 보이게)을 열거나 웹캠을 켜면, 관절 인식 AI가 어깨·팔·무릎·몸 기울기를 찾아 MAX-E1이 따라 합니다. 로봇은 팔꿈치가 없어 팔은 어깨→손목 방향만 따라 하고, 다리는 넘어지지 않게 앉기와 옆으로 기울기만 따라 합니다. 먼저 3D로 넘어지는지 확인한 뒤 실제 로봇에서 실행하세요. 영상과 카메라 화면은 이 컴퓨터 밖으로 나가지 않습니다."));
+    const ri = el5("div", "tp-row");
+    const vidFile = el5("input", "sim-vid-file");
+    vidFile.type = "file";
+    vidFile.accept = "video/*";
+    vidFile.hidden = true;
+    vidFile.addEventListener("change", () => this.imitateVideo(vidFile.files[0]).finally(() => {
+      vidFile.value = "";
+    }));
+    this.imVideoBtn = button3("tp-btn tp-primary", "🎬 영상 파일 열기", () => vidFile.click(), "mp4·webm 영상 (앞 60초까지)");
+    this.imLiveBtn = button3(
+      "tp-btn",
+      "📷 웹캠으로 실시간 따라 하기",
+      () => this.toggleLiveImitate(),
+      "카메라 앞에서 움직이면 로봇이 바로 따라 합니다 (실제 로봇이 연결되어 있으면 실제 로봇, 아니면 3D 로봇)"
+    );
+    this.imLegs = el5("select", "sim-im-legs");
+    for (const [k, v] of Object.entries(LEG_MODES)) {
+      const o = el5("option", "", v);
+      o.value = k;
+      this.imLegs.append(o);
+    }
+    this.imLegs.value = "squat";
+    const mir = el5("label", "sim-im-mirror");
+    this.imMirror = el5("input");
+    this.imMirror.type = "checkbox";
+    this.imMirror.checked = true;
+    mir.append(this.imMirror, document.createTextNode(" 거울처럼 (사람 오른팔 → 로봇 왼팔)"));
+    ri.append(vidFile, this.imVideoBtn, this.imLiveBtn, this.imLegs, mir);
+    ci.append(ri);
+    this.imCanvas = el5("canvas", "sim-im-canvas");
+    this.imCanvas.width = 320;
+    this.imCanvas.height = 240;
+    this.imCanvas.hidden = true;
+    this.imInfo = el5("div", "sim-info", "");
+    ci.append(this.imCanvas, this.imInfo);
+    const ri2 = el5("div", "tp-row");
+    this.imReplayBtn = button3("tp-btn", "3D로 재생", () => this.replayMotion(), "따라 한 동작을 3D 로봇으로 재생해 넘어지는지 확인합니다");
+    this.imRobotBtn = button3(
+      "tp-btn",
+      "실제 로봇에서 재생",
+      () => this.playRecOnRobot(),
+      "연결된 실제 로봇(USB/블루투스)이 따라 한 동작을 그대로 움직입니다"
+    );
+    this.imBlocksBtn = button3("tp-btn", "블록으로 만들기", () => this.motionBlocks(), "자세 블록으로 넣어 프로그램에서 쓰거나 고칠 수 있습니다");
+    this.imSaveBtn = button3("tp-btn", "저장", () => this.saveMotion());
+    ri2.append(this.imReplayBtn, this.imRobotBtn, this.imBlocksBtn, this.imSaveBtn);
+    ci.append(ri2);
+    body.append(ci);
     const c2 = el5("section", "mon-card");
     c2.append(el5("h3", "", "2. 걸음 학습 (시뮬레이터 속에서 스스로 찾기)"));
     c2.append(el5("p", "mon-note", "걸음은 숫자 7개로 정해집니다. [학습 시작]을 누르면 시뮬레이터가 수백 가지 걸음을 시험하고, 점수가 높은 걸음 근처를 다시 시험하며 점점 좋아집니다. 점수를 어떻게 줄지(보상)는 여러분이 정합니다."));
@@ -10242,7 +10572,7 @@ var SimPanel = class {
     if (!rec) return;
     const sum = summarize(rec, this.jointMap);
     const moved = sum.filter((r) => r.range > 3);
-    this.recInfo.textContent = `${rec.fromFile ? `모션 파일: ${rec.page}` : `모션 ${rec.page}번`} · ${rec.seconds.toFixed(1)}초 · ${rec.fromFile ? "키프레임" : "기록"} ${rec.frames.length}개 · 움직인 관절 ${moved.length}개${moved.length ? ` (${moved.map((r) => r.id).join(", ")})` : " — 모션이 실행되지 않았거나 빈 페이지입니다"}`;
+    this.recInfo.textContent = `${rec.fromVideo ? rec.label : rec.fromFile ? `모션 파일: ${rec.page}` : `모션 ${rec.page}번`} · ${rec.seconds.toFixed(1)}초 · ${rec.fromFile ? "키프레임" : rec.fromVideo ? "자세" : "기록"} ${rec.frames.length}개 · 움직인 관절 ${moved.length}개${moved.length ? ` (${moved.map((r) => r.id).join(", ")})` : " — 모션이 실행되지 않았거나 빈 페이지입니다"}`;
     const f2 = (v) => Number.isFinite(v) ? v.toFixed(1) : "-";
     this.recTable.innerHTML = "<thead><tr><th>ID</th><th>관절</th><th>시작</th><th>최소</th><th>최대</th><th>움직임</th></tr></thead>";
     const tb = el5("tbody");
@@ -10271,7 +10601,7 @@ var SimPanel = class {
       const t0 = ph.data.time;
       const lead = 0.6;
       const first = toJointRad(rec.frames[0].deg, map);
-      this.log(`3D 로봇에 ${rec.fromFile ? rec.page : `모션 ${rec.page}번 기록`}을 재생합니다 (${rec.seconds.toFixed(1)}초).`);
+      this.log(`3D 로봇에 ${rec.fromVideo ? rec.label : rec.fromFile ? rec.page : `모션 ${rec.page}번 기록`}을 재생합니다 (${rec.seconds.toFixed(1)}초).`);
       await new Promise((resolve) => {
         ph.setController((time) => {
           const t2 = time - t0;
@@ -10301,13 +10631,13 @@ var SimPanel = class {
   motionBlocks() {
     const rec = this.motionRec;
     if (!rec || !this.insertXML) return;
-    const poses = keyPoses(rec, 0.12);
+    const poses = rec.fromVideo ? simplifyPoses(rec) : keyPoses(rec, 0.12);
     const n = this.insertXML((x, y) => posesProgramXML(poses, {
       x,
       y,
-      title: `${rec.fromFile ? `모션 파일의 ${rec.page}` : `CM-550 모션 ${rec.page}번을 기록한`} 자세 ${poses.length}개 (약 0.12초마다)`
+      title: `${rec.fromVideo ? `${rec.label}을 따라 한` : rec.fromFile ? `모션 파일의 ${rec.page}` : `CM-550 모션 ${rec.page}번을 기록한`} 자세 ${poses.length}개${rec.fromVideo ? " (움직임이 바뀌는 곳마다)" : " (약 0.12초마다)"}`
     }).xml);
-    if (n !== false) this.log(`${rec.fromFile ? rec.page : `모션 ${rec.page}번`}을 블록으로 넣었습니다: 자세 ${poses.length}개, 자세마다 모터 ${rec.ids.length}개.`, "ok");
+    if (n !== false) this.log(`${rec.fromVideo ? rec.label : rec.fromFile ? rec.page : `모션 ${rec.page}번`}을 블록으로 넣었습니다: 자세 ${poses.length}개, 자세마다 모터 ${rec.ids.length}개.`, "ok");
   }
   saveMotion() {
     const rec = this.motionRec;
@@ -10327,6 +10657,179 @@ var SimPanel = class {
     this._status();
   }
   /** The official MAX-E1 example motions, built in (no file needed). */
+  // ---- 영상으로 따라 하기 ------------------------------------------------------------
+  _imOpts() {
+    return { legs: this.imLegs.value, mirror: this.imMirror.checked };
+  }
+  async imitateVideo(file) {
+    if (!file || this.imBusy) return;
+    if (!this.tracker) {
+      this.log("⚠ 관절 인식(MoveNet)을 쓸 수 없습니다.", "err");
+      return;
+    }
+    if (this.liveIm) this.toggleLiveImitate();
+    this.imBusy = true;
+    this.imCanvas.hidden = false;
+    this._status();
+    this.imInfo.textContent = "관절 인식 모델을 불러오는 중… (처음 한 번, 6 MB)";
+    try {
+      const rec = await analyzeVideo(file, this.tracker, {
+        opts: this._imOpts(),
+        canvas: this.imCanvas,
+        onProgress: (p, text2) => {
+          this.imInfo.textContent = `영상 분석 중 ${p}% · ${text2}`;
+        }
+      });
+      this.motionRec = rec;
+      this._showMotion();
+      this._imSummary(rec);
+      this.log(`영상 「${rec.page}」을 로봇 동작으로 바꿨습니다: ${rec.seconds.toFixed(1)}초, 자세 ${rec.frames.length}개${rec.truncated ? " (앞 60초만)" : ""}. 「3D로 재생」으로 넘어지는지 먼저 확인하세요.`, "ok");
+    } catch (e) {
+      this.imInfo.textContent = `⚠ ${e.message || e}`;
+      this.log(`⚠ 영상으로 따라 하기: ${e.message || e}`, "err");
+    }
+    this.imBusy = false;
+    this._status();
+  }
+  _imSummary(rec) {
+    const sum = summarize(rec, this.jointMap).filter((r) => r.range > 5);
+    this.imInfo.textContent = `${rec.label || rec.page} · ${rec.seconds.toFixed(1)}초 · 자세 ${rec.frames.length}개 · 사람을 찾은 프레임 ${Math.round((rec.seen || 1) * 100)}% · 움직이는 모터 ${sum.length}개${sum.length ? ` (ID ${sum.map((r) => r.id).join(", ")})` : ""}`;
+  }
+  /** Where poses go: the connected real robot, otherwise the 3D robot. */
+  _imOnRealRobot() {
+    return this.device.connected && !(this.device.transport && this.device.transport.physics);
+  }
+  async _imPrepare() {
+    if (this._imOnRealRobot()) {
+      await this.device.prepareJoints(IDS, {}, 2);
+      await this.device.syncWriteDXL(DXL3.PROFILE_VELOCITY, IDS.map((id) => ({ id, value: 150 })));
+      return "robot";
+    }
+    const ph = await this._ensureSim();
+    this.walker.stop();
+    ph.setController(null);
+    for (const j of this.jointMap) {
+      ph.setTorque(j.id, 1);
+      ph.setProfile(j.id, 0);
+    }
+    return "sim";
+  }
+  /** One pose (motor degrees, 180 = straight) to the robot / the 3D robot. */
+  async _imSend(target, deg2) {
+    if (target === "robot") {
+      await this.device.syncWriteDXL(
+        DXL3.GOAL_POSITION,
+        IDS.map((id) => ({ id, value: Math.round(deg2[id] / 360 * 4096) }))
+      );
+      return;
+    }
+    const q = toJointRad(deg2, this.jointMap);
+    for (const j in q) this.physics.setGoalRad(j, q[j]);
+  }
+  async toggleLiveImitate() {
+    if (this.liveIm) {
+      const lv = this.liveIm;
+      this.liveIm = null;
+      lv.off();
+      this.tracker.release("imitate");
+      if (lv.frames.length > 5) {
+        const t0 = lv.frames[0].t;
+        const frames = lv.frames.map((f2) => ({ t: Math.round((f2.t - t0) * 100) / 100, deg: f2.deg }));
+        this.motionRec = {
+          page: "웹캠",
+          label: "웹캠으로 따라 한 동작",
+          ids: IDS.slice(),
+          frames,
+          seconds: frames[frames.length - 1].t,
+          fromVideo: true,
+          seen: lv.seen / Math.max(1, lv.n)
+        };
+        this._showMotion();
+        this._imSummary(this.motionRec);
+      }
+      this.log("웹캠 따라 하기를 멈췄습니다. 방금 동작은 「3D로 재생」·「블록으로 만들기」·「저장」에 쓸 수 있습니다.", "ok");
+      this._status();
+      return;
+    }
+    if (!this.tracker || this.imBusy) return;
+    this.imBusy = true;
+    this._status();
+    try {
+      this.imInfo.textContent = "카메라와 관절 인식 모델을 켜는 중…";
+      await this.tracker.acquire("imitate");
+      const target = await this._imPrepare();
+      const st = newImitation(this._imOpts());
+      const lv = { st, target, frames: [], n: 0, seen: 0, last: 0, sending: false };
+      this.imCanvas.hidden = false;
+      lv.off = this.tracker.onUpdate((tr) => {
+        const now = performance.now() / 1e3;
+        if (!this.liveIm || now - lv.last < 0.1 || !tr.keypoints) return;
+        const dt = lv.last ? Math.min(0.3, now - lv.last) : 0.1;
+        lv.last = now;
+        const v = tr.video;
+        const aspect = v.videoWidth && v.videoHeight ? v.videoWidth / v.videoHeight : 4 / 3;
+        if (this.imCanvas.width !== 320) this.imCanvas.width = 320;
+        this.imCanvas.height = Math.round(320 / aspect);
+        drawSkeleton(this.imCanvas, v, tr.keypoints, { mirror: true });
+        const r = retarget(tr.keypoints, aspect, st);
+        lv.n++;
+        if (r.seen) lv.seen++;
+        const f2 = toFrame(now, smooth(st, r.deg, dt));
+        if (lv.frames.length < 600) lv.frames.push(f2);
+        this.imInfo.textContent = `실시간 따라 하기 · ${target === "robot" ? "실제 로봇" : "3D 로봇"} · 오른팔 ${Math.round(f2.deg[1] - 180)}°/${Math.round(f2.deg[2] - 180)}° · 왼팔 ${Math.round(180 - f2.deg[3])}°/${Math.round(f2.deg[4] - 180)}°${r.seen ? "" : " · 사람이 보이지 않습니다"}`;
+        if (lv.sending) return;
+        lv.sending = true;
+        this._imSend(target, f2.deg).catch((e) => {
+          this.log(`⚠ 따라 하기: ${e.message || e}`, "err");
+        }).finally(() => {
+          lv.sending = false;
+        });
+      });
+      this.liveIm = lv;
+      this.log(`웹캠 따라 하기를 시작했습니다 (${target === "robot" ? "실제 로봇" : "3D 로봇"}). 카메라에서 2~3 m 떨어져 상반신이 다 보이게 서세요.`, "ok");
+    } catch (e) {
+      this.tracker.release("imitate");
+      this.imInfo.textContent = `⚠ ${e.message || e}`;
+      this.log(`⚠ 웹캠 따라 하기: ${e.message || e}`, "err");
+    }
+    this.imBusy = false;
+    this._status();
+  }
+  /** Play the current recording (video / webcam / motion) on the connected real robot. */
+  async playRecOnRobot() {
+    const rec = this.motionRec;
+    if (!rec) {
+      this.log("먼저 영상을 열거나 웹캠으로 동작을 만드세요.", "warn");
+      return;
+    }
+    if (!this._imOnRealRobot()) {
+      this.log("실제 로봇(USB/블루투스)이 연결되어 있지 않아 3D 로봇으로 재생합니다.", "warn");
+      await this.replayMotion();
+      return;
+    }
+    if (this.imBusy) return;
+    this.imBusy = true;
+    this._status();
+    try {
+      this.log(`실제 로봇에서 ${rec.label || rec.page}을 재생합니다 (${rec.seconds.toFixed(1)}초). 먼저 180°로 섭니다.`);
+      await this._imPrepare();
+      const t0 = performance.now() / 1e3;
+      for (; ; ) {
+        const t = performance.now() / 1e3 - t0;
+        if (t > rec.seconds) break;
+        const d = poseAt(rec, t);
+        const deg2 = {};
+        for (const id of IDS) deg2[id] = d[id] === void 0 ? 180 : d[id];
+        await this._imSend("robot", deg2);
+        await new Promise((r) => setTimeout(r, 60));
+      }
+      this.log("실제 로봇 재생을 마쳤습니다.", "ok");
+    } catch (e) {
+      this.log(`⚠ 실제 로봇 재생: ${e.message || e}`, "err");
+    }
+    this.imBusy = false;
+    this._status();
+  }
   loadBuiltInMotions() {
     try {
       this._useMtn(builtInMotions(), true);
@@ -10506,6 +11009,15 @@ var SimPanel = class {
     this.recStopBtn.disabled = !recording;
     for (const b of [this.replayBtn, this.recBlockBtn, this.recSaveBtn]) b.disabled = !this.motionRec || recording;
     this.mtnRunBtn.disabled = !this.mtn || Boolean(this._mtnRunning);
+    if (this.imVideoBtn) {
+      const busy = Boolean(this.imBusy);
+      this.imVideoBtn.disabled = busy;
+      this.imLiveBtn.disabled = busy && !this.liveIm;
+      this.imLiveBtn.textContent = this.liveIm ? "■ 웹캠 따라 하기 멈추기" : "📷 웹캠으로 실시간 따라 하기";
+      this.imLiveBtn.classList.toggle("tp-primary", Boolean(this.liveIm));
+      this.imLegs.disabled = this.imMirror.disabled = Boolean(this.liveIm) || busy;
+      for (const b of [this.imReplayBtn, this.imRobotBtn, this.imBlocksBtn, this.imSaveBtn]) b.disabled = !this.motionRec || busy || Boolean(this.liveIm);
+    }
     if (!learning) for (const p of GAIT_PARAMS) this.gaitCells[p.key].textContent = this.gait[p.key].toFixed(2);
     const pol = this.store.policy;
     this.policyInfo.textContent = pol ? `불러온 정책: ${pol.name || "정책"} · 신경망 ${pol.layers.map((l) => l.W.length).join("-")} · 학습 점수 ${pol.score !== void 0 ? Number(pol.score).toFixed(1) : "?"}` : "정책이 없습니다.";
@@ -11271,13 +11783,13 @@ var initTutor = (ctx) => {
     const a = e.target.closest("[data-ids]");
     if (!a) return;
     e.preventDefault();
-    glow(a.dataset.ids.split(",").filter(Boolean));
+    glow(a.dataset.ids.split(" ").filter(Boolean));
   });
   const linkify = (s) => esc2(s).replace(/\[L(\d+)(?:\s*[-–~]\s*L?(\d+))?\]/g, (m, a, b) => {
     const from = Number(a);
     const to = Number(b || a);
     const ids = lineMap.filter((l) => l.n >= from && l.n <= to).map((l) => l.id);
-    return ids.length ? `<a href="#" class="tt-ln" data-ids="${ids.join(",")}">${b ? `${a}–${b}` : a}</a>` : m;
+    return ids.length ? `<a href="#" class="tt-ln" data-ids="${esc2(ids.join(" "))}">${b ? `${a}–${b}` : a}</a>` : m;
   }).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/\n/g, "<br>");
   const addMsg = (kind, html) => {
     const d = document.createElement("div");
@@ -11427,7 +11939,7 @@ var initTutor = (ctx) => {
         addMsg("rule", esc2(T.noError));
         return;
       }
-      addMsg("rule", `<b>${T.rules}</b><br>${shown.length ? shown.map((r) => `<a href="#" class="tt-rule lv-${r.level}" data-ids="${r.ids.join(",")}">${r.level === "error" ? "⛔" : r.level === "warn" ? "⚠" : "ℹ️"} ${esc2(r.msg)}</a>`).join("<br>") : esc2(T.noIssue)}`);
+      addMsg("rule", `<b>${T.rules}</b><br>${shown.length ? shown.map((r) => `<a href="#" class="tt-rule lv-${r.level}" data-ids="${esc2(r.ids.join(" "))}">${r.level === "error" ? "⛔" : r.level === "warn" ? "⚠" : "ℹ️"} ${esc2(r.msg)}</a>`).join("<br>") : esc2(T.noIssue)}`);
     }
     if (!active) {
       if (!kind || kind === "hint") addMsg("sys", esc2(T.none));
@@ -12091,6 +12603,7 @@ simPanel = window.dynamicmakers.simPanel = new SimPanel({
   log: (t, k) => log(t, k),
   device: ext.device,
   walker,
+  tracker: poseTracker,
   store: simStore,
   onStoreChange: () => scheduleAutosave(),
   makeTransport: (physics) => new import_sim_robot.SimTransport((text2) => log(`🤖 ${text2}`, "sim"), { physics }),

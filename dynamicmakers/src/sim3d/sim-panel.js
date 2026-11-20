@@ -5,11 +5,14 @@ import {MAXE1_DEFAULT, MAXE1_JOINT_MAP, MODEL_VERSION, buildMJCF} from './maxe1-
 import {GAIT_PARAMS, defaultGait, gaitTargets} from './gait';
 import {GaitLearner, REWARDS, defaultRewards, score} from './learn';
 import {checkPolicy} from './policy';
-import {MotionRecorder, summarize, poseAt, toJointRad, keyPoses} from './motion-check';
+import {MotionRecorder, summarize, poseAt, toJointRad, keyPoses, simplifyPoses} from './motion-check';
 import {posesProgramXML} from './gait-blocks';
 import {parseMtn3, findChains, toRecording, callSeconds} from './mtn3';
 import {builtInMotions, setMotions} from './motion-library';
 import {motionNote} from './maxe1-motion-notes';
+import {LEG_MODES, IDS as IM_IDS, SWAY_LEFT, analyzeVideo, newImitation, retarget, smooth, toFrame, drawSkeleton} from './imitate';
+
+const {DXL} = require('../../../scratch-cm550/src/cm550');
 import {assetUrl} from '../asset-url';
 
 const el = (tag, cls, text) => {
@@ -101,6 +104,7 @@ export class SimPanel {
         if (!['race', 'watch', 'fast'].includes(this.search.mode)) this.search.mode = this.search.watch === false ? 'fast' : 'race';
         if (!this.search.speed) this.search.speed = 1;
         this.visible = false;
+        this.imitateLib = {retarget, newImitation, smooth, SWAY_LEFT}; // for tests
         this._build();
         this.walker.onUpdate(() => this._status());
     }
@@ -196,6 +200,52 @@ export class SimPanel {
         this.recTable = el('table', 'sim-table');
         cm.append(this.recInfo, this.recTable);
         body.append(cm);
+
+        // ---- 영상으로 따라 하기 ------------------------------------------------------------
+        const ci = el('section', 'mon-card sim-imitate');
+        ci.append(el('h3', '', '영상으로 따라 하기 (사람 동작 → 로봇)'));
+        ci.append(el('p', 'mon-note', '사람이 움직이는 영상(온몸 또는 상반신이 정면으로 보이게)을 열거나 웹캠을 켜면, ' +
+            '관절 인식 AI가 어깨·팔·무릎·몸 기울기를 찾아 MAX-E1이 따라 합니다. 로봇은 팔꿈치가 없어 팔은 어깨→손목 방향만 따라 하고, ' +
+            '다리는 넘어지지 않게 앉기와 옆으로 기울기만 따라 합니다. 먼저 3D로 넘어지는지 확인한 뒤 실제 로봇에서 실행하세요. ' +
+            '영상과 카메라 화면은 이 컴퓨터 밖으로 나가지 않습니다.'));
+        const ri = el('div', 'tp-row');
+        const vidFile = el('input', 'sim-vid-file');
+        vidFile.type = 'file';
+        vidFile.accept = 'video/*';
+        vidFile.hidden = true;
+        vidFile.addEventListener('change', () => this.imitateVideo(vidFile.files[0]).finally(() => { vidFile.value = ''; }));
+        this.imVideoBtn = button('tp-btn tp-primary', '🎬 영상 파일 열기', () => vidFile.click(), 'mp4·webm 영상 (앞 60초까지)');
+        this.imLiveBtn = button('tp-btn', '📷 웹캠으로 실시간 따라 하기', () => this.toggleLiveImitate(),
+            '카메라 앞에서 움직이면 로봇이 바로 따라 합니다 (실제 로봇이 연결되어 있으면 실제 로봇, 아니면 3D 로봇)');
+        this.imLegs = el('select', 'sim-im-legs');
+        for (const [k, v] of Object.entries(LEG_MODES)) {
+            const o = el('option', '', v);
+            o.value = k;
+            this.imLegs.append(o);
+        }
+        this.imLegs.value = 'squat';
+        const mir = el('label', 'sim-im-mirror');
+        this.imMirror = el('input');
+        this.imMirror.type = 'checkbox';
+        this.imMirror.checked = true;
+        mir.append(this.imMirror, document.createTextNode(' 거울처럼 (사람 오른팔 → 로봇 왼팔)'));
+        ri.append(vidFile, this.imVideoBtn, this.imLiveBtn, this.imLegs, mir);
+        ci.append(ri);
+        this.imCanvas = el('canvas', 'sim-im-canvas');
+        this.imCanvas.width = 320;
+        this.imCanvas.height = 240;
+        this.imCanvas.hidden = true;
+        this.imInfo = el('div', 'sim-info', '');
+        ci.append(this.imCanvas, this.imInfo);
+        const ri2 = el('div', 'tp-row');
+        this.imReplayBtn = button('tp-btn', '3D로 재생', () => this.replayMotion(), '따라 한 동작을 3D 로봇으로 재생해 넘어지는지 확인합니다');
+        this.imRobotBtn = button('tp-btn', '실제 로봇에서 재생', () => this.playRecOnRobot(),
+            '연결된 실제 로봇(USB/블루투스)이 따라 한 동작을 그대로 움직입니다');
+        this.imBlocksBtn = button('tp-btn', '블록으로 만들기', () => this.motionBlocks(), '자세 블록으로 넣어 프로그램에서 쓰거나 고칠 수 있습니다');
+        this.imSaveBtn = button('tp-btn', '저장', () => this.saveMotion());
+        ri2.append(this.imReplayBtn, this.imRobotBtn, this.imBlocksBtn, this.imSaveBtn);
+        ci.append(ri2);
+        body.append(ci);
 
         // ---- 2. 걸음 학습 ------------------------------------------------------------
         const c2 = el('section', 'mon-card');
@@ -729,8 +779,8 @@ export class SimPanel {
         if (!rec) return;
         const sum = summarize(rec, this.jointMap);
         const moved = sum.filter(r => r.range > 3);
-        this.recInfo.textContent = `${rec.fromFile ? `모션 파일: ${rec.page}` : `모션 ${rec.page}번`} · ${rec.seconds.toFixed(1)}초 · ` +
-            `${rec.fromFile ? '키프레임' : '기록'} ${rec.frames.length}개 · ` +
+        this.recInfo.textContent = `${rec.fromVideo ? rec.label : rec.fromFile ? `모션 파일: ${rec.page}` : `모션 ${rec.page}번`} · ${rec.seconds.toFixed(1)}초 · ` +
+            `${rec.fromFile ? '키프레임' : rec.fromVideo ? '자세' : '기록'} ${rec.frames.length}개 · ` +
             `움직인 관절 ${moved.length}개${moved.length ? ` (${moved.map(r => r.id).join(', ')})` : ' — 모션이 실행되지 않았거나 빈 페이지입니다'}`;
         const f = v => (Number.isFinite(v) ? v.toFixed(1) : '-');
         this.recTable.innerHTML = '<thead><tr><th>ID</th><th>관절</th><th>시작</th><th>최소</th><th>최대</th><th>움직임</th></tr></thead>';
@@ -761,7 +811,7 @@ export class SimPanel {
             const t0 = ph.data.time;
             const lead = 0.6; // from standing straight into the motion's first pose
             const first = toJointRad(rec.frames[0].deg, map);
-            this.log(`3D 로봇에 ${rec.fromFile ? rec.page : `모션 ${rec.page}번 기록`}을 재생합니다 (${rec.seconds.toFixed(1)}초).`);
+            this.log(`3D 로봇에 ${rec.fromVideo ? rec.label : rec.fromFile ? rec.page : `모션 ${rec.page}번 기록`}을 재생합니다 (${rec.seconds.toFixed(1)}초).`);
             await new Promise(resolve => {
                 ph.setController(time => {
                     const t = time - t0;
@@ -791,10 +841,10 @@ export class SimPanel {
     motionBlocks () {
         const rec = this.motionRec;
         if (!rec || !this.insertXML) return;
-        const poses = keyPoses(rec, 0.12);
+        const poses = rec.fromVideo ? simplifyPoses(rec) : keyPoses(rec, 0.12);
         const n = this.insertXML((x, y) => posesProgramXML(poses, {x, y,
-            title: `${rec.fromFile ? `모션 파일의 ${rec.page}` : `CM-550 모션 ${rec.page}번을 기록한`} 자세 ${poses.length}개 (약 0.12초마다)`}).xml);
-        if (n !== false) this.log(`${rec.fromFile ? rec.page : `모션 ${rec.page}번`}을 블록으로 넣었습니다: 자세 ${poses.length}개, 자세마다 모터 ${rec.ids.length}개.`, 'ok');
+            title: `${rec.fromVideo ? `${rec.label}을 따라 한` : rec.fromFile ? `모션 파일의 ${rec.page}` : `CM-550 모션 ${rec.page}번을 기록한`} 자세 ${poses.length}개${rec.fromVideo ? ' (움직임이 바뀌는 곳마다)' : ' (약 0.12초마다)'}`}).xml);
+        if (n !== false) this.log(`${rec.fromVideo ? rec.label : rec.fromFile ? rec.page : `모션 ${rec.page}번`}을 블록으로 넣었습니다: 자세 ${poses.length}개, 자세마다 모터 ${rec.ids.length}개.`, 'ok');
     }
 
     saveMotion () {
@@ -817,6 +867,179 @@ export class SimPanel {
     }
 
     /** The official MAX-E1 example motions, built in (no file needed). */
+    // ---- 영상으로 따라 하기 ------------------------------------------------------------
+    _imOpts () {
+        return {legs: this.imLegs.value, mirror: this.imMirror.checked};
+    }
+
+    async imitateVideo (file) {
+        if (!file || this.imBusy) return;
+        if (!this.tracker) {
+            this.log('⚠ 관절 인식(MoveNet)을 쓸 수 없습니다.', 'err');
+            return;
+        }
+        if (this.liveIm) this.toggleLiveImitate();
+        this.imBusy = true;
+        this.imCanvas.hidden = false;
+        this._status();
+        this.imInfo.textContent = '관절 인식 모델을 불러오는 중… (처음 한 번, 6 MB)';
+        try {
+            const rec = await analyzeVideo(file, this.tracker, {
+                opts: this._imOpts(),
+                canvas: this.imCanvas,
+                onProgress: (p, text) => { this.imInfo.textContent = `영상 분석 중 ${p}% · ${text}`; }
+            });
+            this.motionRec = rec;
+            this._showMotion();
+            this._imSummary(rec);
+            this.log(`영상 「${rec.page}」을 로봇 동작으로 바꿨습니다: ${rec.seconds.toFixed(1)}초, 자세 ${rec.frames.length}개` +
+                `${rec.truncated ? ' (앞 60초만)' : ''}. 「3D로 재생」으로 넘어지는지 먼저 확인하세요.`, 'ok');
+        } catch (e) {
+            this.imInfo.textContent = `⚠ ${e.message || e}`;
+            this.log(`⚠ 영상으로 따라 하기: ${e.message || e}`, 'err');
+        }
+        this.imBusy = false;
+        this._status();
+    }
+
+    _imSummary (rec) {
+        const sum = summarize(rec, this.jointMap).filter(r => r.range > 5);
+        this.imInfo.textContent = `${rec.label || rec.page} · ${rec.seconds.toFixed(1)}초 · 자세 ${rec.frames.length}개 · ` +
+            `사람을 찾은 프레임 ${Math.round((rec.seen || 1) * 100)}% · 움직이는 모터 ${sum.length}개` +
+            `${sum.length ? ` (ID ${sum.map(r => r.id).join(', ')})` : ''}`;
+    }
+
+    /** Where poses go: the connected real robot, otherwise the 3D robot. */
+    _imOnRealRobot () {
+        return this.device.connected && !(this.device.transport && this.device.transport.physics);
+    }
+
+    async _imPrepare () {
+        if (this._imOnRealRobot()) {
+            await this.device.prepareJoints(IM_IDS, {}, 2);
+            await this.device.syncWriteDXL(DXL.PROFILE_VELOCITY, IM_IDS.map(id => ({id, value: 150})));
+            return 'robot';
+        }
+        const ph = await this._ensureSim();
+        this.walker.stop();
+        ph.setController(null);
+        for (const j of this.jointMap) {
+            ph.setTorque(j.id, 1);
+            ph.setProfile(j.id, 0);
+        }
+        return 'sim';
+    }
+
+    /** One pose (motor degrees, 180 = straight) to the robot / the 3D robot. */
+    async _imSend (target, deg) {
+        if (target === 'robot') {
+            await this.device.syncWriteDXL(DXL.GOAL_POSITION,
+                IM_IDS.map(id => ({id, value: Math.round((deg[id] / 360) * 4096)})));
+            return;
+        }
+        const q = toJointRad(deg, this.jointMap);
+        for (const j in q) this.physics.setGoalRad(j, q[j]);
+    }
+
+    async toggleLiveImitate () {
+        if (this.liveIm) {
+            const lv = this.liveIm;
+            this.liveIm = null;
+            lv.off();
+            this.tracker.release('imitate');
+            if (lv.frames.length > 5) {
+                const t0 = lv.frames[0].t;
+                const frames = lv.frames.map(f => ({t: Math.round((f.t - t0) * 100) / 100, deg: f.deg}));
+                this.motionRec = {page: '웹캠', label: '웹캠으로 따라 한 동작', ids: IM_IDS.slice(), frames,
+                    seconds: frames[frames.length - 1].t, fromVideo: true, seen: lv.seen / Math.max(1, lv.n)};
+                this._showMotion();
+                this._imSummary(this.motionRec);
+            }
+            this.log('웹캠 따라 하기를 멈췄습니다. 방금 동작은 「3D로 재생」·「블록으로 만들기」·「저장」에 쓸 수 있습니다.', 'ok');
+            this._status();
+            return;
+        }
+        if (!this.tracker || this.imBusy) return;
+        this.imBusy = true;
+        this._status();
+        try {
+            this.imInfo.textContent = '카메라와 관절 인식 모델을 켜는 중…';
+            await this.tracker.acquire('imitate');
+            const target = await this._imPrepare();
+            const st = newImitation(this._imOpts());
+            const lv = {st, target, frames: [], n: 0, seen: 0, last: 0, sending: false};
+            this.imCanvas.hidden = false;
+            lv.off = this.tracker.onUpdate(tr => {
+                const now = performance.now() / 1000;
+                if (!this.liveIm || now - lv.last < 0.1 || !tr.keypoints) return;
+                const dt = lv.last ? Math.min(0.3, now - lv.last) : 0.1;
+                lv.last = now;
+                const v = tr.video;
+                const aspect = v.videoWidth && v.videoHeight ? v.videoWidth / v.videoHeight : 4 / 3;
+                if (this.imCanvas.width !== 320) this.imCanvas.width = 320;
+                this.imCanvas.height = Math.round(320 / aspect);
+                drawSkeleton(this.imCanvas, v, tr.keypoints, {mirror: true});
+                const r = retarget(tr.keypoints, aspect, st);
+                lv.n++;
+                if (r.seen) lv.seen++;
+                const f = toFrame(now, smooth(st, r.deg, dt));
+                if (lv.frames.length < 600) lv.frames.push(f); // last 60 s are kept as a motion
+                this.imInfo.textContent = `실시간 따라 하기 · ${target === 'robot' ? '실제 로봇' : '3D 로봇'} · ` +
+                    `오른팔 ${Math.round(f.deg[1] - 180)}°/${Math.round(f.deg[2] - 180)}° · 왼팔 ${Math.round(180 - f.deg[3])}°/${Math.round(f.deg[4] - 180)}°` +
+                    `${r.seen ? '' : ' · 사람이 보이지 않습니다'}`;
+                if (lv.sending) return; // the robot is still taking the last pose
+                lv.sending = true;
+                this._imSend(target, f.deg).catch(e => {
+                    this.log(`⚠ 따라 하기: ${e.message || e}`, 'err');
+                }).finally(() => { lv.sending = false; });
+            });
+            this.liveIm = lv;
+            this.log(`웹캠 따라 하기를 시작했습니다 (${target === 'robot' ? '실제 로봇' : '3D 로봇'}). 카메라에서 2~3 m 떨어져 상반신이 다 보이게 서세요.`, 'ok');
+        } catch (e) {
+            this.tracker.release('imitate');
+            this.imInfo.textContent = `⚠ ${e.message || e}`;
+            this.log(`⚠ 웹캠 따라 하기: ${e.message || e}`, 'err');
+        }
+        this.imBusy = false;
+        this._status();
+    }
+
+    /** Play the current recording (video / webcam / motion) on the connected real robot. */
+    async playRecOnRobot () {
+        const rec = this.motionRec;
+        if (!rec) {
+            this.log('먼저 영상을 열거나 웹캠으로 동작을 만드세요.', 'warn');
+            return;
+        }
+        if (!this._imOnRealRobot()) {
+            this.log('실제 로봇(USB/블루투스)이 연결되어 있지 않아 3D 로봇으로 재생합니다.', 'warn');
+            await this.replayMotion();
+            return;
+        }
+        if (this.imBusy) return;
+        this.imBusy = true;
+        this._status();
+        try {
+            this.log(`실제 로봇에서 ${rec.label || rec.page}을 재생합니다 (${rec.seconds.toFixed(1)}초). 먼저 180°로 섭니다.`);
+            await this._imPrepare();
+            const t0 = performance.now() / 1000;
+            for (;;) {
+                const t = (performance.now() / 1000) - t0;
+                if (t > rec.seconds) break;
+                const d = poseAt(rec, t);
+                const deg = {};
+                for (const id of IM_IDS) deg[id] = d[id] === undefined ? 180 : d[id];
+                await this._imSend('robot', deg);
+                await new Promise(r => setTimeout(r, 60));
+            }
+            this.log('실제 로봇 재생을 마쳤습니다.', 'ok');
+        } catch (e) {
+            this.log(`⚠ 실제 로봇 재생: ${e.message || e}`, 'err');
+        }
+        this.imBusy = false;
+        this._status();
+    }
+
     loadBuiltInMotions () {
         try {
             this._useMtn(builtInMotions(), true);
@@ -1001,6 +1224,15 @@ export class SimPanel {
         this.recStopBtn.disabled = !recording;
         for (const b of [this.replayBtn, this.recBlockBtn, this.recSaveBtn]) b.disabled = !this.motionRec || recording;
         this.mtnRunBtn.disabled = !this.mtn || Boolean(this._mtnRunning);
+        if (this.imVideoBtn) {
+            const busy = Boolean(this.imBusy);
+            this.imVideoBtn.disabled = busy;
+            this.imLiveBtn.disabled = busy && !this.liveIm;
+            this.imLiveBtn.textContent = this.liveIm ? '■ 웹캠 따라 하기 멈추기' : '📷 웹캠으로 실시간 따라 하기';
+            this.imLiveBtn.classList.toggle('tp-primary', Boolean(this.liveIm));
+            this.imLegs.disabled = this.imMirror.disabled = Boolean(this.liveIm) || busy;
+            for (const b of [this.imReplayBtn, this.imRobotBtn, this.imBlocksBtn, this.imSaveBtn]) b.disabled = !this.motionRec || busy || Boolean(this.liveIm);
+        }
         if (!learning) for (const p of GAIT_PARAMS) this.gaitCells[p.key].textContent = this.gait[p.key].toFixed(2);
         const pol = this.store.policy;
         this.policyInfo.textContent = pol ? `불러온 정책: ${pol.name || '정책'} · 신경망 ` +

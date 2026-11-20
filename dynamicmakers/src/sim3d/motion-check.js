@@ -119,3 +119,49 @@ export const keyPoses = (rec, step = 0.12) => {
     }
     return out;
 };
+
+/**
+ * Fewer poses for a recording with still parts (video / webcam): a key pose only where
+ * straight lines between key poses would miss a frame by more than `tol` degrees, and
+ * each pose lists only the motors that moved (the first lists all).
+ */
+export const simplifyPoses = (rec, tol = 4, minGap = 0.15) => {
+    const F = rec.frames;
+    const ids = rec.ids;
+    const keys = [0];
+    let a = 0;
+    for (let b = a + 2; b < F.length; b++) {
+        // can the line a → b stand for every frame between them?
+        let bad = false;
+        for (let i = a + 1; i < b && !bad; i++) {
+            const k = (F[i].t - F[a].t) / Math.max(1e-6, F[b].t - F[a].t);
+            for (const id of ids) {
+                const v = F[a].deg[id] + ((F[b].deg[id] - F[a].deg[id]) * k);
+                if (Math.abs(v - F[i].deg[id]) > tol) {
+                    bad = true;
+                    break;
+                }
+            }
+        }
+        if (bad && F[b - 1].t - F[a].t >= minGap) {
+            a = b - 1;
+            keys.push(a);
+        }
+    }
+    if (keys[keys.length - 1] !== F.length - 1) keys.push(F.length - 1);
+    const out = [];
+    let last = null;
+    let prevT = F[0].t;
+    for (const i of keys) {
+        const f = F[i];
+        const joints = ids.filter(id => !last || Math.abs(f.deg[id] - last[id]) > 1)
+            .map(id => ({id, deg: Math.round(f.deg[id] * 10) / 10}));
+        const secs = Math.round(Math.max(0.1, f.t - prevT) * 1000) / 1000;
+        if (joints.length) {
+            out.push({secs, joints});
+            prevT = f.t;
+            last = {...(last || {}), ...f.deg};
+        }
+    }
+    return out;
+};

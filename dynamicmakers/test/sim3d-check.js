@@ -165,7 +165,7 @@ const check = (c, m) => { console.log(`${c ? 'ok' : 'FAIL'} - ${m}`); if (!c) fa
     await sp(() => { const s = window.dynamicmakers.simPanel; s.store.gait = s._keepGait; });
 
     // stage 3: policy file
-    await p.setInputFiles('.simp input[type=file]:not(.sim-rec-file)', POLICY);
+    await p.setInputFiles('.simp input[type=file]:not(.sim-rec-file):not(.sim-vid-file)', POLICY);
     await p.waitForFunction(() => document.getElementById('console-lines').textContent.includes('정책을 불러왔습니다'));
     check((await p.textContent('.simp')).includes('신경망 32-12'), 'policy loaded (network 32-12)');
     await p.click('text=정책으로 걷기 (3D)');
