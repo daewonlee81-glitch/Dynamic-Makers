@@ -10,7 +10,7 @@ import {posesProgramXML} from './gait-blocks';
 import {parseMtn3, findChains, toRecording, callSeconds} from './mtn3';
 import {builtInMotions, setMotions} from './motion-library';
 import {motionNote} from './maxe1-motion-notes';
-import {LEG_MODES, IDS as IM_IDS, SWAY_LEFT, analyzeVideo, newImitation, retarget, smooth, toFrame, drawSkeleton} from './imitate';
+import {LEG_MODES, IDS as IM_IDS, SWAY_LEFT, analyzeVideo, newImitation, retarget, smooth, toFrame, drawSkeleton, kpsAt} from './imitate';
 
 const {DXL} = require('../../../scratch-cm550/src/cm550');
 import {assetUrl} from '../asset-url';
@@ -238,12 +238,24 @@ export class SimPanel {
         this.imInfo = el('div', 'sim-info', '');
         ci.append(this.imCanvas, this.imInfo);
         const ri2 = el('div', 'tp-row');
-        this.imReplayBtn = button('tp-btn', '3D로 재생', () => this.replayMotion(), '따라 한 동작을 3D 로봇으로 재생해 넘어지는지 확인합니다');
+        const spl = el('label', 'sim-im-speed-l', '재생 속도 ');
+        this.imSpeed = el('select', 'sim-im-speed');
+        for (const v of [0.25, 0.5, 0.75, 1]) {
+            const o = el('option', '', v === 1 ? '1배 (영상과 같은 빠르기)' : `${v}배 (천천히)`);
+            o.value = String(v);
+            this.imSpeed.append(o);
+        }
+        this.imSpeed.value = '0.5';
+        this.imSpeed.title = '영상과 로봇이 같은 속도로 함께 움직입니다. 빠른 동작은 로봇 모터가 따라가지 못하니 0.5배부터 해 보세요';
+        spl.append(this.imSpeed);
+        this.imReplayBtn = button('tp-btn', '3D로 재생', () => this.replayMotion({speed: this._imSpeed(), video: true}),
+            '영상과 3D 로봇이 같은 속도로 나란히 움직입니다 (넘어지는지 확인)');
         this.imRobotBtn = button('tp-btn', '실제 로봇에서 재생', () => this.playRecOnRobot(),
             '연결된 실제 로봇(USB/블루투스)이 따라 한 동작을 그대로 움직입니다');
-        this.imBlocksBtn = button('tp-btn', '블록으로 만들기', () => this.motionBlocks(), '자세 블록으로 넣어 프로그램에서 쓰거나 고칠 수 있습니다');
+        this.imBlocksBtn = button('tp-btn', '블록으로 만들기', () => this.motionBlocks({speed: this._imSpeed()}), '자세 블록으로 넣어 프로그램에서 쓰거나 고칠 수 있습니다');
         this.imSaveBtn = button('tp-btn', '저장', () => this.saveMotion());
-        ri2.append(this.imReplayBtn, this.imRobotBtn, this.imBlocksBtn, this.imSaveBtn);
+        this.imBlocksBtn.title = '고른 재생 속도로 자세 블록을 만듭니다';
+        ri2.append(spl, this.imReplayBtn, this.imRobotBtn, this.imBlocksBtn, this.imSaveBtn);
         ci.append(ri2);
         body.append(ci);
 
@@ -793,7 +805,7 @@ export class SimPanel {
         this.recTable.append(tb);
     }
 
-    async replayMotion () {
+    async replayMotion ({speed = 1, video = false} = {}) {
         const rec = this.motionRec;
         if (!rec) {
             this.log('먼저 모션을 기록하거나 기록 파일을 불러오세요.', 'warn');
@@ -811,7 +823,9 @@ export class SimPanel {
             const t0 = ph.data.time;
             const lead = 0.6; // from standing straight into the motion's first pose
             const first = toJointRad(rec.frames[0].deg, map);
-            this.log(`3D 로봇에 ${rec.fromVideo ? rec.label : rec.fromFile ? rec.page : `모션 ${rec.page}번 기록`}을 재생합니다 (${rec.seconds.toFixed(1)}초).`);
+            this.log(`3D 로봇에 ${rec.fromVideo ? rec.label : rec.fromFile ? rec.page : `모션 ${rec.page}번 기록`}을 재생합니다 ` +
+                `(${(rec.seconds / speed).toFixed(1)}초${speed === 1 ? '' : `, ${speed}배 속도`}).`);
+            const sync = video ? this._imVideoStart(rec, speed) : null;
             await new Promise(resolve => {
                 ph.setController(time => {
                     const t = time - t0;
@@ -819,8 +833,9 @@ export class SimPanel {
                         for (const j in first) ph.setGoalRad(j, first[j] * (t / lead));
                         return;
                     }
-                    const tt = t - lead;
-                    if (tt > rec.seconds + 1) {
+                    const tt = (t - lead) * speed; // time in the recording
+                    if (sync) sync(Math.min(tt, rec.seconds));
+                    if (tt > rec.seconds + speed) {
                         ph.setController(null);
                         resolve();
                         return;
@@ -829,6 +844,7 @@ export class SimPanel {
                     for (const j in q) ph.setGoalRad(j, q[j]);
                 });
             });
+            this._imVideoStop();
             const t = ph.torso;
             this.log(`3D 재생 끝: 앞으로 ${(t.x * 100).toFixed(0)} cm, 옆으로 ${(t.y * 100).toFixed(0)} cm, ` +
                 `${ph.fallen ? '넘어졌습니다' : '서 있습니다'}. (공식 걷기 모션이 3D에서도 앞으로 걸으면 ID·방향 설정이 맞습니다)`,
@@ -838,12 +854,13 @@ export class SimPanel {
         }
     }
 
-    motionBlocks () {
+    motionBlocks ({speed = 1} = {}) {
         const rec = this.motionRec;
         if (!rec || !this.insertXML) return;
-        const poses = rec.fromVideo ? simplifyPoses(rec) : keyPoses(rec, 0.12);
+        let poses = rec.fromVideo ? simplifyPoses(rec) : keyPoses(rec, 0.12);
+        if (speed !== 1) poses = poses.map(q => ({...q, secs: Math.round((q.secs / speed) * 1000) / 1000}));
         const n = this.insertXML((x, y) => posesProgramXML(poses, {x, y,
-            title: `${rec.fromVideo ? `${rec.label}을 따라 한` : rec.fromFile ? `모션 파일의 ${rec.page}` : `CM-550 모션 ${rec.page}번을 기록한`} 자세 ${poses.length}개${rec.fromVideo ? ' (움직임이 바뀌는 곳마다)' : ' (약 0.12초마다)'}`}).xml);
+            title: `${rec.fromVideo ? `${rec.label}을 따라 한` : rec.fromFile ? `모션 파일의 ${rec.page}` : `CM-550 모션 ${rec.page}번을 기록한`} 자세 ${poses.length}개${rec.fromVideo ? ' (움직임이 바뀌는 곳마다)' : ' (약 0.12초마다)'}${speed === 1 ? '' : `, ${speed}배 속도`}`}).xml);
         if (n !== false) this.log(`${rec.fromVideo ? rec.label : rec.fromFile ? rec.page : `모션 ${rec.page}번`}을 블록으로 넣었습니다: 자세 ${poses.length}개, 자세마다 모터 ${rec.ids.length}개.`, 'ok');
     }
 
@@ -884,11 +901,13 @@ export class SimPanel {
         this._status();
         this.imInfo.textContent = '관절 인식 모델을 불러오는 중… (처음 한 번, 6 MB)';
         try {
+            const old = this.motionRec && this.motionRec.video;
             const rec = await analyzeVideo(file, this.tracker, {
                 opts: this._imOpts(),
                 canvas: this.imCanvas,
                 onProgress: (p, text) => { this.imInfo.textContent = `영상 분석 중 ${p}% · ${text}`; }
             });
+            if (old && old.url) URL.revokeObjectURL(old.url);
             this.motionRec = rec;
             this._showMotion();
             this._imSummary(rec);
@@ -900,6 +919,57 @@ export class SimPanel {
         }
         this.imBusy = false;
         this._status();
+    }
+
+    _imSpeed () {
+        return Number(this.imSpeed && this.imSpeed.value) || 1;
+    }
+
+    /**
+     * Play the analysed video in the preview at `speed`, kept in step with the robot:
+     * returns sync(t) to call with the recording time the robot is at (null without a video).
+     */
+    _imVideoStart (rec, speed) {
+        this._imVideoStop();
+        const v = rec && rec.video;
+        if (!v || !v.url) return null;
+        const video = document.createElement('video');
+        video.muted = true;
+        video.playsInline = true;
+        video.src = v.url;
+        video.playbackRate = speed;
+        const cv = this.imCanvas;
+        cv.hidden = false;
+        cv.width = 320;
+        cv.height = Math.round(320 / (v.aspect || (4 / 3)));
+        const pb = {video, raf: 0, started: false};
+        const draw = () => {
+            drawSkeleton(cv, video, kpsAt(v.kps, video.currentTime));
+            pb.raf = requestAnimationFrame(draw);
+        };
+        pb.raf = requestAnimationFrame(draw);
+        this._imPlayback = pb;
+        return t => {
+            if (this._imPlayback !== pb) return;
+            if (!pb.started) {
+                pb.started = true;
+                video.currentTime = t;
+                video.play().catch(() => {});
+                return;
+            }
+            // the robot sets the pace (the 3D robot runs on simulated time): nudge the video along
+            const drift = video.currentTime - t;
+            if (Math.abs(drift) > 0.35) video.currentTime = t;
+            else video.playbackRate = Math.max(0.0625, Math.min(4, speed * (1 - (drift * 0.8))));
+        };
+    }
+
+    _imVideoStop () {
+        const pb = this._imPlayback;
+        if (!pb) return;
+        this._imPlayback = null;
+        cancelAnimationFrame(pb.raf);
+        pb.video.pause();
     }
 
     _imSummary (rec) {
@@ -1013,18 +1083,22 @@ export class SimPanel {
         }
         if (!this._imOnRealRobot()) {
             this.log('실제 로봇(USB/블루투스)이 연결되어 있지 않아 3D 로봇으로 재생합니다.', 'warn');
-            await this.replayMotion();
+            await this.replayMotion({speed: this._imSpeed(), video: true});
             return;
         }
         if (this.imBusy) return;
         this.imBusy = true;
         this._status();
         try {
-            this.log(`실제 로봇에서 ${rec.label || rec.page}을 재생합니다 (${rec.seconds.toFixed(1)}초). 먼저 180°로 섭니다.`);
+            const speed = this._imSpeed();
+            this.log(`실제 로봇에서 ${rec.label || rec.page}을 재생합니다 (${(rec.seconds / speed).toFixed(1)}초` +
+                `${speed === 1 ? '' : `, ${speed}배 속도`}). 먼저 180°로 섭니다.`);
             await this._imPrepare();
+            const sync = this._imVideoStart(rec, speed);
             const t0 = performance.now() / 1000;
             for (;;) {
-                const t = (performance.now() / 1000) - t0;
+                const t = ((performance.now() / 1000) - t0) * speed;
+                if (sync) sync(Math.min(t, rec.seconds));
                 if (t > rec.seconds) break;
                 const d = poseAt(rec, t);
                 const deg = {};
@@ -1032,8 +1106,10 @@ export class SimPanel {
                 await this._imSend('robot', deg);
                 await new Promise(r => setTimeout(r, 60));
             }
+            this._imVideoStop();
             this.log('실제 로봇 재생을 마쳤습니다.', 'ok');
         } catch (e) {
+            this._imVideoStop();
             this.log(`⚠ 실제 로봇 재생: ${e.message || e}`, 'err');
         }
         this.imBusy = false;

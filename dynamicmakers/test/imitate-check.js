@@ -105,14 +105,24 @@ const check = (c, m) => { console.log(`${c ? 'ok' : 'FAIL'} - ${m}`); if (!c) fa
         });
         check(canvasOk, 'preview shows the video frame with the skeleton');
         const r0 = ((await out()).match(/3D 재생 끝/g) || []).length;
+        await p.selectOption('.simp .sim-im-speed', '0.5');
         await p.click('.simp .sim-imitate button:has-text("3D로 재생")');
+        // the video plays in the preview next to the robot, at half speed
+        await p.waitForFunction(() => { const pb = window.dynamicmakers.simPanel._imPlayback; return pb && pb.started && pb.video.currentTime > 0.3; }, null, {timeout: 60000});
+        const pv = await p.evaluate(() => { const v = window.dynamicmakers.simPanel._imPlayback.video; return {rate: v.playbackRate, paused: v.paused}; });
+        check(!pv.paused && pv.rate > 0.05 && pv.rate <= 0.9, `video plays along with the 3D robot at the chosen speed (rate ${pv.rate.toFixed(2)})`);
         await p.waitForFunction(n => (document.getElementById('console-lines').textContent.match(/3D 재생 끝/g) || []).length > n, r0, {timeout: 120000});
+        check(new RegExp(`\\(${(rec.secs / 0.5).toFixed(1)}초, 0\\.5배 속도\\)`).test(await out()), `0.5× speed: the robot takes twice as long (${(rec.secs / 0.5).toFixed(1)} s)`);
+        check(await p.evaluate(() => !window.dynamicmakers.simPanel._imPlayback), 'video stops with the robot');
         const rp = [...(await out()).matchAll(/3D 재생 끝: [^\n]*?(서 있습니다|넘어졌습니다)/g)].pop();
         check(rp && rp[1] === '서 있습니다', `video motion replayed on the 3D robot without falling (${rp && rp[0]})`);
         const blocks0 = await p.evaluate(() => window.dynamicmakers.workspace.getAllBlocks().length);
         await p.click('.simp .sim-imitate button:has-text("블록으로 만들기")');
         const blocks1 = await p.evaluate(() => window.dynamicmakers.workspace.getAllBlocks().length);
         check(blocks1 > blocks0 + 5 && blocks1 - blocks0 < 200 && /을 블록으로 넣었습니다/.test(await out()), `video motion → pose blocks (${blocks1 - blocks0} blocks)`);
+        const title = await p.evaluate(() => window.dynamicmakers.workspace.getTopComments ? window.dynamicmakers.workspace.getTopComments().map(c => c.getText()).join(' ') : '');
+        const xmlText = await p.evaluate(() => new XMLSerializer().serializeToString(window.dynamicmakers.ScratchBlocks.Xml.workspaceToDom(window.dynamicmakers.workspace)));
+        check(/0\.5배 속도/.test(xmlText + title), 'blocks are made at the chosen speed (0.5×)');
     } else {
         console.log(`# skipped the video file part (no ${VIDEO})`);
     }

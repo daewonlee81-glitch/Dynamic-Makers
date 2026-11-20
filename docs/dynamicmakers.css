@@ -485,3 +485,5 @@ body.dm-resizing iframe, body.dm-resizing #blocks { pointer-events: none; }
 .sim-im-mirror { font-size: 13px; display: inline-flex; align-items: center; gap: 4px; }
 .sim-im-canvas { display: block; width: 320px; max-width: 100%; margin: 8px 0 4px; border-radius: 10px; background: #1b2233; }
 .sim-im-canvas[hidden] { display: none; }
+.sim-im-speed-l { font-size: 13px; display: inline-flex; align-items: center; gap: 4px; }
+.sim-im-speed { height: 32px; border: 1px solid var(--line); border-radius: 8px; font: inherit; font-size: 13px; padding: 0 6px; }

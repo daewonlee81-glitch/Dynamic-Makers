@@ -182,6 +182,17 @@ export const toFrame = (t, deg) => {
     return f;
 };
 
+/** Body points at time t from a recording's skeleton log ([[x, y, score]] per point). */
+export const kpsAt = (log, t) => {
+    if (!log || !log.length) return null;
+    let best = log[0];
+    for (const e of log) {
+        if (e.t > t + 1e-6) break;
+        best = e;
+    }
+    return best.k ? best.k.map(q => ({x: q[0], y: q[1], score: q[2]})) : null;
+};
+
 /** Draw the frame and the skeleton (not mirrored: as the video shows it). */
 export const drawSkeleton = (canvas, video, kps, {mirror = false} = {}) => {
     const ctx = canvas.getContext('2d');
@@ -234,6 +245,7 @@ export const analyzeVideo = async (file, tracker, o) => {
     video.playsInline = true;
     video.preload = 'auto';
     const url = URL.createObjectURL(file);
+    let kept = false;
     try {
         video.src = url;
         await new Promise((resolve, reject) => {
@@ -249,6 +261,7 @@ export const analyzeVideo = async (file, tracker, o) => {
         }
         const st = newImitation(o.opts);
         const frames = [];
+        const kpsLog = []; // body points per frame, to draw the skeleton when playing back
         let found = 0;
         const n = Math.floor(dur * fps) + 1;
         for (let i = 0; i < n; i++) {
@@ -264,6 +277,7 @@ export const analyzeVideo = async (file, tracker, o) => {
                 setTimeout(done, 1500); // some files never fire 'seeked' for the last frame
             });
             const kps = await tracker.estimateOn(video);
+            kpsLog.push({t, k: kps ? kps.map(q => [Math.round(q.x * 1000) / 1000, Math.round(q.y * 1000) / 1000, Math.round(q.score * 100) / 100]) : null});
             let deg = st.last;
             if (kps) {
                 const r = retarget(kps, aspect, st);
@@ -276,10 +290,14 @@ export const analyzeVideo = async (file, tracker, o) => {
         }
         if (!found) throw new Error('영상에서 사람을 찾지 못했습니다. 온몸(적어도 어깨·팔)이 보이는 영상을 쓰세요.');
         const name = (file.name || '영상').replace(/\.[^.]+$/, '');
-        return {page: name, label: `영상 「${name}」`, ids: IDS.slice(), frames, seconds: frames[frames.length - 1].t,
+        const rec = {page: name, label: `영상 「${name}」`, ids: IDS.slice(), frames, seconds: frames[frames.length - 1].t,
             fromVideo: true, seen: found / n, truncated: (video.duration || 0) > dur + 0.05};
+        // kept out of saved files: the video itself and the skeletons, for playing back side by side
+        Object.defineProperty(rec, 'video', {value: {url, kps: kpsLog, aspect}, enumerable: false});
+        kept = true;
+        return rec;
     } finally {
-        URL.revokeObjectURL(url);
+        if (!kept) URL.revokeObjectURL(url);
         video.removeAttribute('src');
     }
 };
