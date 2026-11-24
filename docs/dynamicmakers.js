@@ -1401,7 +1401,7 @@ var require_protocol2 = __commonJS({
       }
       return out;
     };
-    var unstuff = (bytes) => {
+    var unstuff2 = (bytes) => {
       const out = [];
       let ff = 0;
       for (let i = 0; i < bytes.length; i++) {
@@ -1493,7 +1493,7 @@ var require_protocol2 = __commonJS({
           if (crc16(raw, total - 2) !== crc) {
             continue;
           }
-          const body = unstuff(raw.slice(7, total - 2));
+          const body = unstuff2(raw.slice(7, total - 2));
           const packet = {
             id: raw[4],
             instruction: body[0],
@@ -1759,7 +1759,7 @@ var require_transport = __commonJS({
 // ../scratch-cm550/src/cm550.js
 var require_cm550 = __commonJS({
   "../scratch-cm550/src/cm550.js"(exports, module) {
-    var P22 = require_protocol2();
+    var P23 = require_protocol2();
     var { WebSerialTransport, WebBluetoothTransport } = require_transport();
     var { modelInfo: modelInfo2, modelName: modelName3, describeMotors } = require_models();
     var CM550_ID = 200;
@@ -1899,7 +1899,7 @@ var require_cm550 = __commonJS({
     var CM550Device = class {
       constructor() {
         this.transport = null;
-        this.parser = new P22.PacketParser((pkt) => this._onPacket(pkt));
+        this.parser = new P23.PacketParser((pkt) => this._onPacket(pkt));
         this._queue = Promise.resolve();
         this._pending = null;
         this._collector = null;
@@ -1994,11 +1994,11 @@ var require_cm550 = __commonJS({
         }
         const p = this._pending;
         if (!p) return;
-        if (pkt.id !== p.id && p.id !== P22.BROADCAST_ID) return;
+        if (pkt.id !== p.id && p.id !== P23.BROADCAST_ID) return;
         clearTimeout(p.timer);
         this._pending = null;
         if (pkt.error) {
-          const name = P22.ERROR_NAMES[pkt.error] || `error ${pkt.error}`;
+          const name = P23.ERROR_NAMES[pkt.error] || `error ${pkt.error}`;
           this.lastError = `ID ${pkt.id}: ${name}`;
           p.reject(new Error(this.lastError));
         } else {
@@ -2041,16 +2041,16 @@ var require_cm550 = __commonJS({
         return result;
       }
       async read(id, address, size, signed2 = false) {
-        const pkt = await this.request(id, P22.read(id, address, size));
+        const pkt = await this.request(id, P23.read(id, address, size));
         if (pkt.params.length < size) throw new Error(`ID ${id}: 응답 길이 오류`);
-        return P22.fromLE(pkt.params, 0, size, signed2);
+        return P23.fromLE(pkt.params, 0, size, signed2);
       }
       write(id, address, value, size) {
-        return this.request(id, P22.write(id, address, Math.round(value), size));
+        return this.request(id, P23.write(id, address, Math.round(value), size));
       }
       /** Read `length` raw bytes starting at `address` (one packet). */
       async readBytes(id, address, length) {
-        const pkt = await this.request(id, P22.read(id, address, length));
+        const pkt = await this.request(id, P23.read(id, address, length));
         if (pkt.params.length < length) throw new Error(`ID ${id}: 응답 길이 오류`);
         return pkt.params.slice(0, length);
       }
@@ -2065,7 +2065,7 @@ var require_cm550 = __commonJS({
           if (!this.connected) throw new Error("CM-550이 연결되어 있지 않습니다.");
           this._collector = [];
           try {
-            await this.transport.write(P22.ping(P22.BROADCAST_ID));
+            await this.transport.write(P23.ping(P23.BROADCAST_ID));
             await delay4(wait);
             return this._collector;
           } finally {
@@ -2078,7 +2078,7 @@ var require_cm550 = __commonJS({
             if (!seen.has(p.id)) {
               seen.set(p.id, {
                 id: p.id,
-                model: p.params.length >= 2 ? P22.fromLE(p.params, 0, 2) : 0,
+                model: p.params.length >= 2 ? P23.fromLE(p.params, 0, 2) : 0,
                 firmware: p.params.length >= 3 ? p.params[2] : 0
               });
             }
@@ -2133,7 +2133,7 @@ var require_cm550 = __commonJS({
           if (!this.connected) throw new Error("CM-550이 연결되어 있지 않습니다.");
           this._collector = [];
           try {
-            await this.transport.write(P22.syncRead(reg.addr, reg.size, ids));
+            await this.transport.write(P23.syncRead(reg.addr, reg.size, ids));
             const t0 = Date.now();
             while (Date.now() - t0 < waitMs) {
               if (new Set(this._collector.map((p) => p.id)).size >= ids.length) break;
@@ -2149,7 +2149,7 @@ var require_cm550 = __commonJS({
         });
         const out = /* @__PURE__ */ new Map();
         for (const p of await result) {
-          if (ids.includes(p.id) && p.params.length >= reg.size) out.set(p.id, P22.fromLE(p.params, 0, reg.size));
+          if (ids.includes(p.id) && p.params.length >= reg.size) out.set(p.id, P23.fromLE(p.params, 0, reg.size));
         }
         this.syncReadWorks = out.size > 0;
         for (const id of ids) if (!out.has(id)) out.set(id, await this.readDXL(id, reg));
@@ -2179,7 +2179,7 @@ var require_cm550 = __commonJS({
           const pkt = await this.ping(id);
           return {
             id,
-            model: pkt.params.length >= 2 ? P22.fromLE(pkt.params, 0, 2) : 0,
+            model: pkt.params.length >= 2 ? P23.fromLE(pkt.params, 0, 2) : 0,
             firmware: pkt.params.length >= 3 ? pkt.params[2] : 0
           };
         } catch (e) {
@@ -2202,7 +2202,7 @@ var require_cm550 = __commonJS({
         return this.write(id, reg.addr, value, reg.size);
       }
       ping(id) {
-        return this.request(id, P22.ping(id));
+        return this.request(id, P23.ping(id));
       }
       /**
        * Sync-write the same register on several DYNAMIXELs (no status packet).
@@ -2210,7 +2210,7 @@ var require_cm550 = __commonJS({
        * @param items
        */
       syncWriteDXL(reg, items) {
-        return this.request(P22.BROADCAST_ID, P22.syncWrite(reg.addr, reg.size, items.map((it) => ({
+        return this.request(P23.BROADCAST_ID, P23.syncWrite(reg.addr, reg.size, items.map((it) => ({
           id: it.id,
           value: Math.round(it.value)
         }))), false);
@@ -2483,7 +2483,7 @@ var require_cm550 = __commonJS({
         for (const id of rebooted) {
           delete this._modeCache[id];
           try {
-            await this.request(id, P22.reboot(id));
+            await this.request(id, P23.reboot(id));
           } catch (e) {
             await this.writeCM(CM2.DXL_TORQUE, 3);
             break;
@@ -4017,7 +4017,7 @@ var init_motion_library = __esm({
 // src/sim-robot.js
 var require_sim_robot = __commonJS({
   "src/sim-robot.js"(exports, module) {
-    var P22 = require_protocol2();
+    var P23 = require_protocol2();
     var CM_ID2 = 200;
     var DEFAULT_MODELS = { 1: 1060, 2: 1060, 3: 1090, 4: 1090 };
     var CURRENT_MODELS = /* @__PURE__ */ new Set([1190, 1200, 1210, 1220, 1230, 1240, 1e3, 1010, 1040, 1050, 1020, 1030]);
@@ -4062,8 +4062,22 @@ var require_sim_robot = __commonJS({
       0: 2,
       6: 1,
       7: 1,
+      8: 1,
+      9: 1,
+      10: 1,
       11: 1,
+      12: 1,
+      13: 1,
+      31: 1,
+      32: 2,
+      34: 2,
+      36: 2,
       38: 2,
+      48: 4,
+      52: 4,
+      63: 1,
+      68: 1,
+      69: 1,
       44: 4,
       64: 1,
       65: 1,
@@ -4086,7 +4100,7 @@ var require_sim_robot = __commonJS({
     var tickToDeg2 = (t) => Math.round(t / 4096 * 3600) / 10;
     var onOff = (v) => v ? "켜기" : "끄기";
     var signed2 = (v, size) => v >= 2 ** (size * 8 - 1) ? v - 2 ** (size * 8) : v;
-    var SimTransport2 = class {
+    var SimTransport3 = class {
       /**
        * @param {Function} onAction
        * @param {object} [opts]
@@ -4122,6 +4136,20 @@ var require_sim_robot = __commonJS({
         set(CM_ID2, 90, 28);
         for (const id of this.ids) {
           set(id, 0, this.models[id]);
+          set(id, 6, 46);
+          set(id, 7, id);
+          set(id, 8, 3);
+          set(id, 9, 250);
+          set(id, 12, 255);
+          set(id, 13, 2);
+          set(id, 31, 72);
+          set(id, 32, 140);
+          set(id, 34, 60);
+          set(id, 36, 885);
+          set(id, 48, 4095);
+          set(id, 52, 0);
+          set(id, 63, 52);
+          set(id, 68, 2);
           if (CURRENT_MODELS.has(this.models[id])) set(id, 38, 1750);
           set(id, 11, 3);
           set(id, 44, VELOCITY_LIMIT);
@@ -4148,7 +4176,11 @@ var require_sim_robot = __commonJS({
         return Promise.resolve();
       }
       _reply(id, params = [], error = 0) {
-        const pkt = P22.buildPacket(id, P22.INST.STATUS, [error, ...params]);
+        const pkt = P23.buildPacket(id, P23.INST.STATUS, [error, ...params]);
+        if (this.replyNow) {
+          if (this.isOpen && this._data) this._data(pkt);
+          return;
+        }
         setTimeout(() => {
           if (this.isOpen && this._data) this._data(pkt);
         }, 2);
@@ -4234,22 +4266,23 @@ var require_sim_robot = __commonJS({
        * additionally need the other axis' torque off.
        */
       _eepromLocked(id) {
-        if (this.regs.get(`${id}:64`)) return true;
+        const on = (i) => this.physics && this.ids.includes(i) ? this.physics.torqueOn(i) : this.regs.get(`${i}:64`);
+        if (on(id)) return true;
         if (this.models[id] === 1090 || this.models[id] === 1160) {
           const sib = id % 2 ? id + 1 : id - 1;
-          if (this.models[sib] === this.models[id] && this.regs.get(`${sib}:64`)) return true;
+          if (this.models[sib] === this.models[id] && on(sib)) return true;
         }
         return false;
       }
       /** Assemble `len` bytes starting at addr from the register map. */
       _readBlock(id, addr, len) {
         const sizes = id === CM_ID2 ? CM_SIZES : DXL_SIZES;
-        if (!sizes[addr] && len <= 4) return P22.le(this._read(id, addr, len), len);
+        if (!sizes[addr] && len <= 4) return P23.le(this._read(id, addr, len), len);
         const out = new Array(len).fill(0);
         for (let a = addr; a < addr + len; a++) {
           const size = sizes[a];
           if (!size) continue;
-          const bytes = P22.le(this._read(id, a, size), size);
+          const bytes = P23.le(this._read(id, a, size), size);
           for (let i = 0; i < size && a - addr + i < len; i++) out[a - addr + i] = bytes[i];
         }
         return out;
@@ -4498,49 +4531,67 @@ var require_sim_robot = __commonJS({
         const params = b.slice(8, 8 + len - 3);
         const relays = this._busAlive() && fault() !== "relay";
         const exists = (i) => i === CM_ID2 || this.ids.includes(i) && relays;
-        if (inst === P22.INST.REBOOT) {
+        if (inst === P23.INST.REBOOT) {
           if (!exists(id)) return Promise.resolve();
           if (this.physics) this.physics.setTorque(id, 0);
           this._reply(id);
           return Promise.resolve();
         }
-        if (inst === P22.INST.SYNC_READ) {
-          const addr = P22.fromLE(params, 0, 2);
-          const size = P22.fromLE(params, 2, 2);
+        if (inst === P23.INST.SYNC_READ) {
+          const addr = P23.fromLE(params, 0, 2);
+          const size = P23.fromLE(params, 2, 2);
           params.slice(4).filter(exists).forEach((i) => this._reply(i, this._readBlock(i, addr, size)));
           return Promise.resolve();
         }
-        if (inst === P22.INST.PING) {
-          const pong = (i) => this._reply(i, P22.le(this.regs.get(`${i}:0`) || 0, 2).concat([i === CM_ID2 ? 47 : 46]));
-          if (id === P22.BROADCAST_ID) [CM_ID2, ...this.ids].filter(exists).forEach(pong);
+        if (inst === P23.INST.PING) {
+          const pong = (i) => this._reply(i, P23.le(this.regs.get(`${i}:0`) || 0, 2).concat([i === CM_ID2 ? 47 : 46]));
+          if (id === P23.BROADCAST_ID) [CM_ID2, ...this.ids].filter(exists).forEach(pong);
           else if (exists(id)) pong(id);
-        } else if (inst === P22.INST.READ) {
+        } else if (inst === P23.INST.READ) {
           if (!exists(id)) return Promise.resolve();
-          const addr = P22.fromLE(params, 0, 2);
-          const size = P22.fromLE(params, 2, 2);
+          const addr = P23.fromLE(params, 0, 2);
+          const size = P23.fromLE(params, 2, 2);
           this._reply(id, this._readBlock(id, addr, size));
-        } else if (inst === P22.INST.WRITE) {
+        } else if (inst === P23.INST.WRITE) {
           if (!exists(id)) return Promise.resolve();
-          const addr = P22.fromLE(params, 0, 2);
+          const addr = P23.fromLE(params, 0, 2);
           const size = params.length - 2;
           if (id !== CM_ID2 && addr < 64 && this._eepromLocked(id)) {
             this._reply(id, [], 7);
             return Promise.resolve();
           }
-          this._write(id, addr, P22.fromLE(params, 2, size), size);
+          if (id !== CM_ID2 && (addr === 7 || addr === 8 || addr === 13)) {
+            this._report(`fixed-${id}-${addr}`, Date.now(), `⚠ 가상 로봇은 ID·통신 속도·프로토콜을 바꿀 수 없습니다 (ID ${id}, 주소 ${addr}).`);
+            this._reply(id, [], 7);
+            return Promise.resolve();
+          }
+          this._write(id, addr, P23.fromLE(params, 2, size), size);
           this._reply(id);
-        } else if (inst === P22.INST.SYNC_WRITE) {
-          const addr = P22.fromLE(params, 0, 2);
-          const size = P22.fromLE(params, 2, 2);
+        } else if (inst === P23.INST.BULK_READ) {
+          for (let i = 0; i + 5 <= params.length; i += 5) {
+            const did = params[i];
+            if (exists(did)) this._reply(did, this._readBlock(did, P23.fromLE(params, i + 1, 2), P23.fromLE(params, i + 3, 2)));
+          }
+        } else if (inst === P23.INST.BULK_WRITE) {
+          for (let i = 0; i + 5 <= params.length; ) {
+            const did = params[i];
+            const addr = P23.fromLE(params, i + 1, 2);
+            const size = P23.fromLE(params, i + 3, 2);
+            if (this.ids.includes(did) && size >= 1 && size <= 4) this._write(did, addr, P23.fromLE(params, i + 5, size), size);
+            i += 5 + size;
+          }
+        } else if (inst === P23.INST.SYNC_WRITE) {
+          const addr = P23.fromLE(params, 0, 2);
+          const size = P23.fromLE(params, 2, 2);
           for (let i = 4; i + size < params.length + 1; i += 1 + size) {
             const did = params[i];
-            if (this.ids.includes(did)) this._write(did, addr, P22.fromLE(params, i + 1, size), size);
+            if (this.ids.includes(did)) this._write(did, addr, P23.fromLE(params, i + 1, size), size);
           }
         }
         return Promise.resolve();
       }
     };
-    module.exports = { SimTransport: SimTransport2 };
+    module.exports = { SimTransport: SimTransport3 };
   }
 });
 
@@ -9341,6 +9392,155 @@ var GaitLearner = class {
   }
 };
 
+// src/sim3d/dxl-bridge.js
+var P22 = require_protocol2();
+var { SimTransport } = require_sim_robot();
+var DEFAULT_BRIDGE_URL = "ws://127.0.0.1:9101";
+var INST_NAME = {
+  1: "PING",
+  2: "READ",
+  3: "WRITE",
+  8: "REBOOT",
+  130: "SYNC READ",
+  131: "SYNC WRITE",
+  146: "BULK READ",
+  147: "BULK WRITE"
+};
+var PacketCutter = class {
+  constructor(onPacket) {
+    this.onPacket = onPacket;
+    this.buf = [];
+    this.bad = 0;
+  }
+  push(chunk) {
+    for (const b of chunk) this.buf.push(b);
+    for (; ; ) {
+      let s = -1;
+      for (let i = 0; i + 3 < this.buf.length; i++) {
+        if (this.buf[i] === 255 && this.buf[i + 1] === 255 && this.buf[i + 2] === 253 && this.buf[i + 3] === 0) {
+          s = i;
+          break;
+        }
+      }
+      if (s < 0) {
+        if (this.buf.length > 3) this.buf = this.buf.slice(-3);
+        return;
+      }
+      if (s > 0) this.buf = this.buf.slice(s);
+      if (this.buf.length < 7) return;
+      const len = this.buf[5] | this.buf[6] << 8;
+      if (len < 3 || len > 4096) {
+        this.buf = this.buf.slice(1);
+        continue;
+      }
+      const total = 7 + len;
+      if (this.buf.length < total) return;
+      const raw = this.buf.slice(0, total);
+      this.buf = this.buf.slice(total);
+      if (P22.crc16(raw, total - 2) !== (raw[total - 2] | raw[total - 1] << 8)) {
+        this.bad++;
+        continue;
+      }
+      const body = unstuff(raw.slice(7, total - 2));
+      this.onPacket({ id: raw[4], inst: body[0], params: body.slice(1) });
+    }
+  }
+};
+var unstuff = (bytes) => {
+  const out = [];
+  let ff = 0;
+  for (let i = 0; i < bytes.length; i++) {
+    const b = bytes[i];
+    if (ff >= 2 && b === 253 && bytes[i + 1] === 253) {
+      out.push(253);
+      i++;
+      ff = 0;
+      continue;
+    }
+    out.push(b);
+    ff = b === 255 ? ff + 1 : 0;
+  }
+  return out;
+};
+var rawPacket = (p) => {
+  const len = p.params.length + 3;
+  return Uint8Array.from([255, 255, 253, 0, p.id, len & 255, len >> 8, p.inst, ...p.params, 0, 0]);
+};
+var DxlBridge = class {
+  /**
+   * @param {object} o
+   * @param {object} o.physics PhysicsSim of the 3D robot
+   * @param {(text: string, kind?: string) => void} o.log output window
+   * @param {(state: string) => void} [o.onState] 'connecting' | 'open' | 'closed' | 'error'
+   */
+  constructor(o) {
+    this.o = o;
+    this.ws = null;
+    this.state = "closed";
+    this.stats = { packets: 0, replies: 0, last: "", bad: 0, since: 0 };
+    this.tr = new SimTransport((text2) => o.log(`[CYCLO] ${text2}`), { physics: o.physics });
+    this.tr.name = "3D 가상 로봇 (CYCLO 브리지)";
+    this.tr.replyNow = true;
+    this.cutter = new PacketCutter((p) => this._packet(p));
+    this.tr.onData((pkt) => {
+      this.stats.replies++;
+      if (this.ws && this.ws.readyState === 1) this.ws.send(pkt);
+    });
+  }
+  _set(state) {
+    this.state = state;
+    if (this.o.onState) this.o.onState(state);
+  }
+  connect(url = DEFAULT_BRIDGE_URL) {
+    this.close();
+    this._set("connecting");
+    this.tr.open();
+    let ws;
+    try {
+      ws = new WebSocket(url);
+    } catch (e) {
+      this._set("error");
+      return Promise.reject(e);
+    }
+    ws.binaryType = "arraybuffer";
+    this.ws = ws;
+    return new Promise((resolve, reject) => {
+      ws.onopen = () => {
+        this.stats.since = Date.now();
+        this._set("open");
+        resolve();
+      };
+      ws.onerror = () => {
+        if (this.state === "connecting") {
+          this._set("error");
+          reject(new Error(`브리지 프로그램(${url})에 연결할 수 없습니다. 터미널에서 node dxl-bridge.mjs 를 먼저 실행하세요.`));
+        }
+      };
+      ws.onclose = () => {
+        if (this.ws === ws) {
+          this.ws = null;
+          if (this.state === "open") this.o.log("CYCLO 브리지 연결이 끊어졌습니다.", "warn");
+          if (this.state !== "error") this._set("closed");
+        }
+      };
+      ws.onmessage = (e) => this.cutter.push(new Uint8Array(e.data));
+    });
+  }
+  _packet(p) {
+    this.stats.packets++;
+    this.stats.last = `${INST_NAME[p.inst] || `0x${p.inst.toString(16)}`} ID ${p.id === 254 ? "전체" : p.id}`;
+    this.stats.bad = this.cutter.bad;
+    this.tr.write(rawPacket(p)).catch(() => {
+    });
+  }
+  close() {
+    const ws = this.ws;
+    this.ws = null;
+    if (ws) ws.close();
+    if (this.state !== "closed") this._set("closed");
+  }
+};
+
 // src/sim3d/motion-check.js
 var { DXL: DXL2, CM } = require_cm550();
 var DEG2 = 180 / Math.PI;
@@ -11524,6 +11724,20 @@ var SimPanel = class {
     );
     r12.append(this.connBtn, this.resetBtn, this.pushBtn, this.pauseBtn, this.partsBtn);
     c1.append(r12);
+    const rb = el5("div", "tp-row sim-bridge");
+    this.bridgeBtn = button3(
+      "tp-btn",
+      "🔌 Claude Code·CYCLO 연결",
+      () => this.toggleBridge(),
+      "ROBOTIS CYCLO AI(Claude Code·Codex 플러그인)가 이 3D 가상 로봇을 진짜 다이나믹셀처럼 스캔·읽기·움직이기 할 수 있게 합니다"
+    );
+    const dl = el5("a", "sim-bridge-dl", "브리지 프로그램 받기");
+    dl.href = "tools/dxl-bridge.mjs";
+    dl.download = "dxl-bridge.mjs";
+    this.bridgeInfo = el5("span", "sim-bridge-info", "");
+    rb.append(this.bridgeBtn, dl, this.bridgeInfo);
+    c1.append(rb);
+    this.bridgeUrl = DEFAULT_BRIDGE_URL;
     body.append(c1);
     const cm = el5("section", "mon-card");
     cm.append(el5("h3", "", "예제 모션 확인 (실제 로봇의 공식 모션)"));
@@ -12577,6 +12791,43 @@ var SimPanel = class {
     }
     this.imBusy = false;
     this._status();
+  }
+  // ---- CYCLO 브리지 ---------------------------------------------------------------------
+  async toggleBridge() {
+    if (this.bridge && this.bridge.state === "open") {
+      this.bridge.close();
+      clearInterval(this._bridgeTimer);
+      this.log("Claude Code·CYCLO 연결을 끊었습니다.");
+      this._bridgeShow();
+      return;
+    }
+    const ph = await this._ensureSim();
+    if (!this.bridge || this.bridge.o.physics !== ph) {
+      this.bridge = new DxlBridge({ physics: ph, log: (t, k) => this.log(t, k), onState: () => this._bridgeShow() });
+    }
+    try {
+      await this.bridge.connect(this.bridgeUrl);
+      const port = (/:(\d+)$/.exec(this.bridgeUrl) || [])[1];
+      this.log(`Claude Code·CYCLO 연결 준비됨: CYCLO에서 포트를 tcp://127.0.0.1:${port ? Number(port) - 1 : 9100} 으로 주세요 (통신 속도는 아무 값). 가상 MAX-E1 모터 ID 1~12(2XL430-W250)와 CM-550(ID 200)이 보입니다.`, "ok");
+      clearInterval(this._bridgeTimer);
+      this._bridgeTimer = setInterval(() => this._bridgeShow(), 1e3);
+    } catch (e) {
+      this.log(`⚠ ${e.message || e}`, "err");
+    }
+    this._bridgeShow();
+  }
+  _bridgeShow() {
+    const b = this.bridge;
+    const on = b && b.state === "open";
+    this.bridgeBtn.textContent = on ? "■ Claude Code·CYCLO 연결 끊기" : "🔌 Claude Code·CYCLO 연결";
+    this.bridgeBtn.classList.toggle("tp-primary", Boolean(on));
+    if (!b || b.state === "closed") this.bridgeInfo.textContent = "";
+    else if (b.state === "connecting") this.bridgeInfo.textContent = "브리지 프로그램에 연결하는 중…";
+    else if (b.state === "error") this.bridgeInfo.textContent = "브리지 프로그램이 꺼져 있습니다: 터미널에서 node dxl-bridge.mjs";
+    else {
+      const st = b.stats;
+      this.bridgeInfo.textContent = st.packets ? `받은 명령 ${st.packets}개 · 응답 ${st.replies}개 · 마지막 ${st.last}` : "CYCLO를 기다리는 중 (포트 tcp://127.0.0.1:9100)";
+    }
   }
   loadBuiltInMotions() {
     try {

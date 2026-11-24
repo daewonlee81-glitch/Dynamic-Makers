@@ -5,6 +5,7 @@ import {MAXE1_DEFAULT, MAXE1_JOINT_MAP, MODEL_VERSION, buildMJCF} from './maxe1-
 import {GAIT_PARAMS, defaultGait, gaitTargets} from './gait';
 import {GaitLearner, REWARDS, defaultRewards, score} from './learn';
 import {checkPolicy} from './policy';
+import {DxlBridge, DEFAULT_BRIDGE_URL} from './dxl-bridge';
 import {MotionRecorder, summarize, poseAt, toJointRad, keyPoses, simplifyPoses} from './motion-check';
 import {posesProgramXML} from './gait-blocks';
 import {parseMtn3, findChains, toRecording, callSeconds} from './mtn3';
@@ -146,6 +147,17 @@ export class SimPanel {
             '실제 부품 모양(ROBOTIS STEP 도면)과 물리 계산용 단순 도형을 바꿔 봅니다');
         r1.append(this.connBtn, this.resetBtn, this.pushBtn, this.pauseBtn, this.partsBtn);
         c1.append(r1);
+        // Claude Code + CYCLO MCP can use this robot as a DYNAMIXEL bus (tools/dxl-bridge.mjs)
+        const rb = el('div', 'tp-row sim-bridge');
+        this.bridgeBtn = button('tp-btn', '🔌 Claude Code·CYCLO 연결', () => this.toggleBridge(),
+            'ROBOTIS CYCLO AI(Claude Code·Codex 플러그인)가 이 3D 가상 로봇을 진짜 다이나믹셀처럼 스캔·읽기·움직이기 할 수 있게 합니다');
+        const dl = el('a', 'sim-bridge-dl', '브리지 프로그램 받기');
+        dl.href = 'tools/dxl-bridge.mjs';
+        dl.download = 'dxl-bridge.mjs';
+        this.bridgeInfo = el('span', 'sim-bridge-info', '');
+        rb.append(this.bridgeBtn, dl, this.bridgeInfo);
+        c1.append(rb);
+        this.bridgeUrl = DEFAULT_BRIDGE_URL;
         body.append(c1);
 
         // ---- 예제 모션 확인 (실제 로봇) --------------------------------------------------
@@ -1167,6 +1179,47 @@ export class SimPanel {
         }
         this.imBusy = false;
         this._status();
+    }
+
+    // ---- CYCLO 브리지 ---------------------------------------------------------------------
+    async toggleBridge () {
+        if (this.bridge && this.bridge.state === 'open') {
+            this.bridge.close();
+            clearInterval(this._bridgeTimer);
+            this.log('Claude Code·CYCLO 연결을 끊었습니다.');
+            this._bridgeShow();
+            return;
+        }
+        const ph = await this._ensureSim();
+        if (!this.bridge || this.bridge.o.physics !== ph) {
+            this.bridge = new DxlBridge({physics: ph, log: (t, k) => this.log(t, k), onState: () => this._bridgeShow()});
+        }
+        try {
+            await this.bridge.connect(this.bridgeUrl);
+            const port = (/:(\d+)$/.exec(this.bridgeUrl) || [])[1];
+            this.log(`Claude Code·CYCLO 연결 준비됨: CYCLO에서 포트를 tcp://127.0.0.1:${port ? Number(port) - 1 : 9100} 으로 주세요 ` +
+                '(통신 속도는 아무 값). 가상 MAX-E1 모터 ID 1~12(2XL430-W250)와 CM-550(ID 200)이 보입니다.', 'ok');
+            clearInterval(this._bridgeTimer);
+            this._bridgeTimer = setInterval(() => this._bridgeShow(), 1000);
+        } catch (e) {
+            this.log(`⚠ ${e.message || e}`, 'err');
+        }
+        this._bridgeShow();
+    }
+
+    _bridgeShow () {
+        const b = this.bridge;
+        const on = b && b.state === 'open';
+        this.bridgeBtn.textContent = on ? '■ Claude Code·CYCLO 연결 끊기' : '🔌 Claude Code·CYCLO 연결';
+        this.bridgeBtn.classList.toggle('tp-primary', Boolean(on));
+        if (!b || b.state === 'closed') this.bridgeInfo.textContent = '';
+        else if (b.state === 'connecting') this.bridgeInfo.textContent = '브리지 프로그램에 연결하는 중…';
+        else if (b.state === 'error') this.bridgeInfo.textContent = '브리지 프로그램이 꺼져 있습니다: 터미널에서 node dxl-bridge.mjs';
+        else {
+            const st = b.stats;
+            this.bridgeInfo.textContent = st.packets ? `받은 명령 ${st.packets}개 · 응답 ${st.replies}개 · 마지막 ${st.last}` :
+                'CYCLO를 기다리는 중 (포트 tcp://127.0.0.1:9100)';
+        }
     }
 
     loadBuiltInMotions () {

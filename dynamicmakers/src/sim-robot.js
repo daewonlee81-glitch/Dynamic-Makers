@@ -19,7 +19,8 @@ const VELOCITY_LIMIT = 265; // 0.229 rpm units
 const CM_SIZES = {0: 2, 6: 1, 12: 1, 20: 1, 21: 1, 22: 1, 23: 2, 26: 1, 39: 1, 40: 1, 64: 1, 66: 2, 68: 1, 69: 2, 71: 2, 84: 1, 85: 1,
     86: 1, 87: 1, 89: 1, 90: 1, 91: 1, 92: 1, 93: 1, 102: 2, 104: 2, 106: 2, 108: 2, 110: 2, 112: 2, 114: 2, 116: 2,
     118: 2, 124: 4};
-const DXL_SIZES = {0: 2, 6: 1, 7: 1, 11: 1, 38: 2, 44: 4, 64: 1, 65: 1, 70: 1, 100: 2, 104: 4, 108: 4, 112: 4, 116: 4,
+const DXL_SIZES = {0: 2, 6: 1, 7: 1, 8: 1, 9: 1, 10: 1, 11: 1, 12: 1, 13: 1, 31: 1, 32: 2, 34: 2, 36: 2, 38: 2,
+    48: 4, 52: 4, 63: 1, 68: 1, 69: 1, 44: 4, 64: 1, 65: 1, 70: 1, 100: 2, 104: 4, 108: 4, 112: 4, 116: 4,
     102: 2, 122: 1, 124: 2, 126: 2, 128: 4, 132: 4, 144: 2, 146: 1};
 
 // test hook: window.__dmSimFault = 'lowvolt' | 'nopower' | 'relay' simulates field problems
@@ -65,6 +66,21 @@ class SimTransport {
         set(CM_ID, 90, 28);
         for (const id of this.ids) {
             set(id, 0, this.models[id]);
+            // identity and settings an outside tool (CYCLO) reads, as on a factory-new X-series motor
+            set(id, 6, 46); // firmware (same as the ping reply)
+            set(id, 7, id);
+            set(id, 8, 3); // 1 Mbps
+            set(id, 9, 250);
+            set(id, 12, 255);
+            set(id, 13, 2);
+            set(id, 31, 72);
+            set(id, 32, 140);
+            set(id, 34, 60);
+            set(id, 36, 885);
+            set(id, 48, 4095);
+            set(id, 52, 0);
+            set(id, 63, 52);
+            set(id, 68, 2);
             if (CURRENT_MODELS.has(this.models[id])) set(id, 38, 1750);
             set(id, 11, 3);
             set(id, 44, VELOCITY_LIMIT);
@@ -92,6 +108,10 @@ class SimTransport {
 
     _reply (id, params = [], error = 0) {
         const pkt = P2.buildPacket(id, P2.INST.STATUS, [error, ...params]);
+        if (this.replyNow) { // outside tools (CYCLO) wait only 30-100 ms for an answer
+            if (this.isOpen && this._data) this._data(pkt);
+            return;
+        }
         setTimeout(() => {
             if (this.isOpen && this._data) this._data(pkt);
         }, 2);
@@ -173,10 +193,11 @@ class SimTransport {
      * additionally need the other axis' torque off.
      */
     _eepromLocked (id) {
-        if (this.regs.get(`${id}:64`)) return true;
+        const on = i => (this.physics && this.ids.includes(i) ? this.physics.torqueOn(i) : this.regs.get(`${i}:64`));
+        if (on(id)) return true;
         if (this.models[id] === 1090 || this.models[id] === 1160) {
             const sib = id % 2 ? id + 1 : id - 1;
-            if (this.models[sib] === this.models[id] && this.regs.get(`${sib}:64`)) return true;
+            if (this.models[sib] === this.models[id] && on(sib)) return true;
         }
         return false;
     }
@@ -467,8 +488,26 @@ class SimTransport {
                 this._reply(id, [], 0x07); // Access Error, like the real motors
                 return Promise.resolve();
             }
+            if (id !== CM_ID && (addr === 7 || addr === 8 || addr === 13)) { // ID / speed / protocol
+                this._report(`fixed-${id}-${addr}`, Date.now(), `⚠ 가상 로봇은 ID·통신 속도·프로토콜을 바꿀 수 없습니다 (ID ${id}, 주소 ${addr}).`);
+                this._reply(id, [], 0x07);
+                return Promise.resolve();
+            }
             this._write(id, addr, P2.fromLE(params, 2, size), size);
             this._reply(id);
+        } else if (inst === P2.INST.BULK_READ) { // [id, addr, size] each; motors answer in that order
+            for (let i = 0; i + 5 <= params.length; i += 5) {
+                const did = params[i];
+                if (exists(did)) this._reply(did, this._readBlock(did, P2.fromLE(params, i + 1, 2), P2.fromLE(params, i + 3, 2)));
+            }
+        } else if (inst === P2.INST.BULK_WRITE) { // [id, addr, size, data...] each; no replies
+            for (let i = 0; i + 5 <= params.length;) {
+                const did = params[i];
+                const addr = P2.fromLE(params, i + 1, 2);
+                const size = P2.fromLE(params, i + 3, 2);
+                if (this.ids.includes(did) && size >= 1 && size <= 4) this._write(did, addr, P2.fromLE(params, i + 5, size), size);
+                i += 5 + size;
+            }
         } else if (inst === P2.INST.SYNC_WRITE) {
             const addr = P2.fromLE(params, 0, 2);
             const size = P2.fromLE(params, 2, 2);

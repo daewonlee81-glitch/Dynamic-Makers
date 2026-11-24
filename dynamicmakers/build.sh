@@ -63,6 +63,8 @@ cp src/ai/movenet-data.js dist/dm-pose.js          # skeleton model (6 MB), load
 OUTFILE=dist/dm-sim.js node scripts/bundle-sim.js  # 3D simulator (MuJoCo + three.js), loaded on demand
 cp node_modules/@mujoco/mujoco/mujoco.wasm dist/mujoco.wasm
 # AI 튜터: WebLLM (Apache-2.0), loaded only when a model is installed; versioned name = cached safely
+# CYCLO 브리지 프로그램 (3D 탭에서 내려받기)
+mkdir -p dist/tools && cp tools/dxl-bridge.mjs dist/tools/dxl-bridge.mjs
 mkdir -p dist/vendor && cp vendor/web-llm/index.js dist/vendor/web-llm-0.2.87.js && cp vendor/web-llm/LICENSE dist/vendor/web-llm-LICENSE.txt
 # cache busting: every file gets ?v=<content hash>, so a new release shows at once
 # (GitHub Pages lets browsers keep files for 10 minutes) and unchanged files stay cached
